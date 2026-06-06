@@ -4,7 +4,7 @@ import { collection, doc, setDoc, getDocs, query, orderBy } from 'firebase/fires
 import { db, auth, googleProvider } from './firebase'
 import {
   C, EXERCISE_NAMES, TECHNIQUES, VIDEOS, PROGRAMS,
-  SESSION_FOCUS, SLOT_LABELS, exGroup, ALL_GROUPS,
+  SESSION_FOCUS, getSessionFocus, SLOT_LABELS, exGroup, ALL_GROUPS,
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
   calcToday, PROG_REPS,
 } from './data'
@@ -108,7 +108,7 @@ function ExCard({ id, role, techKey }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SessionView({ prog, sKey, week }) {
   const session  = prog.sessions[sKey]
-  const focus    = SESSION_FOCUS[sKey]
+  const focus    = getSessionFocus(prog, sKey)
   const isDeload = week === 6
   const techMap  = {}
   if (!isDeload) {
@@ -357,7 +357,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log }) {
   const session  = prog.sessions[sKey]
-  const focus    = SESSION_FOCUS[sKey]
+  const focus    = getSessionFocus(prog, sKey)
   const isDeload = week === 6
   const techMap  = {}
   if (!isDeload) {
@@ -477,16 +477,19 @@ function ProgramsTab() {
           <span style={lbl}>SESSION</span>
           <div style={{display:'flex',gap:6}}>
             {['C','D','E','F','G'].map(s => (
-              <button key={s} style={btn(sKey===s,SESSION_FOCUS[s].color)}
+              <button key={s} style={btn(sKey===s,getSessionFocus(prog,s).color)}
                 onClick={()=>setSKey(s)}>{s}</button>
             ))}
           </div>
           <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:3}}>
-            {Object.entries(SESSION_FOCUS).map(([k,v]) => (
-              <div key={k} style={{fontFamily:'monospace',fontSize:10,color:k===sKey?v.color:C.dimGray}}>
-                {k} — {v.label}
-              </div>
-            ))}
+            {['C','D','E','F','G'].map(k => {
+              const v = getSessionFocus(prog,k);
+              return (
+                <div key={k} style={{fontFamily:'monospace',fontSize:10,color:k===sKey?v.color:C.dimGray}}>
+                  {k} — {v.label}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -607,7 +610,7 @@ function TodayTab({ user, log, onSaveEntry }) {
   const todayISO   = new Date().toISOString().split('T')[0]
   const todayStr   = new Date().toLocaleDateString('en-US',
     {weekday:'long',month:'long',day:'numeric'}).toUpperCase()
-  const focusColor = SESSION_FOCUS[info.session].color
+  const focusColor = getSessionFocus(info.prog, info.session).color
 
   useEffect(() => {
     if (info.isWk) {
@@ -693,7 +696,7 @@ function TodayTab({ user, log, onSaveEntry }) {
             </div>
             <div><span style={lbl}>FOCUS</span>
               <span style={{fontFamily:'monospace',fontSize:13,color:focusColor}}>
-                {SESSION_FOCUS[info.session].label}
+                {getSessionFocus(info.prog, info.session).label}
               </span>
             </div>
             <div><span style={lbl}>PROGRAM</span>
@@ -737,7 +740,7 @@ function TodayTab({ user, log, onSaveEntry }) {
             <div>
               <span style={lbl}>SESSION</span>
               <span style={{fontFamily:'monospace',fontSize:14,color:focusColor}}>
-                {info.session} {SESSION_FOCUS[info.session].label}
+                {info.session} {getSessionFocus(info.prog,info.session).label}
               </span>
             </div>
             <div>
@@ -818,7 +821,7 @@ function HistoryTab({ log }) {
           </div>
         </div>
       ) : entries.map(e => {
-        const focusCol = SESSION_FOCUS[e.session]?.color ?? C.accent
+        const focusCol = getSessionFocus(PROGRAMS.find(p=>p.id===e.programId),e.session)?.color ?? C.accent
         const exCount  = Object.keys(e.exercises||{}).length
         const setCount = Object.values(e.exercises||{}).reduce((n,s)=>n+(s?s.length:0),0)
         return (
@@ -826,7 +829,7 @@ function HistoryTab({ log }) {
             <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12,flexWrap:'wrap'}}>
               <span style={{fontFamily:'monospace',fontSize:15,color:C.readout}}>{e.date}</span>
               <span style={{...pill(focusCol),fontSize:11,padding:'3px 10px'}}>
-                {e.session} {SESSION_FOCUS[e.session]?.label ?? ''}
+                {e.session} {getSessionFocus(PROGRAMS.find(p=>p.id===e.programId),e.session)?.label ?? ''}
               </span>
               <span style={{fontFamily:'monospace',fontSize:11,color:C.textSec}}>
                 P{e.programId} Wk{e.week} #{e.workoutNum||'?'}

@@ -534,6 +534,473 @@ export const PROGRAMS = [
       week5:[t("G","coreIso","mechanical_drop_set"),t("C","chestComp","partials")],
     },
   },
+  // PROGRAM 13 — Z: Nautilus Beginner
+  // ──────────────────────────────────────────────────────────
+  // Key: Straight arm pullover, Bench press, Bent-over row,
+  //      Overhead press, Biceps curl, Leg curl, Leg press
+  {
+    id: 13,
+    name: "Program 13 — Z: Beginner",
+    sessions: {
+      C: {
+        primary:     { chestIso: 13,  chestComp: 19 },
+        accessories: { back: 43, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 28,  backComp: 23  },
+        accessories: { chest: 3, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 144, triComp: 150 },
+        accessories: { chest: 6, back: 34, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 134  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 121, coreComp: 97 },
+        accessories: { chest: 110, back: 37, triceps: 145, biceps: 136, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [13, 19, 23, 28, 144, 129, 157, 177]
+    },
+    techniques: {
+      week1: [ t("C","chestComp","1_quarter_reps"),       t("D","backComp","negative_accentuated") ],
+      week2: [ t("E","triIso","super_slow"),               t("F","biComp","drop_set")               ],
+      week3: [ t("G","coreIso","isometric_hold"),          t("C","chestIso","rest_pause")           ],
+      week4: [ t("D","backIso","partials"),                t("E","triComp","forced_reps")           ],
+      week5: [ t("F","biIso","mechanical_drop_set"),       t("G","coreComp","pre_exhaustion")       ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 14 — Y: Nautilus Expanded Beginner
+  // ──────────────────────────────────────────────────────────
+  // Key: Leg curl/ext/press, Pullover, Bench press, Bent-over row,
+  //      Overhead press, Biceps curl, Triceps extension, Wrist curl,
+  //      Standing calf raise, Trunk curl
+  {
+    id: 14,
+    name: "Program 14 — Y: Expanded Beginner",
+    sessions: {
+      C: {
+        primary:     { chestIso: 9,   chestComp: 2  },
+        accessories: { back: 43, triceps: 148, biceps: 132, forearms: 157, neck: 178, calves: 167, coreFront: 60 }
+      },
+      D: {
+        primary:     { backIso: 30,  backComp: 21  },
+        accessories: { chest: 4, triceps: 144, biceps: 133, forearms: 158, neck: 179, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 145, triComp: 149 },
+        accessories: { chest: 7, back: 35, biceps: 130, forearms: 159, neck: 180, calves: 169, coreSides: 66 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 142  },
+        accessories: { chest: 12, back: 27, triceps: 151, forearms: 160, neck: 181, calves: 170, core: 64 }
+      },
+      G: {
+        primary:     { coreIso: 122, coreComp: 116 },
+        accessories: { chest: 110, back: 61, triceps: 146, biceps: 135, forearms: 165, neck: 182, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [9, 2, 21, 145, 129, 157, 178, 167]
+    },
+    techniques: {
+      week1: [ t("D","backIso","super_slow"),              t("E","triComp","1_quarter_reps")        ],
+      week2: [ t("F","biIso","drop_set"),                  t("G","coreComp","isometric_hold")       ],
+      week3: [ t("C","chestIso","negative_accentuated"),   t("D","backComp","rest_pause")           ],
+      week4: [ t("E","triIso","pre_exhaustion"),           t("F","biComp","partials")               ],
+      week5: [ t("G","coreIso","forced_reps"),             t("C","chestComp","mechanical_drop_set") ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 15 — X: Full-Body Power
+  // ──────────────────────────────────────────────────────────
+  // Key: Chest press, Split squat (L/R), Bent-over row, Deadlift,
+  //      Triceps press, Biceps curl, Calf raise, Overhead press
+  {
+    id: 15,
+    name: "Program 15 — X: Full-Body Power",
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
+    sessions: {
+      C: {
+        primary:     { chestIso: 10,  chestComp: 1  },
+        accessories: { back: 44, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 185, backComp: 23  },
+        accessories: { chest: 3, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 144, triComp: 149 },
+        accessories: { chest: 6, back: 34, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 134  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 121, coreComp: 102 },
+        accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [10, 1, 23, 144, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("E","triIso","forced_reps"),              t("F","biIso","super_slow")              ],
+      week2: [ t("G","coreIso","1_quarter_reps"),          t("C","chestComp","isometric_hold")      ],
+      week3: [ t("D","backComp","drop_set"),               t("E","triComp","rest_pause")            ],
+      week4: [ t("F","biComp","negative_accentuated"),     t("G","coreComp","partials")             ],
+      week5: [ t("C","chestIso","mechanical_drop_set"),    t("D","backIso","pre_exhaustion")        ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 16 — W: Classic Compound
+  // ──────────────────────────────────────────────────────────
+  // Key: Leg curl/ext/press, Calf raise, Bench press, Bent-over row,
+  //      Lateral raise, Shoulder shrug, Bent arm fly, Triceps ext,
+  //      Biceps curl, Trunk curl
+  {
+    id: 16,
+    name: "Program 16 — W: Classic Compound",
+    sessions: {
+      C: {
+        primary:     { chestIso: 10,  chestComp: 14 },
+        accessories: { back: 48, triceps: 147, biceps: 132, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 29,  backComp: 25  },
+        accessories: { chest: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 146, triComp: 150 },
+        accessories: { chest: 6, back: 34, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 139  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 123, coreComp: 99  },
+        accessories: { chest: 110, back: 60, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [10, 14, 25, 146, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("F","biComp","rest_pause"),               t("G","coreIso","1_quarter_reps")        ],
+      week2: [ t("C","chestIso","drop_set"),               t("D","backIso","super_slow")            ],
+      week3: [ t("E","triComp","mechanical_drop_set"),     t("F","biIso","negative_accentuated")    ],
+      week4: [ t("G","coreComp","pre_exhaustion"),         t("C","chestComp","forced_reps")         ],
+      week5: [ t("D","backComp","isometric_hold"),         t("E","triIso","partials")               ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 17 — V: Posterior Chain Focus
+  // ──────────────────────────────────────────────────────────
+  // Key: Leg extension, Stiff-leg deadlift, Calf raise, Bent arm
+  //      pullover, Incline bench press, Pulldown, Bent-over raise,
+  //      Triceps extension, Negative chin-up, Negative dip,
+  //      Side bend, Reverse trunk curl
+  {
+    id: 17,
+    name: "Program 17 — V: Posterior Chain",
+    sessions: {
+      C: {
+        primary:     { chestIso: 13,  chestComp: 3  },
+        accessories: { back: 34, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 60 }
+      },
+      D: {
+        primary:     { backIso: 29,  backComp: 119 },
+        accessories: { chest: 39, triceps: 144, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 61 }
+      },
+      E: {
+        primary:     { triIso: 148, triComp: 150 },
+        accessories: { chest: 31, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 132,  biComp: 142  },
+        accessories: { chest: 8, back: 22, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 64 }
+      },
+      G: {
+        primary:     { coreIso: 109, coreComp: 97  },
+        accessories: { chest: 2, back: 37, triceps: 145, biceps: 136, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [13, 3, 29, 148, 132, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("G","coreComp","1_quarter_reps"),         t("C","chestIso","super_slow")           ],
+      week2: [ t("D","backIso","isometric_hold"),          t("E","triIso","drop_set")               ],
+      week3: [ t("F","biIso","partials"),                  t("G","coreIso","rest_pause")            ],
+      week4: [ t("C","chestComp","negative_accentuated"),  t("D","backComp","mechanical_drop_set")  ],
+      week5: [ t("E","triComp","pre_exhaustion"),          t("F","biComp","forced_reps")            ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 18 — U: Balanced Full-Body
+  // ──────────────────────────────────────────────────────────
+  // Key: Squat, Calf raise (standing + seated), Leg extension/curl,
+  //      Prone back raise / Stiff-leg deadlift, Pulldown, Front raise,
+  //      Lateral raise / Bent arm fly, Biceps curl / Triceps ext,
+  //      Bench press / Bent-over row, Four-way neck
+  {
+    id: 18,
+    name: "Program 18 — U: Balanced Full-Body",
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
+    sessions: {
+      C: {
+        primary:     { chestIso: 11,  chestComp: 19 },
+        accessories: { back: 47, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 28,  backComp: 119 },
+        accessories: { chest: 48, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 145, triComp: 150 },
+        accessories: { chest: 6, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 134  },
+        accessories: { chest: 23, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 110, coreComp: 97  },
+        accessories: { chest: 121, back: 37, triceps: 146, biceps: 135, forearms: 165, neck: 184, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [11, 19, 28, 145, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("C","chestIso","isometric_hold"),         t("D","backComp","1_quarter_reps")       ],
+      week2: [ t("E","triComp","super_slow"),              t("F","biIso","partials")                ],
+      week3: [ t("G","coreIso","drop_set"),                t("C","chestComp","rest_pause")          ],
+      week4: [ t("D","backIso","pre_exhaustion"),          t("E","triIso","negative_accentuated")   ],
+      week5: [ t("F","biComp","mechanical_drop_set"),      t("G","coreComp","forced_reps")          ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 19 — T: Negative Emphasis
+  // ──────────────────────────────────────────────────────────
+  // Key: Leg extension, Leg press, Calf raise, Stiff-leg deadlift,
+  //      Straight arm pullover, Bench press / Overhead press,
+  //      Negative chin-up, Negative dip
+  {
+    id: 19,
+    name: "Program 19 — T: Negative Emphasis",
+    sessions: {
+      C: {
+        primary:     { chestIso: 13,  chestComp: 2  },
+        accessories: { back: 34, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 30,  backComp: 31  },
+        accessories: { chest: 43, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 144, triComp: 150 },
+        accessories: { chest: 6, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 142  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 119, coreComp: 97  },
+        accessories: { chest: 110, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [13, 2, 30, 144, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("D","backIso","partials"),                t("E","triComp","1_quarter_reps")        ],
+      week2: [ t("F","biComp","super_slow"),               t("G","coreComp","negative_accentuated") ],
+      week3: [ t("C","chestComp","isometric_hold"),        t("D","backComp","drop_set")             ],
+      week4: [ t("E","triIso","mechanical_drop_set"),      t("F","biIso","rest_pause")              ],
+      week5: [ t("G","coreIso","pre_exhaustion"),          t("C","chestIso","forced_reps")          ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 20 — S: Superset Pairs
+  // ──────────────────────────────────────────────────────────
+  // Key: Leg curl / Leg extension, Squat, Calf raise,
+  //      Bench press / Negative dip, Negative chin-up / Biceps curl,
+  //      Lateral raise / Bent arm fly, Overhead press / Triceps ext,
+  //      Trunk curl / Reverse trunk curl
+  {
+    id: 20,
+    name: "Program 20 — S: Superset Pairs",
+    sessions: {
+      C: {
+        primary:     { chestIso: 9,   chestComp: 19 },
+        accessories: { back: 48, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 28,  backComp: 31  },
+        accessories: { chest: 43, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 61 }
+      },
+      E: {
+        primary:     { triIso: 145, triComp: 150 },
+        accessories: { chest: 6, back: 34, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 134  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 121, coreComp: 97  },
+        accessories: { chest: 110, back: 60, triceps: 146, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [9, 19, 28, 145, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("E","triIso","super_slow"),               t("F","biComp","1_quarter_reps")         ],
+      week2: [ t("G","coreComp","drop_set"),               t("C","chestComp","isometric_hold")      ],
+      week3: [ t("D","backIso","negative_accentuated"),    t("E","triComp","partials")              ],
+      week4: [ t("F","biIso","rest_pause"),                t("G","coreIso","mechanical_drop_set")   ],
+      week5: [ t("C","chestIso","pre_exhaustion"),         t("D","backComp","forced_reps")          ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 21 — R: Strength Essentials
+  // ──────────────────────────────────────────────────────────
+  // Key: Stiff-leg deadlift, Leg extension, Leg curl,
+  //      Straight arm pullover, Biceps curl, Triceps pushdown,
+  //      Reverse curl
+  {
+    id: 21,
+    name: "Program 21 — R: Strength Essentials",
+    sessions: {
+      C: {
+        primary:     { chestIso: 13,  chestComp: 5  },
+        accessories: { back: 34, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 60 }
+      },
+      D: {
+        primary:     { backIso: 29,  backComp: 119 },
+        accessories: { chest: 3, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 144, triComp: 149 },
+        accessories: { chest: 6, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 68 }
+      },
+      F: {
+        primary:     { biIso: 129,  biComp: 134  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 121, coreComp: 110 },
+        accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [13, 5, 29, 144, 129, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("F","biIso","1_quarter_reps"),            t("G","coreComp","super_slow")           ],
+      week2: [ t("C","chestComp","partials"),              t("D","backIso","drop_set")              ],
+      week3: [ t("E","triIso","rest_pause"),               t("F","biComp","isometric_hold")         ],
+      week4: [ t("G","coreIso","negative_accentuated"),    t("C","chestIso","mechanical_drop_set")  ],
+      week5: [ t("D","backComp","pre_exhaustion"),         t("E","triComp","forced_reps")           ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 22 — Q: Minimalist Strength
+  // ──────────────────────────────────────────────────────────
+  // Key: Squat, Calf raise, Lateral raise, Negative chin-up,
+  //      Negative dip, Shoulder shrug, Trunk curl
+  {
+    id: 22,
+    name: "Program 22 — Q: Minimalist Strength",
+    sessions: {
+      C: {
+        primary:     { chestIso: 12,  chestComp: 1  },
+        accessories: { back: 48, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+      },
+      D: {
+        primary:     { backIso: 28,  backComp: 31  },
+        accessories: { chest: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+      },
+      E: {
+        primary:     { triIso: 144, triComp: 150 },
+        accessories: { chest: 6, back: 34, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+      },
+      F: {
+        primary:     { biIso: 132,  biComp: 139  },
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+      },
+      G: {
+        primary:     { coreIso: 60,  coreComp: 97  },
+        accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+      },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [12, 1, 28, 144, 132, 157, 177, 167]
+    },
+    techniques: {
+      week1: [ t("G","coreIso","1_quarter_reps"),          t("C","chestIso","super_slow")           ],
+      week2: [ t("D","backComp","isometric_hold"),         t("E","triIso","drop_set")               ],
+      week3: [ t("F","biIso","negative_accentuated"),      t("G","coreComp","rest_pause")           ],
+      week4: [ t("C","chestComp","forced_reps"),           t("D","backIso","mechanical_drop_set")   ],
+      week5: [ t("E","triComp","partials"),                t("F","biComp","pre_exhaustion")         ],
+    },
+  },
+
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -546,6 +1013,11 @@ export const SESSION_FOCUS = {
   F:{label:"BICEPS DAY",  color:"#f97316"},
   G:{label:"CORE DAY",    color:"#ec4899"},
 };
+export function getSessionFocus(prog, sKey) {
+  return (prog && prog.sessionFocus && prog.sessionFocus[sKey])
+    ? prog.sessionFocus[sKey]
+    : (SESSION_FOCUS[sKey] || {label:sKey, color:"#00d4ff"});
+}
 
 export const SLOT_LABELS = {
   chestIso:"Chest ISO", chestComp:"Chest CMP",
