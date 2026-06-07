@@ -1015,6 +1015,13 @@ export const PROGRAMS = [
   {
     id: 23,
     name: "Program 23 — Big Five (Body by Science)",
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
     sessions: {
       C: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
       D: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
@@ -1043,6 +1050,13 @@ export const PROGRAMS = [
   {
     id: 24,
     name: "Program 24 — 30-10-30 (Ellington Darden)",
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#a78bfa"},
+      D:{label:"FULL BODY", color:"#a78bfa"},
+      E:{label:"FULL BODY", color:"#a78bfa"},
+      F:{label:"FULL BODY", color:"#a78bfa"},
+      G:{label:"FULL BODY", color:"#a78bfa"},
+    },
     sessions: {
       C: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
       D: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
