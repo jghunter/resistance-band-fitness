@@ -1008,6 +1008,14 @@ export default function App() {
       if (u) {
         setLogLoading(true)
         try {
+          // Backfill: push any localStorage entries to Firestore that aren't there yet
+          const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
+          if (local.length > 0) {
+            const existing = await loadLogFromFirestore(u.uid)
+            const existingKeys = new Set(existing.map(e => `${e.date}_${e.session}`))
+            const toSync = local.filter(e => !existingKeys.has(`${e.date}_${e.session}`))
+            await Promise.all(toSync.map(e => saveEntryToFirestore(u.uid, e)))
+          }
           const entries = await loadLogFromFirestore(u.uid)
           setLog(entries)
         } catch (e) { console.error('Error loading log:', e) }
