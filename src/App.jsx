@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, setDoc, getDocs, query, orderBy } from 'firebase/firestore'
 import { db, auth, googleProvider } from './firebase'
 import {
@@ -66,11 +66,78 @@ async function saveEntryToFirestore(uid, entry) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VIDEO HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveVideo(id) {
+  const v = VIDEOS[id]
+  if (!v) return null
+  if (typeof v === 'string') return { url:v, embedUrl:null }
+  const m = v.url.match(/[?&]v=([^&]+)/)
+  if (!m) return { url:v.url, embedUrl:null }
+  const vid = m[1]
+  let p = 'autoplay=1&rel=0'
+  if (v.start != null) p += '&start=' + v.start
+  if (v.end   != null) p += '&end='   + v.end
+  return {
+    url:      v.start != null ? v.url + '&t=' + v.start + 's' : v.url,
+    embedUrl: 'https://www.youtube.com/embed/' + vid + '?' + p,
+    label:    v.label ?? null,
+  }
+}
+
+function VideoModal({ embedUrl, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',
+      display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,
+    }}>
+      <div onClick={e=>e.stopPropagation()} style={{position:'relative',width:'min(600px,92vw)'}}>
+        <button onClick={onClose} style={{
+          position:'absolute',top:-30,right:0,background:'none',border:'none',
+          color:'#fff',fontSize:13,cursor:'pointer',fontFamily:'monospace',
+          letterSpacing:'0.1em',opacity:0.8,
+        }}>✕ CLOSE</button>
+        <div style={{position:'relative',paddingBottom:'56.25%',height:0}}>
+          <iframe src={embedUrl}
+            style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',
+              border:'none',borderRadius:6}}
+            allow="autoplay; encrypted-media"
+            allowFullScreen/>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WatchDemoButton({ id }) {
+  const video = resolveVideo(id)
+  const [open, setOpen] = useState(false)
+  const base = {fontSize:10,fontFamily:'monospace',letterSpacing:'0.08em'}
+  if (!video)
+    return <span style={{...base,color:C.dimGray}}>— VIDEO PENDING —</span>
+  if (!video.embedUrl)
+    return <a href={video.url} target="_blank" rel="noreferrer"
+             style={{...base,color:C.green,textDecoration:'none'}}>▶ WATCH DEMO</a>
+  return (
+    <>
+      <button onClick={()=>setOpen(true)}
+        style={{...base,color:C.green,background:'none',border:'none',
+          cursor:'pointer',padding:0,textAlign:'left'}}>▶ WATCH DEMO</button>
+      {open && <VideoModal embedUrl={video.embedUrl} onClose={()=>setOpen(false)}/>}
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXERCISE CARD (read-only, for Programs/Library tabs)
 // ─────────────────────────────────────────────────────────────────────────────
 function ExCard({ id, role, techKey }) {
   const name  = EXERCISE_NAMES[id] ?? `Exercise #${id}`
-  const url   = VIDEOS[id] ?? null
   const group = exGroup(id)
   const tech  = techKey ? TECHNIQUES[techKey]?.split(' — ')[0] : null
   return (
@@ -93,12 +160,7 @@ function ExCard({ id, role, techKey }) {
           ⚡ {tech}
         </div>
       )}
-      {url
-        ? <a href={url} target="_blank" rel="noreferrer"
-            style={{fontSize:10,fontFamily:'monospace',color:C.green,
-              textDecoration:'none',letterSpacing:'0.08em'}}>▶ WATCH DEMO</a>
-        : <span style={{fontSize:10,fontFamily:'monospace',color:C.dimGray}}>— VIDEO PENDING —</span>
-      }
+      <WatchDemoButton id={id}/>
     </div>
   )
 }
@@ -267,7 +329,6 @@ function BandPicker({ selected, onChange }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
-  const url   = VIDEOS[id] || null
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
 
@@ -297,11 +358,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           background:`${C.amber}18`,border:`1px solid ${C.amber}44`,
           borderRadius:4,padding:'2px 6px'}}>⚡ {tech}</div>
       )}
-      {url
-        ? <a href={url} target="_blank" rel="noreferrer"
-            style={{fontSize:10,fontFamily:'monospace',color:C.green,textDecoration:'none'}}>▶ WATCH DEMO</a>
-        : <span style={{fontSize:10,fontFamily:'monospace',color:C.dimGray}}>VIDEO PENDING</span>
-      }
+      <WatchDemoButton id={id}/>
       {prevSets && prevSets.length > 0 && (
         <div style={{
           fontFamily:'monospace',fontSize:10,lineHeight:1.6,
@@ -579,11 +636,7 @@ function LibraryTab() {
               <span style={pill(ex.group.color)}>{ex.group.label}</span>
             </div>
             <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4,flex:1}}>{ex.name}</div>
-            {ex.url
-              ? <a href={ex.url} target="_blank" rel="noreferrer"
-                  style={{fontSize:10,fontFamily:'monospace',color:C.green,textDecoration:'none',letterSpacing:'0.08em'}}>▶ WATCH DEMO</a>
-              : <span style={{fontSize:10,fontFamily:'monospace',color:C.dimGray}}>— VIDEO PENDING —</span>
-            }
+            <WatchDemoButton id={ex.id}/>
           </div>
         ))}
       </div>
@@ -948,7 +1001,14 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
 
+  // Detect iOS standalone PWA — signInWithPopup is broken there
+  const isIOSPWA = typeof window !== 'undefined' && window.navigator.standalone === true
+
   useEffect(() => {
+    // On iOS PWA, pick up the redirect result after returning from Google sign-in
+    if (isIOSPWA) {
+      getRedirectResult(auth).catch(e => console.error('Redirect result error:', e))
+    }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
       setAuthLoading(false)
@@ -970,8 +1030,14 @@ export default function App() {
   }, [])
 
   async function handleSignIn() {
-    try { await signInWithPopup(auth, googleProvider) }
-    catch (e) { console.error(e) }
+    try {
+      if (isIOSPWA) {
+        // signInWithPopup is broken in iOS standalone PWA mode — use redirect instead
+        await signInWithRedirect(auth, googleProvider)
+      } else {
+        await signInWithPopup(auth, googleProvider)
+      }
+    } catch (e) { console.error(e) }
   }
 
   async function handleSignOut() {

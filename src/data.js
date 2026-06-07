@@ -113,10 +113,23 @@ export const TECHNIQUES = {
   "isometric_hold":       "Isometric Hold — 3s squeeze at peak each rep",
   "pre_exhaustion":       "Pre-Exhaustion — superset isolation into compound",
   "mechanical_drop_set":  "Mechanical Drop Set — shift to easier grip/stance mid-set",
+  "m_set":               "M-Set — 5 lengthened partials: back off ⅕→⅖→⅗→⅘ from full ROM each returning to full ROM; 2s up / 5–6s down per partial",
+  "30_10_30":            "30-10-30 — 30s super-slow negative, 10 full reps, 30s super-slow negative",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VIDEO URLS
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// VIDEOS — URL format: plain string  OR  {url, start, end (in seconds), label}
+//   Plain string:  opens YouTube at start (or at 0 if no timestamp yet)
+//   Object:        "▶ WATCH DEMO" opens an embedded modal starting at `start`,
+//                  ending at `end`, showing only the relevant exercise section.
+//
+//   Example:  149: {url:"https://www.youtube.com/watch?v=ABCD1234", start:45, end:90}
+//
+//   To add timestamps: run the /watch skill on the video URL locally, note the
+//   chapter start/end for this exercise, then update to the object format.
 // ─────────────────────────────────────────────────────────────────────────────
 export const VIDEOS = {
   1:"https://www.youtube.com/watch?v=6-86jEAXA08",
@@ -267,14 +280,8 @@ export const VIDEOS = {
   146:"https://www.youtube.com/watch?v=a5rUdCeTtSE",
   147:"https://www.youtube.com/watch?v=RGqznhXhtJE",
   148:"https://www.youtube.com/watch?v=uutP0eBt51I",
-  149:"https://www.youtube.com/watch?v=mIWCcAPizkw",
-  150:"https://www.youtube.com/watch?v=Jvqe676qhmA",
   151:"https://www.youtube.com/watch?v=Y3CDzx-oj3k",
-  152:"https://www.youtube.com/watch?v=mIWCcAPizkw",
   153:"https://www.youtube.com/watch?v=8cTohcawjCM",
-  154:"https://www.youtube.com/watch?v=Jvqe676qhmA",
-  155:"https://www.youtube.com/watch?v=Jvqe676qhmA",
-  156:"https://www.youtube.com/watch?v=mIWCcAPizkw",
   157:"https://www.youtube.com/watch?v=Z64A_Q2aG3U",
   158:"https://www.youtube.com/watch?v=xyHLejrielo",
   159:"https://www.youtube.com/watch?v=5YNRp21YXw0",
@@ -1001,6 +1008,61 @@ export const PROGRAMS = [
     },
   },
 
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 23 — Big Five (Body by Science)
+  // Full-body HIT: Chest Press, Lat Pulldown, Bent-Over Row,
+  // Band Squat, Overhead Press — all sessions identical.
+  {
+    id: 23,
+    name: "Program 23 — Big Five (Body by Science)",
+    sessions: {
+      C: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
+      D: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
+      E: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
+      F: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
+      G: { primary:{chestComp:1,backComp:28}, accessories:{back:23,legComp:97,shoulderComp:43} },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [1, 28, 23, 97, 43]
+    },
+    techniques: {
+      week1: [ t("C","chestComp","m_set"),               t("D","backComp","super_slow")           ],
+      week2: [ t("E","legComp","1_quarter_reps"),         t("F","back","drop_set")                ],
+      week3: [ t("G","shoulderComp","rest_pause"),        t("C","backComp","negative_accentuated") ],
+      week4: [ t("D","chestComp","isometric_hold"),       t("E","back","mechanical_drop_set")     ],
+      week5: [ t("F","legComp","pre_exhaustion"),         t("G","shoulderComp","forced_reps")     ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 24 — 30-10-30 (Ellington Darden)
+  // Full-body HIT: Band Squat, Front Squat, Chest Press,
+  // Overhead Press, Bent-Over Row, Biceps Curl — all sessions identical.
+  // Protocol: 30s super-slow negative → 10 full reps → 30s super-slow negative.
+  {
+    id: 24,
+    name: "Program 24 — 30-10-30 (Ellington Darden)",
+    sessions: {
+      C: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+      D: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+      E: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+      F: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+      G: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [1, 23, 97, 98, 43, 129]
+    },
+    techniques: {
+      week1: [ t("C","chestComp","30_10_30"),    t("D","backComp","30_10_30")      ],
+      week2: [ t("E","legComp","30_10_30"),       t("F","legIso","30_10_30")       ],
+      week3: [ t("G","shoulderComp","30_10_30"),  t("C","biceps","30_10_30")       ],
+      week4: [ t("D","chestComp","30_10_30"),     t("E","backComp","30_10_30")     ],
+      week5: [ t("F","legComp","30_10_30"),       t("G","shoulderComp","30_10_30") ],
+    },
+  },
+
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1029,6 +1091,7 @@ export const SLOT_LABELS = {
   forearms:"Forearms", neck:"Neck", calves:"Calves",
   coreFront:"Core Front", coreBack:"Core Back",
   coreSides:"Core Sides", core:"Core",
+  legComp:"Legs CMP", legIso:"Legs ISO", shoulderComp:"Shoulders CMP",
 };
 
 export const exGroup = (id) => {

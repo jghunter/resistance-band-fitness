@@ -21,4 +21,13 @@ export default defineConfig({
         description: 'Resistance band workout tracker',
         theme_color: '#050810',
         background_color: '#050810',
-        display: 'standal
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+        ],
+      },
+    }),
+  ],
+})
