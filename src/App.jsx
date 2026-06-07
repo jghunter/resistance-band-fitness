@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, setDoc, getDocs, query, orderBy } from 'firebase/firestore'
 import { db, auth, googleProvider } from './firebase'
 import {
@@ -1001,14 +1001,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
 
-  // Detect iOS standalone PWA — signInWithPopup is broken there
-  const isIOSPWA = typeof window !== 'undefined' && window.navigator.standalone === true
-
   useEffect(() => {
-    // On iOS PWA, pick up the redirect result after returning from Google sign-in
-    if (isIOSPWA) {
-      getRedirectResult(auth).catch(e => console.error('Redirect result error:', e))
-    }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
       setAuthLoading(false)
@@ -1031,12 +1024,7 @@ export default function App() {
 
   async function handleSignIn() {
     try {
-      if (isIOSPWA) {
-        // signInWithPopup is broken in iOS standalone PWA mode — use redirect instead
-        await signInWithRedirect(auth, googleProvider)
-      } else {
-        await signInWithPopup(auth, googleProvider)
-      }
+      await signInWithPopup(auth, googleProvider)
     } catch (e) { console.error(e) }
   }
 
