@@ -490,7 +490,10 @@ function ProgramsTab() {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={widget}>
-        <span style={lbl}>SELECT PROGRAM — 12 × 6-WEEK BLOCKS (~1 YEAR)</span>
+        <span style={lbl}>BROWSE PROGRAMS — 24 × 6-WEEK BLOCKS (~3 YEARS)</span>
+        <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,display:'block',marginBottom:6}}>
+          Reference only — to change your active program, use Today → SCHEDULE SETTINGS
+        </span>
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
           {PROGRAMS.map((p,i) => (
             <button key={p.id} style={btn(i===pi)}
@@ -1133,12 +1136,4 @@ export default function App() {
             Syncing workouts from cloud…
           </div>
         )}
-        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/>}
-        {tab==='history'  && <HistoryTab log={log}/>}
-        {tab==='programs' && <ProgramsTab/>}
-        {tab==='library'  && <LibraryTab/>}
-        {tab==='gear'     && <GearTab/>}
-      </div>
-    </div>
-  )
-}
+        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/

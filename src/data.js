@@ -1268,7 +1268,7 @@ export const GEAR = [
   { brand:"Clench", items:[
     {name:"Carbon Pro Bar",qty:1,status:"owned"},{name:"Handles",qty:2,status:"owned"},
     {name:"Heavy Duty Anchors",qty:2,status:"owned"},{name:"Footplate",qty:1,status:"owned"},
-    {name:"Carbon EZ Bar",qty:1,status:"preorder",note:"In transit"},
+    {name:"Carbon EZ Bar",qty:1,status:"owned",note:""},
   ]},
   { brand:"Serious Steel", items:[
     {name:"Acacia Training Platform",qty:1,status:"owned"},{name:"Wrist Wraps",qty:2,status:"owned",note:"pairs"},
@@ -1325,3 +1325,4 @@ export function calcToday(startStr, sched, pi) {
 }
 
 export const PROG_REPS = 12;
+             
