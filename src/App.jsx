@@ -7,6 +7,7 @@ import {
   SESSION_FOCUS, getSessionFocus, SLOT_LABELS, exGroup, ALL_GROUPS,
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
   calcToday, PROG_REPS,
+  getTechMap, getWeekTechniques,
 } from './data'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,12 +173,7 @@ function SessionView({ prog, sKey, week }) {
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = week === 6
-  const techMap  = {}
-  if (!isDeload) {
-    (prog.techniques[`week${week}`] || []).forEach(({session:s,slot,technique}) => {
-      if (s === sKey) techMap[slot] = technique
-    })
-  }
+  const techMap  = getTechMap(prog, week, sKey)
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
@@ -416,12 +412,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = week === 6
-  const techMap  = {}
-  if (!isDeload) {
-    (prog.techniques[`week${week}`]||[]).forEach(t => {
-      if (t.session === sKey) techMap[t.slot] = t.technique
-    })
-  }
+  const techMap  = getTechMap(prog, week, sKey)
 
   function getOrInit(id) { return exercises[id] || [{reps:0,bands:[]}] }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
@@ -432,10 +423,18 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
       .sort((a,b) => b.date.localeCompare(a.date))
     return found[0] ? found[0].exercises[exerciseId] : null
   }
+  // Progression flag source: skip week-6 deload entries (junk data) and drop sets
+  function getPrevWorkingSets(exerciseId) {
+    const found = log
+      .filter(e => e.exercises && e.exercises[exerciseId] && e.date < todayDate && e.week !== 6)
+      .sort((a,b) => b.date.localeCompare(a.date))
+    return found[0] ? found[0].exercises[exerciseId] : null
+  }
 
   function renderCard(slot, id, role) {
     const prev     = getPrevSets(String(id))
-    const progFlag = prev ? prev.every(s => (s.reps||0) >= PROG_REPS) : false
+    const working  = (getPrevWorkingSets(String(id)) || []).filter(s => !s.drop)
+    const progFlag = working.length > 0 && working.every(s => (s.reps||0) >= PROG_REPS)
     return (
       <LoggedExCard key={slot} id={id} role={role}
         techKey={techMap[slot]||null}
@@ -521,8 +520,8 @@ function ProgramsTab() {
                   Recovery week — ≤50% intensity — no techniques
                 </span>
               : <>
-                  <span style={lbl}>WEEK {week} TECHNIQUES</span>
-                  {(prog.techniques[`week${week}`]||[]).map((t,i) => (
+                  <span style={lbl}>WEEK {week} TECHNIQUES (AS SCHEDULED)</span>
+                  {getWeekTechniques(prog, week).map((t,i) => (
                     <div key={i} style={{fontFamily:'monospace',fontSize:11,color:C.amber,marginBottom:2}}>
                       ⚡ {t.session}-{SLOT_LABELS[t.slot]??t.slot}:{' '}
                       <span style={{color:C.text}}>{TECHNIQUES[t.technique]?.split(' — ')[0]}</span>
@@ -1136,4 +1135,12 @@ export default function App() {
             Syncing workouts from cloud…
           </div>
         )}
-        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/
+        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/>}
+        {tab==='history'  && <HistoryTab log={log}/>}
+        {tab==='programs' && <ProgramsTab/>}
+        {tab==='library'  && <LibraryTab/>}
+        {tab==='gear'     && <GearTab/>}
+      </div>
+    </div>
+  )
+}

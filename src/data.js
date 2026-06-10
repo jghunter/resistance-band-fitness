@@ -102,19 +102,20 @@ export const EXERCISE_NAMES = {
 // ─────────────────────────────────────────────────────────────────────────────
 // HIGH-INTENSITY TECHNIQUES
 // ─────────────────────────────────────────────────────────────────────────────
+// MMF = momentary muscle failure: the point where you can't do another clean rep.
 export const TECHNIQUES = {
-  "1_quarter_reps":       "1¼ Reps — full rep + quarter rep at peak/sticking point",
-  "super_slow":           "Super Slow — 5s concentric / 5s eccentric tempo",
-  "negative_accentuated": "Negative Accentuated — explosive up, 6–8s down",
-  "forced_reps":          "Forced Reps — 1–2 extra reps past failure",
-  "drop_set":             "Drop Set — drop to lighter band and continue to failure",
-  "rest_pause":           "Rest-Pause — 12s pause then squeeze out 3–4 more reps",
-  "partials":             "Partials — 6–8 partial reps in strongest range",
-  "isometric_hold":       "Isometric Hold — 3s squeeze at peak each rep",
-  "pre_exhaustion":       "Pre-Exhaustion — superset isolation into compound",
-  "mechanical_drop_set":  "Mechanical Drop Set — shift to easier grip/stance mid-set",
-  "m_set":               "M-Set — 5 lengthened partials: back off ⅕→⅖→⅗→⅘ from full ROM each returning to full ROM; 2s up / 5–6s down per partial",
-  "30_10_30":            "30-10-30 — 30s super-slow negative, 10 full reps, 30s super-slow negative",
+  "1_quarter_reps":       "1¼ Reps — do one full rep using the full range of motion, then add a quarter rep at the top (peak contraction), then lower slowly back to the start. The full rep plus the quarter rep counts as just 1 rep.",
+  "super_slow":           "Super Slow — take 5 seconds to lift (concentric, the muscle-shortening phase) and 5 seconds to lower (eccentric, the muscle-lengthening phase). The lowering phase is often extended to 10 seconds.",
+  "negative_accentuated": "Negative Accentuated — lift fast (explode up), then lower slowly, taking 6–8 seconds on the way down (the eccentric phase).",
+  "forced_reps":          "Forced Reps — after reaching failure, get 1–2 extra reps using a little momentum, help from a spotter, or assistance from your non-working arm or leg.",
+  "drop_set":             "Drop Set — after reaching momentary muscle failure (MMF: you can't do another clean rep), quickly switch to a lighter band and keep going until you hit failure again.",
+  "rest_pause":           "Rest-Pause — after hitting failure, pause 10–12 seconds, then squeeze out 3–4 more reps.",
+  "partials":             "Partials — after hitting MMF at full range of motion, keep going with shorter reps until you hit MMF at a smaller range. You can step down through several ranges: full ROM, then 3/4, then 1/2, then 1/4.",
+  "isometric_hold":       "Isometric Hold — hold and squeeze for 3–4 seconds at the peak of every rep.",
+  "pre_exhaustion":       "Pre-Exhaustion — do an isolation exercise, then immediately do a compound exercise for the same muscle. Examples: flys then bench press · leg extensions then squats · pullovers then rows.",
+  "mechanical_drop_set":  "Mechanical Drop Set — after reaching MMF, change your body position or switch to an easier variation of the movement and keep going. Examples: flys then presses (isolation to compound) · incline push-ups then regular push-ups (hard angle to easier angle) · wide grip then a closer, more natural grip.",
+  "m_set":                "M-Set — go to full range of motion, ease back 1/5 of the way, return to full ROM. Ease back 2/5, return to full ROM. Then 3/5 and return, then 4/5 and return, then ease back all the way to the start. All of that together is 1 M-Set. Tempo: 2 seconds up, 5–6 seconds down on each partial.",
+  "30_10_30":             "30-10-30 — 12 reps total: the FIRST rep is a 30-second super-slow negative (lowering), then 10 normal full reps, then the LAST rep is another 30-second super-slow negative.",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -351,11 +352,11 @@ const t = (session, slot, technique) => ({ session, slot, technique });
 export const PROGRAMS = [
   { id:1, name:"Foundation",
     sessions:{
-      C:{primary:{chestIso:9,chestComp:1},accessories:{back:34,triceps:147,biceps:131,forearms:157,neck:177,calves:167,coreFront:59}},
-      D:{primary:{backIso:28,backComp:21},accessories:{chest:6,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreBack:42}},
+      C:{primary:{chestIso:9,chestComp:1},accessories:{back:34,triceps:147,biceps:131,forearms:157,neck:177,calves:167,coreFront:59, glutes: 78}},
+      D:{primary:{backIso:28,backComp:21},accessories:{chest:6,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreBack:42, hams: 117}},
       E:{primary:{triIso:144,triComp:149},accessories:{chest:3,back:33,biceps:130,forearms:163,neck:179,calves:169,coreSides:72}},
-      F:{primary:{biIso:129,biComp:134},accessories:{chest:11,back:25,triceps:152,forearms:164,neck:180,calves:170,core:63}},
-      G:{primary:{coreIso:62,coreComp:64},accessories:{chest:2,back:39,triceps:145,biceps:136,forearms:165,neck:181,calves:171}},
+      F:{primary:{biIso:129,biComp:134},accessories:{chest:11,back:25,triceps:152,forearms:164,neck:180,calves:170,core:63, shoulders: 43}},
+      G:{primary:{coreIso:62,coreComp:64},accessories:{chest:2,back:39,triceps:145,biceps:136,forearms:165,neck:181,calves:171, quads: 97}},
     },
     techniques:{
       week1:[t("C","chestComp","1_quarter_reps"),t("D","backComp","negative_accentuated")],
@@ -367,11 +368,11 @@ export const PROGRAMS = [
   },
   { id:2, name:"Low-to-High",
     sessions:{
-      C:{primary:{chestIso:10,chestComp:2},accessories:{back:33,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreFront:60}},
-      D:{primary:{backIso:29,backComp:22},accessories:{chest:7,triceps:151,biceps:130,forearms:159,neck:179,calves:169,coreBack:71}},
+      C:{primary:{chestIso:10,chestComp:2},accessories:{back:33,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreFront:60, glutes: 79}},
+      D:{primary:{backIso:29,backComp:22},accessories:{chest:7,triceps:151,biceps:130,forearms:159,neck:179,calves:169,coreBack:71, hams: 118}},
       E:{primary:{triIso:145,triComp:150},accessories:{chest:4,back:34,biceps:132,forearms:164,neck:180,calves:170,coreSides:66}},
-      F:{primary:{biIso:130,biComp:135},accessories:{chest:12,back:26,triceps:154,forearms:165,neck:181,calves:171,core:65}},
-      G:{primary:{coreIso:61,coreComp:64},accessories:{chest:5,back:40,triceps:146,biceps:137,forearms:166,neck:182,calves:172}},
+      F:{primary:{biIso:130,biComp:135},accessories:{chest:12,back:26,triceps:154,forearms:165,neck:181,calves:171,core:65, shoulders: 44}},
+      G:{primary:{coreIso:61,coreComp:64},accessories:{chest:5,back:40,triceps:146,biceps:137,forearms:166,neck:182,calves:172, quads: 98}},
     },
     techniques:{
       week1:[t("C","chestIso","super_slow"),t("D","backComp","drop_set")],
@@ -383,11 +384,11 @@ export const PROGRAMS = [
   },
   { id:3, name:"High-to-Low",
     sessions:{
-      C:{primary:{chestIso:11,chestComp:3},accessories:{back:22,triceps:151,biceps:132,forearms:159,neck:179,calves:169,coreFront:61}},
-      D:{primary:{backIso:30,backComp:23},accessories:{chest:5,triceps:152,biceps:134,forearms:160,neck:180,calves:170,coreBack:75}},
+      C:{primary:{chestIso:11,chestComp:3},accessories:{back:22,triceps:151,biceps:132,forearms:159,neck:179,calves:169,coreFront:61, glutes: 80}},
+      D:{primary:{backIso:30,backComp:23},accessories:{chest:5,triceps:152,biceps:134,forearms:160,neck:180,calves:170,coreBack:75, hams: 119}},
       E:{primary:{triIso:146,triComp:153},accessories:{chest:8,back:35,biceps:129,forearms:161,neck:181,calves:171,coreSides:67}},
-      F:{primary:{biIso:131,biComp:138},accessories:{chest:13,back:27,triceps:155,forearms:162,neck:182,calves:172,core:69}},
-      G:{primary:{coreIso:75,coreComp:65},accessories:{chest:6,back:41,triceps:149,biceps:138,forearms:157,neck:183,calves:173}},
+      F:{primary:{biIso:131,biComp:138},accessories:{chest:13,back:27,triceps:155,forearms:162,neck:182,calves:172,core:69, shoulders: 45}},
+      G:{primary:{coreIso:75,coreComp:65},accessories:{chest:6,back:41,triceps:149,biceps:138,forearms:157,neck:183,calves:173, quads: 99}},
     },
     techniques:{
       week1:[t("D","backIso","isometric_hold"),t("E","triComp","1_quarter_reps")],
@@ -399,11 +400,11 @@ export const PROGRAMS = [
   },
   { id:4, name:"Single-Arm Focus",
     sessions:{
-      C:{primary:{chestIso:12,chestComp:4},accessories:{back:21,triceps:152,biceps:133,forearms:160,neck:180,calves:170,coreFront:62}},
-      D:{primary:{backIso:33,backComp:24},accessories:{chest:8,triceps:154,biceps:132,forearms:161,neck:181,calves:171,coreBack:69}},
+      C:{primary:{chestIso:12,chestComp:4},accessories:{back:21,triceps:152,biceps:133,forearms:160,neck:180,calves:170,coreFront:62, glutes: 81}},
+      D:{primary:{backIso:33,backComp:24},accessories:{chest:8,triceps:154,biceps:132,forearms:161,neck:181,calves:171,coreBack:69, hams: 120}},
       E:{primary:{triIso:147,triComp:149},accessories:{chest:6,back:28,biceps:135,forearms:162,neck:182,calves:172,coreSides:68}},
-      F:{primary:{biIso:132,biComp:139},accessories:{chest:14,back:23,triceps:156,forearms:163,neck:183,calves:173,core:70}},
-      G:{primary:{coreIso:59,coreComp:66},accessories:{chest:9,back:29,triceps:150,biceps:140,forearms:164,neck:184,calves:174}},
+      F:{primary:{biIso:132,biComp:139},accessories:{chest:14,back:23,triceps:156,forearms:163,neck:183,calves:173,core:70, shoulders: 46}},
+      G:{primary:{coreIso:59,coreComp:66},accessories:{chest:9,back:29,triceps:150,biceps:140,forearms:164,neck:184,calves:174, quads: 100}},
     },
     techniques:{
       week1:[t("E","triIso","partials"),t("F","biComp","1_quarter_reps")],
@@ -415,11 +416,11 @@ export const PROGRAMS = [
   },
   { id:5, name:"Overhead Emphasis",
     sessions:{
-      C:{primary:{chestIso:13,chestComp:5},accessories:{back:39,triceps:154,biceps:131,forearms:161,neck:181,calves:171,coreFront:69}},
-      D:{primary:{backIso:34,backComp:25},accessories:{chest:14,triceps:155,biceps:131,forearms:162,neck:182,calves:172,coreBack:76}},
+      C:{primary:{chestIso:13,chestComp:5},accessories:{back:39,triceps:154,biceps:131,forearms:161,neck:181,calves:171,coreFront:69, glutes: 82}},
+      D:{primary:{backIso:34,backComp:25},accessories:{chest:14,triceps:155,biceps:131,forearms:162,neck:182,calves:172,coreBack:76, hams: 121}},
       E:{primary:{triIso:148,triComp:150},accessories:{chest:1,back:36,biceps:133,forearms:163,neck:183,calves:173,coreSides:74}},
-      F:{primary:{biIso:133,biComp:142},accessories:{chest:15,back:31,triceps:144,forearms:164,neck:184,calves:174,core:73}},
-      G:{primary:{coreIso:71,coreComp:67},accessories:{chest:10,back:42,triceps:148,biceps:141,forearms:165,neck:177,calves:175}},
+      F:{primary:{biIso:133,biComp:142},accessories:{chest:15,back:31,triceps:144,forearms:164,neck:184,calves:174,core:73, shoulders: 47}},
+      G:{primary:{coreIso:71,coreComp:67},accessories:{chest:10,back:42,triceps:148,biceps:141,forearms:165,neck:177,calves:175, quads: 101}},
     },
     techniques:{
       week1:[t("F","biIso","forced_reps"),t("G","coreComp","partials")],
@@ -431,11 +432,11 @@ export const PROGRAMS = [
   },
   { id:6, name:"Squeeze & Contract",
     sessions:{
-      C:{primary:{chestIso:16,chestComp:6},accessories:{back:28,triceps:155,biceps:129,forearms:162,neck:182,calves:172,coreFront:70}},
-      D:{primary:{backIso:35,backComp:26},accessories:{chest:15,triceps:156,biceps:136,forearms:163,neck:183,calves:173,coreBack:73}},
+      C:{primary:{chestIso:16,chestComp:6},accessories:{back:28,triceps:155,biceps:129,forearms:162,neck:182,calves:172,coreFront:70, glutes: 83}},
+      D:{primary:{backIso:35,backComp:26},accessories:{chest:15,triceps:156,biceps:136,forearms:163,neck:183,calves:173,coreBack:73, hams: 122}},
       E:{primary:{triIso:151,triComp:153},accessories:{chest:2,back:37,biceps:134,forearms:164,neck:184,calves:174,coreSides:77}},
-      F:{primary:{biIso:136,biComp:134},accessories:{chest:16,back:32,triceps:147,forearms:165,neck:177,calves:175,core:76}},
-      G:{primary:{coreIso:72,coreComp:68},accessories:{chest:11,back:30,triceps:145,biceps:129,forearms:166,neck:178,calves:176}},
+      F:{primary:{biIso:136,biComp:134},accessories:{chest:16,back:32,triceps:147,forearms:165,neck:177,calves:175,core:76, shoulders: 48}},
+      G:{primary:{coreIso:72,coreComp:68},accessories:{chest:11,back:30,triceps:145,biceps:129,forearms:166,neck:178,calves:176, quads: 102}},
     },
     techniques:{
       week1:[t("G","coreIso","pre_exhaustion"),t("C","chestComp","mechanical_drop_set")],
@@ -447,11 +448,11 @@ export const PROGRAMS = [
   },
   { id:7, name:"Unilateral Drive",
     sessions:{
-      C:{primary:{chestIso:18,chestComp:7},accessories:{back:25,triceps:156,biceps:130,forearms:163,neck:183,calves:173,coreFront:71}},
-      D:{primary:{backIso:39,backComp:27},accessories:{chest:17,triceps:144,biceps:137,forearms:164,neck:184,calves:174,coreBack:74}},
+      C:{primary:{chestIso:18,chestComp:7},accessories:{back:25,triceps:156,biceps:130,forearms:163,neck:183,calves:173,coreFront:71, glutes: 84}},
+      D:{primary:{backIso:39,backComp:27},accessories:{chest:17,triceps:144,biceps:137,forearms:164,neck:184,calves:174,coreBack:74, hams: 123}},
       E:{primary:{triIso:152,triComp:149},accessories:{chest:9,back:38,biceps:140,forearms:165,neck:177,calves:175,coreSides:63}},
-      F:{primary:{biIso:137,biComp:135},accessories:{chest:17,back:22,triceps:148,forearms:166,neck:178,calves:176,core:77}},
-      G:{primary:{coreIso:62,coreComp:69},accessories:{chest:12,back:33,triceps:150,biceps:142,forearms:157,neck:179,calves:167}},
+      F:{primary:{biIso:137,biComp:135},accessories:{chest:17,back:22,triceps:148,forearms:166,neck:178,calves:176,core:77, shoulders: 49}},
+      G:{primary:{coreIso:62,coreComp:69},accessories:{chest:12,back:33,triceps:150,biceps:142,forearms:157,neck:179,calves:167, quads: 103}},
     },
     techniques:{
       week1:[t("C","chestComp","drop_set"),t("D","backIso","super_slow")],
@@ -463,11 +464,11 @@ export const PROGRAMS = [
   },
   { id:8, name:"Tempo & Control",
     sessions:{
-      C:{primary:{chestIso:9,chestComp:8},accessories:{back:35,triceps:144,biceps:131,forearms:164,neck:184,calves:174,coreFront:76}},
-      D:{primary:{backIso:40,backComp:31},accessories:{chest:19,triceps:147,biceps:131,forearms:165,neck:177,calves:175,coreBack:42}},
+      C:{primary:{chestIso:9,chestComp:8},accessories:{back:35,triceps:144,biceps:131,forearms:164,neck:184,calves:174,coreFront:76, glutes: 85}},
+      D:{primary:{backIso:40,backComp:31},accessories:{chest:19,triceps:147,biceps:131,forearms:165,neck:177,calves:175,coreBack:42, hams: 124}},
       E:{primary:{triIso:154,triComp:150},accessories:{chest:10,back:21,biceps:143,forearms:166,neck:178,calves:176,coreSides:64}},
-      F:{primary:{biIso:140,biComp:138},accessories:{chest:18,back:34,triceps:146,forearms:157,neck:179,calves:167,core:59}},
-      G:{primary:{coreIso:60,coreComp:70},accessories:{chest:13,back:26,triceps:153,biceps:129,forearms:158,neck:180,calves:168}},
+      F:{primary:{biIso:140,biComp:138},accessories:{chest:18,back:34,triceps:146,forearms:157,neck:179,calves:167,core:59, shoulders: 50}},
+      G:{primary:{coreIso:60,coreComp:70},accessories:{chest:13,back:26,triceps:153,biceps:129,forearms:158,neck:180,calves:168, quads: 104}},
     },
     techniques:{
       week1:[t("E","triComp","super_slow"),t("F","biComp","1_quarter_reps")],
@@ -479,11 +480,11 @@ export const PROGRAMS = [
   },
   { id:9, name:"Rotation & Reach",
     sessions:{
-      C:{primary:{chestIso:10,chestComp:14},accessories:{back:26,triceps:145,biceps:130,forearms:165,neck:177,calves:175,coreFront:60}},
-      D:{primary:{backIso:41,backComp:32},accessories:{chest:20,triceps:148,biceps:130,forearms:166,neck:178,calves:176,coreBack:69}},
+      C:{primary:{chestIso:10,chestComp:14},accessories:{back:26,triceps:145,biceps:130,forearms:165,neck:177,calves:175,coreFront:60, glutes: 86}},
+      D:{primary:{backIso:41,backComp:32},accessories:{chest:20,triceps:148,biceps:130,forearms:166,neck:178,calves:176,coreBack:69, hams: 125}},
       E:{primary:{triIso:155,triComp:153},accessories:{chest:11,back:22,biceps:141,forearms:157,neck:179,calves:167,coreSides:65}},
-      F:{primary:{biIso:141,biComp:139},accessories:{chest:19,back:35,triceps:149,forearms:158,neck:180,calves:168,core:61}},
-      G:{primary:{coreIso:61,coreComp:73},accessories:{chest:1,back:27,triceps:155,biceps:135,forearms:159,neck:181,calves:169}},
+      F:{primary:{biIso:141,biComp:139},accessories:{chest:19,back:35,triceps:149,forearms:158,neck:180,calves:168,core:61, shoulders: 52}},
+      G:{primary:{coreIso:61,coreComp:73},accessories:{chest:1,back:27,triceps:155,biceps:135,forearms:159,neck:181,calves:169, quads: 105}},
     },
     techniques:{
       week1:[t("F","biIso","rest_pause"),t("G","coreComp","partials")],
@@ -495,11 +496,11 @@ export const PROGRAMS = [
   },
   { id:10, name:"Full-Range Strength",
     sessions:{
-      C:{primary:{chestIso:11,chestComp:15},accessories:{back:24,triceps:146,biceps:131,forearms:166,neck:178,calves:176,coreFront:61}},
-      D:{primary:{backIso:42,backComp:36},accessories:{chest:1,triceps:149,biceps:129,forearms:157,neck:179,calves:167,coreBack:75}},
+      C:{primary:{chestIso:11,chestComp:15},accessories:{back:24,triceps:146,biceps:131,forearms:166,neck:178,calves:176,coreFront:61, glutes: 87}},
+      D:{primary:{backIso:42,backComp:36},accessories:{chest:1,triceps:149,biceps:129,forearms:157,neck:179,calves:167,coreBack:75, hams: 126}},
       E:{primary:{triIso:156,triComp:149},accessories:{chest:12,back:23,biceps:142,forearms:158,neck:180,calves:168,coreSides:72}},
-      F:{primary:{biIso:143,biComp:142},accessories:{chest:20,back:36,triceps:151,forearms:159,neck:181,calves:169,core:62}},
-      G:{primary:{coreIso:62,coreComp:74},accessories:{chest:2,back:28,triceps:156,biceps:136,forearms:160,neck:182,calves:170}},
+      F:{primary:{biIso:143,biComp:142},accessories:{chest:20,back:36,triceps:151,forearms:159,neck:181,calves:169,core:62, shoulders: 53}},
+      G:{primary:{coreIso:62,coreComp:74},accessories:{chest:2,back:28,triceps:156,biceps:136,forearms:160,neck:182,calves:170, quads: 106}},
     },
     techniques:{
       week1:[t("G","coreComp","negative_accentuated"),t("C","chestIso","partials")],
@@ -511,11 +512,11 @@ export const PROGRAMS = [
   },
   { id:11, name:"Stretch & Contract",
     sessions:{
-      C:{primary:{chestIso:12,chestComp:17},accessories:{back:27,triceps:147,biceps:130,forearms:157,neck:179,calves:167,coreFront:62}},
-      D:{primary:{backIso:28,backComp:37},accessories:{chest:2,triceps:150,biceps:141,forearms:158,neck:180,calves:168,coreBack:76}},
+      C:{primary:{chestIso:12,chestComp:17},accessories:{back:27,triceps:147,biceps:130,forearms:157,neck:179,calves:167,coreFront:62, glutes: 88}},
+      D:{primary:{backIso:28,backComp:37},accessories:{chest:2,triceps:150,biceps:141,forearms:158,neck:180,calves:168,coreBack:76, hams: 127}},
       E:{primary:{triIso:144,triComp:150},accessories:{chest:13,back:24,biceps:143,forearms:159,neck:181,calves:169,coreSides:73}},
-      F:{primary:{biIso:129,biComp:134},accessories:{chest:3,back:29,triceps:152,forearms:160,neck:182,calves:170,core:71}},
-      G:{primary:{coreIso:59,coreComp:76},accessories:{chest:4,back:37,triceps:145,biceps:137,forearms:161,neck:183,calves:171}},
+      F:{primary:{biIso:129,biComp:134},accessories:{chest:3,back:29,triceps:152,forearms:160,neck:182,calves:170,core:71, shoulders: 56}},
+      G:{primary:{coreIso:59,coreComp:76},accessories:{chest:4,back:37,triceps:145,biceps:137,forearms:161,neck:183,calves:171, quads: 107}},
     },
     techniques:{
       week1:[t("C","chestComp","isometric_hold"),t("D","backIso","drop_set")],
@@ -527,11 +528,11 @@ export const PROGRAMS = [
   },
   { id:12, name:"Peak Intensity",
     sessions:{
-      C:{primary:{chestIso:13,chestComp:19},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:180,calves:168,coreFront:69}},
-      D:{primary:{backIso:30,backComp:38},accessories:{chest:3,triceps:151,biceps:143,forearms:159,neck:181,calves:169,coreBack:42}},
+      C:{primary:{chestIso:13,chestComp:19},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:180,calves:168,coreFront:69, glutes: 89}},
+      D:{primary:{backIso:30,backComp:38},accessories:{chest:3,triceps:151,biceps:143,forearms:159,neck:181,calves:169,coreBack:42, hams: 128}},
       E:{primary:{triIso:145,triComp:153},accessories:{chest:14,back:40,biceps:139,forearms:160,neck:182,calves:170,coreSides:64}},
-      F:{primary:{biIso:130,biComp:135},accessories:{chest:4,back:41,triceps:154,forearms:161,neck:183,calves:171,core:75}},
-      G:{primary:{coreIso:71,coreComp:77},accessories:{chest:15,back:38,triceps:146,biceps:134,forearms:162,neck:184,calves:172}},
+      F:{primary:{biIso:130,biComp:135},accessories:{chest:4,back:41,triceps:154,forearms:161,neck:183,calves:171,core:75, shoulders: 57}},
+      G:{primary:{coreIso:71,coreComp:77},accessories:{chest:15,back:38,triceps:146,biceps:134,forearms:162,neck:184,calves:172, quads: 108}},
     },
     techniques:{
       week1:[t("D","backComp","1_quarter_reps"),t("E","triIso","pre_exhaustion")],
@@ -566,8 +567,8 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 121, coreComp: 97 },
-        accessories: { chest: 110, back: 37, triceps: 145, biceps: 136, forearms: 165, neck: 181, calves: 171 }
+        primary:     { legIso: 121, legComp: 97 },
+        accessories: { quads: 110, back: 37, triceps: 145, biceps: 136, forearms: 165, neck: 181, calves: 171 }
       },
     },
     deload: {
@@ -577,9 +578,9 @@ export const PROGRAMS = [
     techniques: {
       week1: [ t("C","chestComp","1_quarter_reps"),       t("D","backComp","negative_accentuated") ],
       week2: [ t("E","triIso","super_slow"),               t("F","biComp","drop_set")               ],
-      week3: [ t("G","coreIso","isometric_hold"),          t("C","chestIso","rest_pause")           ],
+      week3: [ t("G","legIso","isometric_hold"),          t("C","chestIso","rest_pause")           ],
       week4: [ t("D","backIso","partials"),                t("E","triComp","forced_reps")           ],
-      week5: [ t("F","biIso","mechanical_drop_set"),       t("G","coreComp","pre_exhaustion")       ],
+      week5: [ t("F","biIso","mechanical_drop_set"),       t("G","legComp","pre_exhaustion")       ],
     },
   },
 
@@ -610,8 +611,8 @@ export const PROGRAMS = [
         accessories: { chest: 12, back: 27, triceps: 151, forearms: 160, neck: 181, calves: 170, core: 64 }
       },
       G: {
-        primary:     { coreIso: 122, coreComp: 116 },
-        accessories: { chest: 110, back: 61, triceps: 146, biceps: 135, forearms: 165, neck: 182, calves: 171 }
+        primary:     { legIso: 122, legComp: 116 },
+        accessories: { quads: 110, core: 61, triceps: 146, biceps: 135, forearms: 165, neck: 182, calves: 171 }
       },
     },
     deload: {
@@ -620,10 +621,10 @@ export const PROGRAMS = [
     },
     techniques: {
       week1: [ t("D","backIso","super_slow"),              t("E","triComp","1_quarter_reps")        ],
-      week2: [ t("F","biIso","drop_set"),                  t("G","coreComp","isometric_hold")       ],
+      week2: [ t("F","biIso","drop_set"),                  t("G","legComp","isometric_hold")       ],
       week3: [ t("C","chestIso","negative_accentuated"),   t("D","backComp","rest_pause")           ],
       week4: [ t("E","triIso","pre_exhaustion"),           t("F","biComp","partials")               ],
-      week5: [ t("G","coreIso","forced_reps"),             t("C","chestComp","mechanical_drop_set") ],
+      week5: [ t("G","legIso","forced_reps"),             t("C","chestComp","mechanical_drop_set") ],
     },
   },
 
@@ -655,7 +656,7 @@ export const PROGRAMS = [
         accessories: { back: 44, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
       },
       D: {
-        primary:     { backIso: 185, backComp: 23  },
+        primary:     { hinge: 185, backComp: 23  },
         accessories: { chest: 3, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
       },
       E: {
@@ -667,7 +668,7 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 121, coreComp: 102 },
+        primary:     { legIso: 121, legComp: 102 },
         accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
@@ -677,10 +678,10 @@ export const PROGRAMS = [
     },
     techniques: {
       week1: [ t("E","triIso","forced_reps"),              t("F","biIso","super_slow")              ],
-      week2: [ t("G","coreIso","1_quarter_reps"),          t("C","chestComp","isometric_hold")      ],
+      week2: [ t("G","legIso","1_quarter_reps"),          t("C","chestComp","isometric_hold")      ],
       week3: [ t("D","backComp","drop_set"),               t("E","triComp","rest_pause")            ],
-      week4: [ t("F","biComp","negative_accentuated"),     t("G","coreComp","partials")             ],
-      week5: [ t("C","chestIso","mechanical_drop_set"),    t("D","backIso","pre_exhaustion")        ],
+      week4: [ t("F","biComp","negative_accentuated"),     t("G","legComp","partials")             ],
+      week5: [ t("C","chestIso","mechanical_drop_set"),    t("D","hinge","pre_exhaustion")        ],
     },
   },
 
@@ -696,11 +697,11 @@ export const PROGRAMS = [
     sessions: {
       C: {
         primary:     { chestIso: 10,  chestComp: 14 },
-        accessories: { back: 48, triceps: 147, biceps: 132, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+        accessories: { shoulders: 48, triceps: 147, biceps: 132, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
       },
       D: {
         primary:     { backIso: 29,  backComp: 25  },
-        accessories: { chest: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+        accessories: { back: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
       },
       E: {
         primary:     { triIso: 146, triComp: 150 },
@@ -711,8 +712,8 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 123, coreComp: 99  },
-        accessories: { chest: 110, back: 60, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+        primary:     { legIso: 123, legComp: 99  },
+        accessories: { quads: 110, core: 60, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
     deload: {
@@ -720,10 +721,10 @@ export const PROGRAMS = [
       exercises: [10, 14, 25, 146, 129, 157, 177, 167]
     },
     techniques: {
-      week1: [ t("F","biComp","rest_pause"),               t("G","coreIso","1_quarter_reps")        ],
+      week1: [ t("F","biComp","rest_pause"),               t("G","legIso","1_quarter_reps")        ],
       week2: [ t("C","chestIso","drop_set"),               t("D","backIso","super_slow")            ],
       week3: [ t("E","triComp","mechanical_drop_set"),     t("F","biIso","negative_accentuated")    ],
-      week4: [ t("G","coreComp","pre_exhaustion"),         t("C","chestComp","forced_reps")         ],
+      week4: [ t("G","legComp","pre_exhaustion"),         t("C","chestComp","forced_reps")         ],
       week5: [ t("D","backComp","isometric_hold"),         t("E","triIso","partials")               ],
     },
   },
@@ -749,14 +750,14 @@ export const PROGRAMS = [
       },
       E: {
         primary:     { triIso: 148, triComp: 150 },
-        accessories: { chest: 31, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
+        accessories: { lats: 31, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 72 }
       },
       F: {
         primary:     { biIso: 132,  biComp: 142  },
         accessories: { chest: 8, back: 22, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 64 }
       },
       G: {
-        primary:     { coreIso: 109, coreComp: 97  },
+        primary:     { legIso: 109, legComp: 97  },
         accessories: { chest: 2, back: 37, triceps: 145, biceps: 136, forearms: 165, neck: 181, calves: 171 }
       },
     },
@@ -765,9 +766,9 @@ export const PROGRAMS = [
       exercises: [13, 3, 29, 148, 132, 157, 177, 167]
     },
     techniques: {
-      week1: [ t("G","coreComp","1_quarter_reps"),         t("C","chestIso","super_slow")           ],
+      week1: [ t("G","legComp","1_quarter_reps"),         t("C","chestIso","super_slow")           ],
       week2: [ t("D","backIso","isometric_hold"),          t("E","triIso","drop_set")               ],
-      week3: [ t("F","biIso","partials"),                  t("G","coreIso","rest_pause")            ],
+      week3: [ t("F","biIso","partials"),                  t("G","legIso","rest_pause")            ],
       week4: [ t("C","chestComp","negative_accentuated"),  t("D","backComp","mechanical_drop_set")  ],
       week5: [ t("E","triComp","pre_exhaustion"),          t("F","biComp","forced_reps")            ],
     },
@@ -800,11 +801,11 @@ export const PROGRAMS = [
     sessions: {
       C: {
         primary:     { chestIso: 11,  chestComp: 19 },
-        accessories: { back: 47, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+        accessories: { shoulders: 47, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
       },
       D: {
         primary:     { backIso: 28,  backComp: 119 },
-        accessories: { chest: 48, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+        accessories: { shoulders: 48, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
       },
       E: {
         primary:     { triIso: 145, triComp: 150 },
@@ -812,11 +813,11 @@ export const PROGRAMS = [
       },
       F: {
         primary:     { biIso: 129,  biComp: 134  },
-        accessories: { chest: 23, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { lats: 23, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 110, coreComp: 97  },
-        accessories: { chest: 121, back: 37, triceps: 146, biceps: 135, forearms: 165, neck: 184, calves: 171 }
+        primary:     { legIso: 110, legComp: 97  },
+        accessories: { hams: 121, back: 37, triceps: 146, biceps: 135, forearms: 165, neck: 184, calves: 171 }
       },
     },
     deload: {
@@ -826,9 +827,9 @@ export const PROGRAMS = [
     techniques: {
       week1: [ t("C","chestIso","isometric_hold"),         t("D","backComp","1_quarter_reps")       ],
       week2: [ t("E","triComp","super_slow"),              t("F","biIso","partials")                ],
-      week3: [ t("G","coreIso","drop_set"),                t("C","chestComp","rest_pause")          ],
+      week3: [ t("G","legIso","drop_set"),                t("C","chestComp","rest_pause")          ],
       week4: [ t("D","backIso","pre_exhaustion"),          t("E","triIso","negative_accentuated")   ],
-      week5: [ t("F","biComp","mechanical_drop_set"),      t("G","coreComp","forced_reps")          ],
+      week5: [ t("F","biComp","mechanical_drop_set"),      t("G","legComp","forced_reps")          ],
     },
   },
 
@@ -859,8 +860,8 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 119, coreComp: 97  },
-        accessories: { chest: 110, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+        primary:     { hinge: 119, legComp: 97  },
+        accessories: { quads: 110, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
     deload: {
@@ -869,10 +870,10 @@ export const PROGRAMS = [
     },
     techniques: {
       week1: [ t("D","backIso","partials"),                t("E","triComp","1_quarter_reps")        ],
-      week2: [ t("F","biComp","super_slow"),               t("G","coreComp","negative_accentuated") ],
+      week2: [ t("F","biComp","super_slow"),               t("G","legComp","negative_accentuated") ],
       week3: [ t("C","chestComp","isometric_hold"),        t("D","backComp","drop_set")             ],
       week4: [ t("E","triIso","mechanical_drop_set"),      t("F","biIso","rest_pause")              ],
-      week5: [ t("G","coreIso","pre_exhaustion"),          t("C","chestIso","forced_reps")          ],
+      week5: [ t("G","hinge","pre_exhaustion"),          t("C","chestIso","forced_reps")          ],
     },
   },
 
@@ -889,7 +890,7 @@ export const PROGRAMS = [
     sessions: {
       C: {
         primary:     { chestIso: 9,   chestComp: 19 },
-        accessories: { back: 48, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
+        accessories: { shoulders: 48, triceps: 147, biceps: 131, forearms: 157, neck: 177, calves: 167, coreFront: 59 }
       },
       D: {
         primary:     { backIso: 28,  backComp: 31  },
@@ -904,8 +905,8 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 121, coreComp: 97  },
-        accessories: { chest: 110, back: 60, triceps: 146, biceps: 135, forearms: 165, neck: 181, calves: 171 }
+        primary:     { legIso: 121, legComp: 97  },
+        accessories: { quads: 110, core: 60, triceps: 146, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
     deload: {
@@ -914,9 +915,9 @@ export const PROGRAMS = [
     },
     techniques: {
       week1: [ t("E","triIso","super_slow"),               t("F","biComp","1_quarter_reps")         ],
-      week2: [ t("G","coreComp","drop_set"),               t("C","chestComp","isometric_hold")      ],
+      week2: [ t("G","legComp","drop_set"),               t("C","chestComp","isometric_hold")      ],
       week3: [ t("D","backIso","negative_accentuated"),    t("E","triComp","partials")              ],
-      week4: [ t("F","biIso","rest_pause"),                t("G","coreIso","mechanical_drop_set")   ],
+      week4: [ t("F","biIso","rest_pause"),                t("G","legIso","mechanical_drop_set")   ],
       week5: [ t("C","chestIso","pre_exhaustion"),         t("D","backComp","forced_reps")          ],
     },
   },
@@ -948,7 +949,7 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 121, coreComp: 110 },
+        primary:     { legIso: 121, legComp: 115 },
         accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
@@ -957,10 +958,10 @@ export const PROGRAMS = [
       exercises: [13, 5, 29, 144, 129, 157, 177, 167]
     },
     techniques: {
-      week1: [ t("F","biIso","1_quarter_reps"),            t("G","coreComp","super_slow")           ],
+      week1: [ t("F","biIso","1_quarter_reps"),            t("G","legComp","super_slow")           ],
       week2: [ t("C","chestComp","partials"),              t("D","backIso","drop_set")              ],
       week3: [ t("E","triIso","rest_pause"),               t("F","biComp","isometric_hold")         ],
-      week4: [ t("G","coreIso","negative_accentuated"),    t("C","chestIso","mechanical_drop_set")  ],
+      week4: [ t("G","legIso","negative_accentuated"),    t("C","chestIso","mechanical_drop_set")  ],
       week5: [ t("D","backComp","pre_exhaustion"),         t("E","triComp","forced_reps")           ],
     },
   },
@@ -980,7 +981,7 @@ export const PROGRAMS = [
       },
       D: {
         primary:     { backIso: 28,  backComp: 31  },
-        accessories: { chest: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
+        accessories: { back: 40, triceps: 148, biceps: 133, forearms: 158, neck: 178, calves: 168, coreBack: 42 }
       },
       E: {
         primary:     { triIso: 144, triComp: 150 },
@@ -991,7 +992,7 @@ export const PROGRAMS = [
         accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
       },
       G: {
-        primary:     { coreIso: 60,  coreComp: 97  },
+        primary:     { coreIso: 60,  legComp: 97  },
         accessories: { chest: 2, back: 37, triceps: 145, biceps: 135, forearms: 165, neck: 181, calves: 171 }
       },
     },
@@ -1002,7 +1003,7 @@ export const PROGRAMS = [
     techniques: {
       week1: [ t("G","coreIso","1_quarter_reps"),          t("C","chestIso","super_slow")           ],
       week2: [ t("D","backComp","isometric_hold"),         t("E","triIso","drop_set")               ],
-      week3: [ t("F","biIso","negative_accentuated"),      t("G","coreComp","rest_pause")           ],
+      week3: [ t("F","biIso","negative_accentuated"),      t("G","legComp","rest_pause")           ],
       week4: [ t("C","chestComp","forced_reps"),           t("D","backIso","mechanical_drop_set")   ],
       week5: [ t("E","triComp","partials"),                t("F","biComp","pre_exhaustion")         ],
     },
@@ -1087,7 +1088,7 @@ export const SESSION_FOCUS = {
   D:{label:"BACK DAY",    color:"#22c55e"},
   E:{label:"TRICEPS DAY", color:"#f59e0b"},
   F:{label:"BICEPS DAY",  color:"#f97316"},
-  G:{label:"CORE DAY",    color:"#ec4899"},
+  G:{label:"CORE + LEGS DAY",    color:"#ec4899"},
 };
 export function getSessionFocus(prog, sKey) {
   return (prog && prog.sessionFocus && prog.sessionFocus[sKey])
@@ -1099,13 +1100,19 @@ export const SLOT_LABELS = {
   chestIso:"Chest ISO", chestComp:"Chest CMP",
   backIso:"Back ISO",   backComp:"Back CMP",
   triIso:"Tri ISO",     triComp:"Tri CMP",
-  biIso:"Bi ISO",       biComp:"Bi CMP",
+  biIso:"Bi ISO",       biComp:"Bi ISO-2",
   coreIso:"Core ISO",   coreComp:"Core CMP",
   back:"Back", chest:"Chest", triceps:"Triceps", biceps:"Biceps",
   forearms:"Forearms", neck:"Neck", calves:"Calves",
   coreFront:"Core Front", coreBack:"Core Back",
   coreSides:"Core Sides", core:"Core",
   legComp:"Legs CMP", legIso:"Legs ISO", shoulderComp:"Shoulders CMP",
+  hinge:"Hinge CMP",
+  quads:"Quads",
+  hams:"Hamstrings",
+  glutes:"Glutes",
+  shoulders:"Shoulders",
+  lats:"Lats",
 };
 
 export const exGroup = (id) => {
@@ -1324,5 +1331,51 @@ export function calcToday(startStr, sched, pi) {
   }
 }
 
+
+// ─── TECHNIQUE SCHEDULER ─────────────────────────────────────────────────────
+// Techniques are prescribed per (week, session), but the rotation means each
+// week only contains 3 of 5 sessions. Remap every prescribed technique onto
+// the real occurrence of its session closest to its prescribed week.
+const SESSION_KEYS = ["C","D","E","F","G"];
+const TECH_SCHEDULES = {};
+export function buildTechSchedule(prog) {
+  if (TECH_SCHEDULES[prog.id]) return TECH_SCHEDULES[prog.id];
+  const slots = new Array(15).fill(null);
+  const weekCount = wk => { let n=0; for (let i=(wk-1)*3;i<wk*3;i++) if (slots[i]) n++; return n; };
+  for (let w = 1; w <= 5; w++) {
+    (prog.techniques[`week${w}`] || []).forEach(t => {
+      let best = -1, bestScore = Infinity;
+      for (let idx = 0; idx < 15; idx++) {
+        if (slots[idx]) continue;
+        if (SESSION_KEYS[idx % 5] !== t.session) continue;
+        const wk = Math.floor(idx / 3) + 1;
+        const score = Math.abs(wk - w) * 10 + weekCount(wk) * 30 + wk;
+        if (score < bestScore) { bestScore = score; best = idx; }
+      }
+      if (best >= 0) slots[best] = { session:t.session, slot:t.slot, technique:t.technique, prescribedWeek:w };
+    });
+  }
+  TECH_SCHEDULES[prog.id] = slots;
+  return slots;
+}
+export function getTechMap(prog, week, sKey) {
+  const map = {};
+  if (week === 6 || week < 1) return map;
+  const sched = buildTechSchedule(prog);
+  for (let idx = (week-1)*3; idx < (week-1)*3+3 && idx < 15; idx++) {
+    const a = sched[idx];
+    if (a && SESSION_KEYS[idx % 5] === sKey) map[a.slot] = a.technique;
+  }
+  return map;
+}
+export function getWeekTechniques(prog, week) {
+  if (week === 6 || week < 1) return [];
+  const sched = buildTechSchedule(prog);
+  const out = [];
+  for (let idx = (week-1)*3; idx < (week-1)*3+3 && idx < 15; idx++) {
+    if (sched[idx]) out.push(sched[idx]);
+  }
+  return out;
+}
+
 export const PROG_REPS = 12;
-             
