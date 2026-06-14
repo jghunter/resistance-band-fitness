@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, setDoc, getDocs, query, orderBy } from 'firebase/firestore'
+import { collection, doc, setDoc, deleteDoc, getDocs, query, orderBy } from 'firebase/firestore'
 import { db, auth, googleProvider } from './firebase'
 import {
   C, EXERCISE_NAMES, TECHNIQUES, VIDEOS, PROGRAMS,
@@ -242,26 +242,58 @@ function BandPicker({ selected, onChange }) {
     })
   }, [search, bFilter])
 
+  // Stack model: distinct bands, all same length; doubling is all-or-nothing.
+  // RULES: stacked bands must be the same length; doubling applies to the whole
+  // stack (each band looped over -> x2), never one band without the others.
+  const counts = {}; const distinct = []
+  selected.forEach(id => { if (counts[id]==null){counts[id]=0;distinct.push(id)} counts[id]++ })
+  const stackBand0 = distinct.length ? BANDS.find(x=>x.id===distinct[0]) : null
+  const stackLen = stackBand0 ? stackBand0.lengthIn : null
+  const isDoubled = distinct.length>0 && distinct.every(id => counts[id] >= 2)
+  const rebuildStack = (ids, doubled) => { const out=[]; ids.forEach(id => { out.push(id); if(doubled) out.push(id) }); return out }
+  const addBand = (id) => {
+    const b = BANDS.find(x=>x.id===id); if(!b) return
+    if (distinct.indexOf(id) >= 0) return
+    if (stackLen != null && b.lengthIn !== stackLen) return
+    onChange(rebuildStack([...distinct, id], isDoubled))
+  }
+  const removeBandId = (id) => {
+    const nd = distinct.filter(x => x !== id)
+    onChange(rebuildStack(nd, nd.length ? isDoubled : false))
+  }
+  const toggleDouble = () => { if (distinct.length) onChange(rebuildStack(distinct, !isDoubled)) }
+
   return (
     <div ref={pickerRef} style={{position:'relative'}}>
       <div style={{display:'flex',flexWrap:'wrap',gap:4,alignItems:'center'}}>
-        {selected.map((id, idx) => {
+        {distinct.map(id => {
           const b = BANDS.find(x => x.id === id)
           if (!b) return null
           const hex = COLOR_HEX[b.color] || '#888'
+          const cnt = counts[id]
           return (
-            <span key={idx} style={{
+            <span key={id} style={{
               background:hex+'22',border:`1px solid ${hex}66`,borderRadius:4,
               padding:'2px 7px',fontFamily:'monospace',fontSize:9,color:C.text,
               display:'flex',alignItems:'center',gap:4,
             }}>
               <span style={{width:8,height:8,borderRadius:'50%',background:hex,flexShrink:0}}/>
-              {b.brand.split(' ')[0]} {b.color} {b.model} {b.res}lbs
-              <span onClick={() => onChange(selected.filter((_,i)=>i!==idx))}
+              {b.brand.split(' ')[0]} {b.color} {b.model}
+              {cnt > 1
+                ? <span style={{background:C.amber+'33',border:`1px solid ${C.amber}66`,borderRadius:3,padding:'0 4px',color:C.amber,fontWeight:700,fontSize:9}}>×{cnt}</span>
+                : <span style={{color:C.dimGray}}> {b.res}</span>}
+              <span onClick={() => removeBandId(id)}
                 style={{cursor:'pointer',color:C.dimGray,fontSize:12,lineHeight:1}}>x</span>
             </span>
           )
         })}
+        {selected.length > 0 && (
+          <button title="Double the whole stack — every band looped over (≈2× resistance). All bands double together, never one alone."
+            style={{...btn(isDoubled,C.amber),fontSize:9,padding:'2px 8px'}}
+            onClick={toggleDouble}>
+            {isDoubled ? '×2 DOUBLED' : 'DOUBLE ×2'}
+          </button>
+        )}
         <button style={{...btn(false),fontSize:9,padding:'2px 8px'}}
           onClick={() => setOpen(o=>!o)}>
           {selected.length ? '+ STACK' : '+ BAND'}
@@ -289,11 +321,15 @@ function BandPicker({ selected, onChange }) {
           </div>
           {filtered.map(b => {
             const hex = COLOR_HEX[b.color] || '#888'
-            const cnt = selected.filter(x=>x===b.id).length
+            const cnt = counts[b.id] || 0
+            const lenMismatch = stackLen != null && b.lengthIn !== stackLen && cnt === 0
             return (
-              <div key={b.id} onClick={()=>onChange([...selected,b.id])} style={{
+              <div key={b.id} onClick={() => { if(!lenMismatch) addBand(b.id) }}
+                title={lenMismatch ? `Different length (${b.lengthIn}") — stack only bands of ${stackLen}"` : undefined}
+                style={{
                 display:'flex',alignItems:'center',gap:8,padding:'5px 7px',
-                borderRadius:4,cursor:'pointer',marginBottom:2,
+                borderRadius:4,cursor:lenMismatch?'not-allowed':'pointer',marginBottom:2,
+                opacity:lenMismatch?0.4:1,
                 background:cnt>0 ? C.accent+'18' : 'transparent',
                 border:`1px solid ${cnt>0 ? C.accent : 'transparent'}`,
               }}>
@@ -304,8 +340,8 @@ function BandPicker({ selected, onChange }) {
                 <span style={{fontFamily:'monospace',fontSize:10,color:C.readout,flexShrink:0}}>
                   {b.res} lbs
                 </span>
-                <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,flexShrink:0}}>
-                  {b.lengthIn}"
+                <span style={{fontFamily:'monospace',fontSize:9,color:lenMismatch?C.amber:C.dimGray,flexShrink:0}}>
+                  {b.lengthIn}"{lenMismatch?' ≠':''}
                 </span>
                 {cnt>0 && <span style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',fontSize:9,fontWeight:'bold'}}>×{cnt}</span>}
               </div>
@@ -414,8 +450,19 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
   const isDeload = week === 6
   const techMap  = getTechMap(prog, week, sKey)
 
+  const [showAdd, setShowAdd] = useState(false)
+  const [addSrch, setAddSrch] = useState('')
   function getOrInit(id) { return exercises[id] || [{reps:0,bands:[]}] }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
+  function addEx(id) {
+    const key = String(id)
+    if (exercises && exercises[key]) { setShowAdd(false); setAddSrch(''); return }
+    onExercisesChange({...exercises, [key]:[{reps:0,bands:[]}]})
+    setShowAdd(false); setAddSrch('')
+  }
+  function removeEx(id) {
+    const next = {...exercises}; delete next[String(id)]; onExercisesChange(next)
+  }
 
   function getPrevSets(exerciseId) {
     const found = log
@@ -443,6 +490,32 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     )
   }
 
+  const prescribedIds = {}
+  Object.values(session.primary).forEach(id => { prescribedIds[String(id)] = true })
+  Object.values(session.accessories).forEach(id => { prescribedIds[String(id)] = true })
+  const extraIds = Object.keys(exercises||{}).filter(id => !prescribedIds[id])
+  let srchResults = []
+  if (addSrch.trim()) {
+    const q = addSrch.toLowerCase()
+    srchResults = Object.entries(EXERCISE_NAMES)
+      .filter(e => String(e[1]).toLowerCase().indexOf(q) >= 0)
+      .map(e => parseInt(e[0])).slice(0,12)
+  }
+  function renderExtra(id) {
+    const prev = getPrevSets(String(id))
+    return (
+      <div key={'x'+id} style={{position:'relative'}}>
+        <button onClick={()=>removeEx(id)} title="Remove exercise"
+          style={{position:'absolute',top:4,right:4,zIndex:2,background:C.bgPanel,
+            color:C.amber,border:`1px solid ${C.amber}66`,borderRadius:4,
+            fontSize:11,lineHeight:1,cursor:'pointer',padding:'2px 6px'}}>✕</button>
+        <LoggedExCard id={id} role={'added'} techKey={null}
+          sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
+          prevSets={prev} progFlag={false}/>
+      </div>
+    )
+  }
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
@@ -464,6 +537,44 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           {Object.entries(session.accessories).map(([slot,id]) => renderCard(slot,id,null))}
         </div>
       </div>
+      {extraIds.length > 0 && (
+        <div>
+          <span style={lbl}>ADDED EXERCISES</span>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:8}}>
+            {extraIds.map(id => renderExtra(id))}
+          </div>
+        </div>
+      )}
+      <div>
+        <button style={{...btn(showAdd,C.green),fontSize:9,padding:'3px 10px'}}
+          onClick={()=>setShowAdd(v=>!v)}>+ ADD EXERCISE TO THIS SESSION</button>
+        {showAdd && (
+          <div style={{background:C.bgInput,borderRadius:6,padding:10,marginTop:8,border:`1px solid ${C.accentDim}`}}>
+            <input value={addSrch} onChange={e=>setAddSrch(e.target.value)}
+              placeholder="Search by name, muscle group..."
+              style={{...inputStyle,width:'100%',marginBottom:6,boxSizing:'border-box'}}/>
+            <div style={{maxHeight:200,overflow:'auto'}}>
+              {srchResults.map(id => {
+                const grp = exGroup(id)
+                const already = !!(exercises && exercises[String(id)])
+                return (
+                  <div key={id} onClick={()=>addEx(id)}
+                    style={{display:'flex',alignItems:'center',gap:8,padding:'5px 7px',
+                      borderRadius:4,cursor:'pointer',marginBottom:2,
+                      background:already?`${C.accent}18`:'transparent',
+                      border:`1px solid ${already?C.accent+'44':'transparent'}`}}>
+                    <span style={pill(grp.color)}>{grp.label}</span>
+                    <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>#{id} {EXERCISE_NAMES[id]||id}</span>
+                    {already
+                      ? <span style={{color:C.green,fontSize:10}}>✓ added</span>
+                      : <span style={{color:C.dimGray,fontSize:10}}>tap to add</span>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
       {isDeload && (
         <div style={{...widget,border:'1px solid rgba(168,85,247,0.3)'}}>
           <span style={lbl}>DELOAD PROTOCOL</span>
@@ -472,6 +583,211 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STRENGTH MONITOR — estimated-load + volume tracking
+// ─────────────────────────────────────────────────────────────────────────────
+function bandResMid(res) {
+  if (res == null) return 0
+  const str = String(res).replace(/\+/g,'').replace(/</g,'').trim()
+  const parts = str.split('-').map(x => parseFloat(x)).filter(n => !isNaN(n))
+  if (parts.length === 0) return 0
+  if (parts.length === 1) return parts[0]
+  return (parts[0] + parts[1]) / 2
+}
+let _BAND_RES = null
+function bandResById(id) {
+  if (!_BAND_RES) { _BAND_RES = {}; BANDS.forEach(b => { _BAND_RES[b.id] = bandResMid(b.res) }) }
+  return _BAND_RES[id] || 0
+}
+function setLoad(set) { return (set.bands || []).reduce((a,id) => a + bandResById(id), 0) }
+function entryStats(entry) {
+  let vol=0, reps=0, top=0, sets=0
+  Object.keys(entry.exercises || {}).forEach(exId => {
+    (entry.exercises[exId] || []).forEach(st => {
+      const l = setLoad(st)
+      vol += l*(st.reps||0); reps += (st.reps||0); sets++
+      if (l > top) top = l
+    })
+  })
+  return { volume:vol, reps:reps, topLoad:top, sets:sets }
+}
+function fmtNum(n) { n = Math.round(n||0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
+function fmtPct(p) { if (p == null || !isFinite(p)) return '—'; return (p>=0?'+':'') + p.toFixed(0) + '%' }
+
+function StrengthTab({ log }) {
+  const [win, setWin] = useState('30')
+  const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
+
+  if (data.length === 0) {
+    return (
+      <div style={{...widget,textAlign:'center',padding:40}}>
+        <span style={{fontFamily:'monospace',fontSize:13,color:C.dimGray}}>
+          No workouts logged yet. Log a session on the Today tab and your strength trends will appear here.
+        </span>
+      </div>
+    )
+  }
+
+  const WINDOWS = [
+    { key:'last', label:'SINCE LAST', days:0 },
+    { key:'7',    label:'7 DAYS',     days:7 },
+    { key:'30',   label:'30 DAYS',    days:30 },
+    { key:'90',   label:'90 DAYS',    days:90 },
+    { key:'365',  label:'1 YEAR',     days:365 },
+    { key:'all',  label:'ALL TIME',   days:-1 },
+  ]
+  const cfg = WINDOWS.find(w => w.key === win) || WINDOWS[2]
+  const daysAgoISO = n => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10) }
+  const latestDate = data[data.length-1].date
+
+  let winEntries, prevEntries = null
+  if (cfg.key === 'all') { winEntries = data.slice() }
+  else if (cfg.key === 'last') { winEntries = data.filter(e => e.date === latestDate) }
+  else {
+    const cut = daysAgoISO(cfg.days), prevCut = daysAgoISO(cfg.days*2)
+    winEntries = data.filter(e => e.date >= cut)
+    prevEntries = data.filter(e => e.date >= prevCut && e.date < cut)
+  }
+
+  const agg = entries => {
+    let v=0,r=0,top=0,sN=0
+    entries.forEach(e => { const st=entryStats(e); v+=st.volume; r+=st.reps; sN+=st.sets; if(st.topLoad>top) top=st.topLoad })
+    return { volume:v, reps:r, top:top, sets:sN, sessions:entries.length }
+  }
+  const A = agg(winEntries)
+  const P = prevEntries ? agg(prevEntries) : null
+  const pct = (cur,prev) => (prev == null || prev === 0) ? null : ((cur-prev)/prev)*100
+  const volDelta = P ? pct(A.volume, P.volume) : null
+  const repDelta = P ? pct(A.reps, P.reps) : null
+
+  const allBest = {}
+  data.forEach(e => Object.keys(e.exercises||{}).forEach(exId =>
+    (e.exercises[exId]||[]).forEach(st => { const l=setLoad(st); if(!allBest[exId]||l>allBest[exId]) allBest[exId]=l })))
+
+  const exMap = {}
+  winEntries.forEach(e => Object.keys(e.exercises||{}).forEach(exId => {
+    let top=0
+    ;(e.exercises[exId]||[]).forEach(st => { const l=setLoad(st); if(l>top) top=l })
+    if(!exMap[exId]) exMap[exId]=[]
+    exMap[exId].push({ date:e.date, top:top })
+  }))
+  let exRows = Object.keys(exMap).map(exId => {
+    const arr = exMap[exId].sort((a,b)=>a.date.localeCompare(b.date))
+    const first = arr[0], last = arr[arr.length-1]
+    return {
+      id:exId, name:EXERCISE_NAMES[exId]||('#'+exId), n:arr.length,
+      startLoad:first.top, lastLoad:last.top,
+      delta: first.top ? ((last.top-first.top)/first.top)*100 : null,
+      best: allBest[exId]||0, isPR: last.top>0 && last.top>=(allBest[exId]||0),
+    }
+  }).sort((a,b) => b.n-a.n || b.lastLoad-a.lastLoad)
+
+  if (cfg.key === 'last') {
+    exRows.forEach(r => {
+      let prevTop = null
+      for (let i=data.length-1; i>=0; i--) {
+        const e = data[i]
+        if (e.date >= latestDate) continue
+        if (e.exercises && e.exercises[r.id]) {
+          let tt=0; (e.exercises[r.id]||[]).forEach(st => { const l=setLoad(st); if(l>tt) tt=l }); prevTop=tt; break
+        }
+      }
+      if (prevTop != null) { r.startLoad = prevTop; r.delta = prevTop ? ((r.lastLoad-prevTop)/prevTop)*100 : null }
+      else { r.delta = null }
+    })
+  }
+
+  const series = winEntries.map(e => ({ date:e.date, vol:entryStats(e).volume }))
+  const maxVol = series.reduce((m,x) => Math.max(m,x.vol), 0) || 1
+  const deltaColor = volDelta == null ? C.dimGray : (volDelta >= 0 ? C.green : C.amber)
+  const card = (label, value, sub, color) => (
+    <div style={{...widget,flex:'1 1 140px',minWidth:140}}>
+      <span style={lbl}>{label}</span>
+      <div style={{...readoutStyle,color:color||C.text}}>{value}</div>
+      {sub ? <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>{sub}</span> : null}
+    </div>
+  )
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{...widget,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+        <span style={{...lbl,marginBottom:0,marginRight:6}}>WINDOW</span>
+        {WINDOWS.map(w => (
+          <button key={w.key} style={{...btn(win===w.key, win===w.key?C.accent:undefined),fontSize:10,padding:'5px 10px'}}
+            onClick={()=>setWin(w.key)}>{w.label}</button>
+        ))}
+      </div>
+
+      <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+        {card('WORKOUTS', String(A.sessions), A.sets+' sets logged', C.accent)}
+        {card('EST. VOLUME', fmtNum(A.volume), 'lb·reps (estimated)', C.text)}
+        {card('TOTAL REPS', fmtNum(A.reps), A.sessions?('~'+fmtNum(A.reps/A.sessions)+' / workout'):'', C.text)}
+        {card('BEST SET LOAD', fmtNum(A.top)+' lb', 'heaviest est. band load', C.green)}
+      </div>
+
+      {P ? (
+        <div style={{...widget,display:'flex',flexWrap:'wrap',gap:18,alignItems:'center'}}>
+          <span style={lbl}>VS PREVIOUS {cfg.label}</span>
+          <span style={{fontFamily:'monospace',fontSize:13,color:deltaColor,fontWeight:700}}>VOLUME {fmtPct(volDelta)}</span>
+          <span style={{fontFamily:'monospace',fontSize:13,color:(repDelta==null?C.dimGray:(repDelta>=0?C.green:C.amber))}}>REPS {fmtPct(repDelta)}</span>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>prior: {P.sessions} workouts · {fmtNum(P.volume)} vol</span>
+        </div>
+      ) : null}
+
+      {series.length > 0 ? (
+        <div style={widget}>
+          <span style={lbl}>VOLUME PER WORKOUT</span>
+          <div style={{display:'flex',alignItems:'flex-end',gap:3,height:90,marginTop:6}}>
+            {series.map((sx,i) => {
+              const h = Math.max(3, Math.round((sx.vol/maxVol)*84))
+              return <div key={i} title={sx.date+' · '+fmtNum(sx.vol)+' vol'}
+                style={{flex:'1 1 0',minWidth:4,maxWidth:22,height:h,background:C.accent,
+                  opacity:0.4+0.6*(sx.vol/maxVol),borderRadius:'2px 2px 0 0'}}/>
+            })}
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[0].date}</span>
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[series.length-1].date}</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div style={widget}>
+        <span style={lbl}>EXERCISE PROGRESSION {cfg.key==='last' ? '(LATEST WORKOUT)' : '(WITHIN WINDOW)'}</span>
+        <div style={{overflowX:'auto',marginTop:6}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontFamily:'monospace',fontSize:11}}>
+            <thead>
+              <tr style={{color:C.dimGray,textAlign:'left'}}>
+                <th style={{padding:'4px 6px'}}>EXERCISE</th>
+                <th style={{padding:'4px 6px'}}>×</th>
+                <th style={{padding:'4px 6px'}}>START</th>
+                <th style={{padding:'4px 6px'}}>LATEST</th>
+                <th style={{padding:'4px 6px'}}>Δ LOAD</th>
+                <th style={{padding:'4px 6px'}}>BEST</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exRows.map(r => (
+                <tr key={r.id} style={{borderTop:'1px solid rgba(255,255,255,0.06)',color:C.textSec}}>
+                  <td style={{padding:'4px 6px',color:C.text}}>{r.name} {r.isPR ? <span style={pill(C.green)}>PR</span> : null}</td>
+                  <td style={{padding:'4px 6px'}}>{r.n}</td>
+                  <td style={{padding:'4px 6px'}}>{fmtNum(r.startLoad)}</td>
+                  <td style={{padding:'4px 6px'}}>{fmtNum(r.lastLoad)}</td>
+                  <td style={{padding:'4px 6px',color:(r.delta==null?C.dimGray:(r.delta>=0?C.green:C.amber))}}>{fmtPct(r.delta)}</td>
+                  <td style={{padding:'4px 6px',color:C.green}}>{fmtNum(r.best)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+          Load = estimated band resistance (midpoint of each band's range; doubled/stacked bands summed). Volume = load × reps. Estimates for trend tracking, not exact poundage.
+        </span>
+      </div>
     </div>
   )
 }
@@ -814,7 +1130,7 @@ function TodayTab({ user, log, onSaveEntry }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HISTORY TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HistoryTab({ log }) {
+function HistoryTab({ log, onMergeImport }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => new Date().toISOString().split('T')[0])
 
@@ -853,6 +1169,31 @@ function HistoryTab({ log }) {
     a.click()
   }
 
+  function exportJSON() {
+    const data = { exportedAt: new Date().toISOString(), rbts_log: log }
+    const a = document.createElement('a')
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
+    a.download = `rbts_backup_${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+  }
+
+  function mergeFile(e) {
+    const file = e.target.files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = async ev => {
+      try {
+        const state = JSON.parse(ev.target.result)
+        const incoming = Array.isArray(state.rbts_log) ? state.rbts_log
+                       : (Array.isArray(state) ? state : null)
+        if (!incoming) { alert('Invalid file — expected an rbts_log array.'); return }
+        const res = await onMergeImport(incoming)
+        alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
+          (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).'))
+      } catch (err) { alert('Could not read file: ' + err.message) }
+    }
+    reader.readAsText(file); e.target.value = ''
+  }
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={{...widget,display:'flex',flexWrap:'wrap',gap:16,alignItems:'flex-end'}}>
@@ -866,6 +1207,12 @@ function HistoryTab({ log }) {
         </div>
         <div><span style={lbl}>SESSIONS</span><span style={readoutStyle}>{entries.length}</span></div>
         <button style={{...btn(false,C.green),padding:'6px 18px',fontSize:11}} onClick={exportCSV}>EXPORT CSV</button>
+        <button style={{...btn(false,'#7ecfff'),padding:'6px 18px',fontSize:11}} onClick={exportJSON}>EXPORT JSON</button>
+        <label style={{...btn(false,C.green),padding:'6px 18px',fontSize:11,cursor:'pointer'}}
+          title="Add or replace sessions by date — syncs to the cloud when signed in">
+          MERGE IMPORT
+          <input type="file" accept=".json" style={{display:'none'}} onChange={mergeFile}/>
+        </label>
       </div>
 
       {entries.length===0 ? (
@@ -1063,6 +1410,32 @@ export default function App() {
     }
   }, [user])
 
+  const handleMergeImport = useCallback(async (incoming) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return { added:0, dates:0, synced:false }
+    const dropDates = new Set(incoming.map(e => e.date))
+    setLog(prev => {
+      const kept = prev.filter(e => !dropDates.has(e.date))
+      return kept.concat(incoming).sort((a,b) => a.date.localeCompare(b.date))
+    })
+    let synced = false
+    if (user) {
+      try {
+        const existing = await loadLogFromFirestore(user.uid)
+        const toDelete = existing.filter(e => dropDates.has(e.date))
+        await Promise.all(toDelete.map(e => deleteDoc(doc(db,'users',user.uid,'workouts',`${e.date}_${e.session}`))))
+        await Promise.all(incoming.map(e => saveEntryToFirestore(user.uid, e)))
+        synced = true
+      } catch (err) { console.error('Merge import failed:', err) }
+    } else {
+      try {
+        const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
+        const kept  = local.filter(e => !dropDates.has(e.date))
+        localStorage.setItem('rbts_log', JSON.stringify(kept.concat(incoming).sort((a,b)=>a.date.localeCompare(b.date))))
+      } catch {}
+    }
+    return { added: incoming.length, dates: dropDates.size, synced }
+  }, [user])
+
   function tabStyle(active) {
     return {
       background: active ? `${C.accent}18` : 'transparent',
@@ -1121,7 +1494,7 @@ export default function App() {
 
       {/* Nav */}
       <div style={{background:C.bgPanel,borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex'}}>
-        {['today','history','programs','library','gear'].map(t => (
+        {['today','history','strength','programs','library','gear'].map(t => (
           <button key={t} style={tabStyle(tab===t)} onClick={()=>setTab(t)}>
             {t.charAt(0).toUpperCase()+t.slice(1)}
           </button>
@@ -1136,7 +1509,8 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/>}
-        {tab==='history'  && <HistoryTab log={log}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport}/>}
+        {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab/>}
         {tab==='gear'     && <GearTab/>}

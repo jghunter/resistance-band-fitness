@@ -548,7 +548,7 @@ export const PROGRAMS = [
   //      Overhead press, Biceps curl, Leg curl, Leg press
   {
     id: 13,
-    name: "Program 13 — Z: Beginner",
+    name: "Program 13 — Beginner",
     sessions: {
       C: {
         primary:     { chestIso: 13,  chestComp: 19 },
@@ -592,7 +592,7 @@ export const PROGRAMS = [
   //      Standing calf raise, Trunk curl
   {
     id: 14,
-    name: "Program 14 — Y: Expanded Beginner",
+    name: "Program 14 — Expanded Beginner",
     sessions: {
       C: {
         primary:     { chestIso: 9,   chestComp: 2  },
@@ -635,14 +635,7 @@ export const PROGRAMS = [
   //      Triceps press, Biceps curl, Calf raise, Overhead press
   {
     id: 15,
-    name: "Program 15 — X: Full-Body Power",
-    sessionFocus: {
-      C:{label:"FULL BODY", color:"#a78bfa"},
-      D:{label:"FULL BODY", color:"#a78bfa"},
-      E:{label:"FULL BODY", color:"#a78bfa"},
-      F:{label:"FULL BODY", color:"#a78bfa"},
-      G:{label:"FULL BODY", color:"#a78bfa"},
-    },
+    name: "Program 15 — Full-Body Power",
     sessionFocus: {
       C:{label:"FULL BODY", color:"#a78bfa"},
       D:{label:"FULL BODY", color:"#a78bfa"},
@@ -693,7 +686,7 @@ export const PROGRAMS = [
   //      Biceps curl, Trunk curl
   {
     id: 16,
-    name: "Program 16 — W: Classic Compound",
+    name: "Program 16 — Classic Compound",
     sessions: {
       C: {
         primary:     { chestIso: 10,  chestComp: 14 },
@@ -738,7 +731,7 @@ export const PROGRAMS = [
   //      Side bend, Reverse trunk curl
   {
     id: 17,
-    name: "Program 17 — V: Posterior Chain",
+    name: "Program 17 — Posterior Chain",
     sessions: {
       C: {
         primary:     { chestIso: 13,  chestComp: 3  },
@@ -783,14 +776,7 @@ export const PROGRAMS = [
   //      Bench press / Bent-over row, Four-way neck
   {
     id: 18,
-    name: "Program 18 — U: Balanced Full-Body",
-    sessionFocus: {
-      C:{label:"FULL BODY", color:"#a78bfa"},
-      D:{label:"FULL BODY", color:"#a78bfa"},
-      E:{label:"FULL BODY", color:"#a78bfa"},
-      F:{label:"FULL BODY", color:"#a78bfa"},
-      G:{label:"FULL BODY", color:"#a78bfa"},
-    },
+    name: "Program 18 — Balanced Full-Body",
     sessionFocus: {
       C:{label:"FULL BODY", color:"#a78bfa"},
       D:{label:"FULL BODY", color:"#a78bfa"},
@@ -841,7 +827,7 @@ export const PROGRAMS = [
   //      Negative chin-up, Negative dip
   {
     id: 19,
-    name: "Program 19 — T: Negative Emphasis",
+    name: "Program 19 — Negative Emphasis",
     sessions: {
       C: {
         primary:     { chestIso: 13,  chestComp: 2  },
@@ -886,7 +872,7 @@ export const PROGRAMS = [
   //      Trunk curl / Reverse trunk curl
   {
     id: 20,
-    name: "Program 20 — S: Superset Pairs",
+    name: "Program 20 — Superset Pairs",
     sessions: {
       C: {
         primary:     { chestIso: 9,   chestComp: 19 },
@@ -930,7 +916,7 @@ export const PROGRAMS = [
   //      Reverse curl
   {
     id: 21,
-    name: "Program 21 — R: Strength Essentials",
+    name: "Program 21 — Strength Essentials",
     sessions: {
       C: {
         primary:     { chestIso: 13,  chestComp: 5  },
@@ -973,7 +959,7 @@ export const PROGRAMS = [
   //      Negative dip, Shoulder shrug, Trunk curl
   {
     id: 22,
-    name: "Program 22 — Q: Minimalist Strength",
+    name: "Program 22 — Minimalist Strength",
     sessions: {
       C: {
         primary:     { chestIso: 12,  chestComp: 1  },
@@ -1075,6 +1061,42 @@ export const PROGRAMS = [
       week3: [ t("G","shoulderComp","30_10_30"),  t("C","biceps","30_10_30")       ],
       week4: [ t("D","chestComp","30_10_30"),     t("E","backComp","30_10_30")     ],
       week5: [ t("F","legComp","30_10_30"),       t("G","shoulderComp","30_10_30") ],
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────
+  // PROGRAM 25 — Original X (Full Body) — Greg's original X routine.
+  // Chest Press, Split Squat (L/R), Bent-Over Row, Deadlift, Triceps
+  // Press, Drag Curl, Calf Raise, Overhead Press. Same full-body
+  // workout every session (all sessions identical, like Big Five).
+  // ──────────────────────────────────────────────────────────
+  {
+    id: 25,
+    name: "Program 25 — Original X (Full Body)",
+    sessionFocus: {
+      C:{label:"FULL BODY", color:"#22d3ee"},
+      D:{label:"FULL BODY", color:"#22d3ee"},
+      E:{label:"FULL BODY", color:"#22d3ee"},
+      F:{label:"FULL BODY", color:"#22d3ee"},
+      G:{label:"FULL BODY", color:"#22d3ee"},
+    },
+    sessions: {
+      C: { primary:{chestComp:1,hinge:185}, accessories:{legComp:102,backComp:23,shoulderComp:43,triceps:149,biceps:135,calves:167} },
+      D: { primary:{chestComp:1,hinge:185}, accessories:{legComp:102,backComp:23,shoulderComp:43,triceps:149,biceps:135,calves:167} },
+      E: { primary:{chestComp:1,hinge:185}, accessories:{legComp:102,backComp:23,shoulderComp:43,triceps:149,biceps:135,calves:167} },
+      F: { primary:{chestComp:1,hinge:185}, accessories:{legComp:102,backComp:23,shoulderComp:43,triceps:149,biceps:135,calves:167} },
+      G: { primary:{chestComp:1,hinge:185}, accessories:{legComp:102,backComp:23,shoulderComp:43,triceps:149,biceps:135,calves:167} },
+    },
+    deload: {
+      note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
+      exercises: [1, 185, 102, 23, 43, 149, 135, 167]
+    },
+    techniques: {
+      week1: [ t("C","chestComp","super_slow"),        t("D","hinge","rest_pause")            ],
+      week2: [ t("E","backComp","drop_set"),           t("F","shoulderComp","1_quarter_reps") ],
+      week3: [ t("G","legComp","rest_pause"),          t("C","triceps","forced_reps")         ],
+      week4: [ t("D","biceps","negative_accentuated"), t("E","calves","partials")             ],
+      week5: [ t("F","chestComp","mechanical_drop_set"),t("G","hinge","pre_exhaustion")       ],
     },
   },
 
