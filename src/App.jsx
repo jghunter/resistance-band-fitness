@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, setDoc, deleteDoc, getDocs, query, orderBy } from 'firebase/firestore'
+import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, query, orderBy } from 'firebase/firestore'
 import { db, auth, googleProvider } from './firebase'
 import {
   C, EXERCISE_NAMES, TECHNIQUES, VIDEOS, PROGRAMS,
@@ -72,6 +72,49 @@ async function saveEntryToFirestore(uid, entry) {
   const docId = `${entry.date}_${entry.session}`
   await setDoc(doc(db, 'users', uid, 'workouts', docId), entry)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIRESTORE GEAR + MY-BANDS HELPERS
+//   gear  → users/{uid}/gear/{itemId}   (one doc per equipment item)
+//   bands → users/{uid}/meta/myBands    ({ ids: [...] })
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadGearFromFirestore(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'gear'))
+  return snap.docs.map(d => d.data())
+}
+async function saveGearItemToFirestore(uid, item) {
+  await setDoc(doc(db, 'users', uid, 'gear', item.id), item)
+}
+async function deleteGearItemFromFirestore(uid, id) {
+  await deleteDoc(doc(db, 'users', uid, 'gear', id))
+}
+async function loadMyBandsFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'myBands'))
+  return d.exists() ? (d.data().ids || []) : null
+}
+async function saveMyBandsToFirestore(uid, ids) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'myBands'), { ids })
+}
+
+// ── Local (signed-out) gear + my-bands storage; gear seeds once from GEAR ──
+const GEAR_KEY = 'rbts_gear'
+function flattenGearSeed(seed) {
+  const out = []; let n = 0; const t = Date.now()
+  seed.forEach(g => (g.items || []).forEach(it => {
+    out.push({ id:`g${t}_${n++}`, brand:g.brand, name:it.name, qty:it.qty || 1,
+      status:(it.status === 'preorder' ? 'inbound' : (it.status || 'owned')), note:it.note || '' })
+  }))
+  return out
+}
+function getLocalGear() {
+  try { const raw = localStorage.getItem(GEAR_KEY); if (raw) return JSON.parse(raw) } catch {}
+  const seeded = flattenGearSeed(GEAR)
+  try { localStorage.setItem(GEAR_KEY, JSON.stringify(seeded)) } catch {}
+  return seeded
+}
+function saveLocalGear(items) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(items)) } catch {} }
+function getLocalMyBands() { try { return JSON.parse(localStorage.getItem('rbts_myBands') || '[]') } catch { return [] } }
+function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON.stringify(ids)) } catch {} }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VIDEO HELPERS
@@ -1376,64 +1419,208 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // GEAR TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function GearTab() {
-  const statusColors = { owned:'#00ff99', preorder:'#ffaa00' }
+// Editable equipment inventory + MY BANDS. Controlled by App (Firestore-synced
+// when signed in, localStorage when signed out) via props.
+function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands }) {
+  const [open, setOpen]   = useState({})
+  const isOpen   = k => !!open[k]
+  const toggle   = k => setOpen(o => ({ ...o, [k]: !o[k] }))
+  const openBrand = k => setOpen(o => ({ ...o, [k]: true }))
+
+  // group equipment by brand
+  const gByBrand = {}
+  gear.forEach(it => { (gByBrand[it.brand] = gByBrand[it.brand] || []).push(it) })
+  const gBrands = Object.keys(gByBrand).sort()
+
+  // group owned bands by brand
+  const owned = BANDS.filter(b => myBands.indexOf(b.id) >= 0)
+  const bByBrand = {}
+  owned.forEach(b => { (bByBrand[b.brand] = bByBrand[b.brand] || []).push(b) })
+  const bBrands = Object.keys(bByBrand).sort()
+
+  // add-gear form
+  const [addingGear, setAddingGear] = useState(false)
+  const [gf, setGf] = useState({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
+  const gfSet = (k, v) => setGf(p => ({ ...p, [k]: v }))
+  function addGearItem() {
+    const brand = (gf.brand === '__new__' ? gf.newBrand : gf.brand).trim()
+    const name  = gf.name.trim()
+    if (!brand || !name) return
+    onSaveGear({ id:`g${Date.now()}`, brand, name,
+      qty:Math.max(1, parseInt(gf.qty,10)||1), status:gf.status, note:'' })
+    setGf({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
+    setAddingGear(false); openBrand('gear:'+brand)
+  }
+
+  // add-band form
+  const [addingBand, setAddingBand] = useState(false)
+  const allBandBrands = []
+  BANDS.forEach(b => { if (allBandBrands.indexOf(b.brand) < 0) allBandBrands.push(b.brand) })
+  allBandBrands.sort()
+  const [bf, setBf] = useState({ brand: allBandBrands[0] || '', bandId:'' })
+  const bfChoices = BANDS.filter(b => b.brand === bf.brand && myBands.indexOf(b.id) < 0)
+    .sort((a,b) => a.lengthIn - b.lengthIn || bandResMid(a.res) - bandResMid(b.res))
+  function addBandSel() {
+    if (!bf.bandId) return
+    const br = (BANDS.find(b => b.id === bf.bandId) || {}).brand
+    if (myBands.indexOf(bf.bandId) < 0) onSetMyBands([...myBands, bf.bandId])
+    setBf({ brand: bf.brand, bandId:'' }); setAddingBand(false)
+    if (br) openBrand('band:'+br)
+  }
+
+  const SC = { owned:C.green, inbound:C.amber }
+  const brandHeader = (key, name, right) => (
+    <div onClick={() => toggle(key)}
+      style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',
+        padding:'8px 10px',background:C.bgInput,borderRadius:5}}>
+      <span style={{color:C.accent,fontFamily:'monospace',fontSize:12,width:12}}>{isOpen(key)?'▾':'▸'}</span>
+      <span style={{color:C.text,fontWeight:700,fontSize:12,letterSpacing:'0.06em',
+        textTransform:'uppercase',flex:1}}>{name}</span>
+      {right}
+    </div>
+  )
+
   return (
-    <div>
-      <div style={{fontSize:11,color:'#aaa',letterSpacing:'0.12em',marginBottom:16,textTransform:'uppercase'}}>
-        Equipment Inventory
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
-        {GEAR.map(brand => {
-          const ownedCount    = brand.items.filter(i=>i.status==='owned').length
-          const preorderCount = brand.items.filter(i=>i.status==='preorder').length
-          return (
-            <div key={brand.brand} style={{background:'#1a1f2e',border:'1px solid #2a3050',borderRadius:8,padding:14}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-                <div style={{color:'#7ecfff',fontWeight:700,fontSize:13,letterSpacing:'0.08em',textTransform:'uppercase'}}>
-                  {brand.brand}
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <span style={{fontSize:10,color:'#00ff99',background:'rgba(0,255,153,0.08)',padding:'2px 7px',borderRadius:4}}>
-                    {ownedCount} owned
-                  </span>
-                  {preorderCount > 0 && (
-                    <span style={{fontSize:10,color:'#ffaa00',background:'rgba(255,170,0,0.08)',padding:'2px 7px',borderRadius:4}}>
-                      {preorderCount} inbound
-                    </span>
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      <div style={widget}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <span style={lbl}>MY BANDS{owned.length?' · '+owned.length:''}</span>
+          <button style={{...btn(addingBand),fontSize:10,padding:'4px 10px'}}
+            onClick={() => setAddingBand(!addingBand)}>{addingBand?'✕ CANCEL':'+ ADD BAND'}</button>
+        </div>
+        {addingBand && (
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center',
+            marginBottom:12,padding:10,background:C.bgInput,borderRadius:5}}>
+            <select value={bf.brand} onChange={e => setBf({brand:e.target.value,bandId:''})}
+              style={{...inputStyle,minWidth:130}}>
+              {allBandBrands.map(br => <option key={br} value={br}>{br}</option>)}
+            </select>
+            <select value={bf.bandId} onChange={e => setBf({...bf,bandId:e.target.value})}
+              style={{...inputStyle,minWidth:210}}>
+              <option value="">— select band —</option>
+              {bfChoices.map(b => (
+                <option key={b.id} value={b.id}>{b.color+' '+b.model+' · '+b.lengthIn+'" · '+b.res}</option>
+              ))}
+            </select>
+            <button style={{...btn(true,C.green),fontSize:11}} onClick={addBandSel}>ADD</button>
+            {bfChoices.length===0 && <span style={{fontSize:10,color:C.dimGray}}>all {bf.brand} bands already owned</span>}
+          </div>
+        )}
+        {bBrands.length===0 ? (
+          <span style={{fontFamily:'monospace',fontSize:12,color:C.dimGray}}>
+            No bands marked yet. Use + ADD BAND to start your list.
+          </span>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {bBrands.map(br => {
+              const key = 'band:'+br; const list = bByBrand[br]
+              return (
+                <div key={key}>
+                  {brandHeader(key, br, <span style={pill(C.amber)}>{list.length}</span>)}
+                  {isOpen(key) && (
+                    <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'8px 6px 2px 24px'}}>
+                      {list.slice().sort((a,b) => a.lengthIn-b.lengthIn || bandResMid(a.res)-bandResMid(b.res)).map(b => {
+                        const hex = COLOR_HEX[b.color] || '#888'
+                        return (
+                          <span key={b.id} style={{display:'inline-flex',alignItems:'center',gap:6,
+                            background:C.bgWidget,border:'1px solid '+C.dimGray,borderRadius:4,
+                            padding:'4px 8px',fontFamily:'monospace',fontSize:11,color:C.text}}>
+                            <span style={{width:9,height:9,borderRadius:'50%',background:hex,
+                              border:'1px solid rgba(255,255,255,0.3)',flexShrink:0}}/>
+                            {b.color} {b.model}
+                            <span style={{color:C.dimGray}}>{b.lengthIn}"</span>
+                            <span style={{color:C.readout+'cc'}}>{b.res}</span>
+                            <span onClick={() => onSetMyBands(myBands.filter(x => x !== b.id))}
+                              title="Remove from My Bands"
+                              style={{cursor:'pointer',color:C.red,fontWeight:700,marginLeft:2}}>✕</span>
+                          </span>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                {brand.items.map((item,i) => (
-                  <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-                    padding:'6px 8px',background:'rgba(255,255,255,0.03)',borderRadius:4}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:6,height:6,borderRadius:'50%',
-                        background:statusColors[item.status]||'#aaa',flexShrink:0}}/>
-                      <span style={{fontSize:12,color:'#dde'}}>
-                        {item.qty>1?`${item.qty}× `:''}{item.name}
-                        {item.note && <span style={{color:'#888',fontSize:10}}> ({item.note})</span>}
-                      </span>
-                    </div>
-                    {item.status==='preorder' && (
-                      <span style={{fontSize:9,color:'#ffaa00',letterSpacing:'0.1em',textTransform:'uppercase'}}>
-                        pre-order
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
+              )
+            })}
+          </div>
+        )}
       </div>
-      <div style={{marginTop:20,padding:12,background:'#1a1f2e',border:'1px solid #2a3050',
-        borderRadius:8,fontSize:11,color:'#888'}}>
-        <span style={{color:'#7ecfff',letterSpacing:'0.08em'}}>TOTAL — </span>
-        {GEAR.reduce((s,b)=>s+b.items.filter(i=>i.status==='owned').length,0)} items owned
-        {' · '}
-        {GEAR.reduce((s,b)=>s+b.items.filter(i=>i.status==='preorder').length,0)} pre-orders inbound
+      <div style={widget}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <span style={lbl}>EQUIPMENT{gear.length?' · '+gear.length:''}</span>
+          <button style={{...btn(addingGear),fontSize:10,padding:'4px 10px'}}
+            onClick={() => setAddingGear(!addingGear)}>{addingGear?'✕ CANCEL':'+ ADD GEAR'}</button>
+        </div>
+        {addingGear && (
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center',
+            marginBottom:12,padding:10,background:C.bgInput,borderRadius:5}}>
+            <select value={gf.brand} onChange={e => gfSet('brand',e.target.value)}
+              style={{...inputStyle,minWidth:130}}>
+              <option value="">— brand —</option>
+              {gBrands.map(br => <option key={br} value={br}>{br}</option>)}
+              <option value="__new__">+ New brand…</option>
+            </select>
+            {gf.brand==='__new__' && (
+              <input value={gf.newBrand} placeholder="new brand"
+                onChange={e => gfSet('newBrand',e.target.value)}
+                style={{...inputStyle,minWidth:120}}/>
+            )}
+            <input value={gf.name} placeholder="item name"
+              onChange={e => gfSet('name',e.target.value)}
+              style={{...inputStyle,minWidth:150}}/>
+            <input type="number" min="1" value={gf.qty}
+              onChange={e => gfSet('qty',e.target.value)}
+              style={{...inputStyle,width:60}}/>
+            <select value={gf.status} onChange={e => gfSet('status',e.target.value)}
+              style={{...inputStyle,minWidth:100}}>
+              <option value="owned">Owned</option>
+              <option value="inbound">Inbound</option>
+            </select>
+            <button style={{...btn(true,C.green),fontSize:11}} onClick={addGearItem}>ADD</button>
+          </div>
+        )}
+        {gBrands.length===0 ? (
+          <span style={{fontFamily:'monospace',fontSize:12,color:C.dimGray}}>
+            No equipment yet. Use + ADD GEAR to start your inventory.
+          </span>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {gBrands.map(br => {
+              const key = 'gear:'+br; const list = gByBrand[br]
+              const ownedN   = list.filter(i => i.status==='owned').length
+              const inboundN = list.filter(i => i.status==='inbound').length
+              return (
+                <div key={key}>
+                  {brandHeader(key, br,
+                    <span style={{display:'flex',gap:6,alignItems:'center'}}>
+                      <span style={pill(C.green)}>{ownedN}</span>
+                      {inboundN>0 && <span style={pill(C.amber)}>{inboundN} in</span>}
+                    </span>)}
+                  {isOpen(key) && (
+                    <div style={{display:'flex',flexDirection:'column',gap:4,padding:'8px 6px 2px 24px'}}>
+                      {list.map(it => (
+                        <div key={it.id} style={{display:'flex',alignItems:'center',gap:8,
+                          padding:'6px 8px',background:C.bgWidget,borderRadius:4}}>
+                          <span title="Toggle owned / inbound"
+                            onClick={() => onSaveGear({...it, status: it.status==='owned'?'inbound':'owned'})}
+                            style={{width:10,height:10,borderRadius:'50%',background:SC[it.status]||C.dimGray,
+                              flexShrink:0,cursor:'pointer',border:'1px solid rgba(255,255,255,0.25)'}}/>
+                          <span style={{fontFamily:'monospace',fontSize:12,color:C.text,flex:1}}>
+                            {it.qty>1?it.qty+'× ':''}{it.name}
+                            {it.note?<span style={{color:C.dimGray,fontSize:10}}> ({it.note})</span>:null}
+                          </span>
+                          {it.status==='inbound' && <span style={pill(C.amber)}>inbound</span>}
+                          <span onClick={() => onRemoveGear(it.id)}
+                            title="Remove item"
+                            style={{cursor:'pointer',color:C.red,fontWeight:700}}>✕</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1446,6 +1633,8 @@ export default function App() {
   const [tab, setTab]                 = useState('today')
   const [user, setUser]               = useState(null)
   const [log, setLog]                 = useState([])
+  const [gear, setGear]               = useState([])
+  const [myBands, setMyBands]         = useState([])
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
 
@@ -1467,12 +1656,34 @@ export default function App() {
           const entries = await loadLogFromFirestore(u.uid)
           setLog(entries)
         } catch (e) { console.error('Error loading log:', e) }
+        // Gear: backfill local → Firestore when empty, then load
+        try {
+          let fsGear = await loadGearFromFirestore(u.uid)
+          if (fsGear.length === 0) {
+            const localGear = getLocalGear()   // seeds defaults if nothing stored
+            await Promise.all(localGear.map(g => saveGearItemToFirestore(u.uid, g)))
+            fsGear = localGear
+          }
+          setGear(fsGear)
+        } catch (e) { console.error('Error loading gear:', e); setGear(getLocalGear()) }
+        // My bands: backfill local → Firestore when absent, then load
+        try {
+          let fsBands = await loadMyBandsFromFirestore(u.uid)
+          if (fsBands === null) {
+            const localBands = getLocalMyBands()
+            await saveMyBandsToFirestore(u.uid, localBands)
+            fsBands = localBands
+          }
+          setMyBands(fsBands)
+        } catch (e) { console.error('Error loading my bands:', e); setMyBands(getLocalMyBands()) }
         setLogLoading(false)
       } else {
         try {
           const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
           setLog(local)
         } catch { setLog([]) }
+        setGear(getLocalGear())
+        setMyBands(getLocalMyBands())
       }
     })
     return unsub
@@ -1488,6 +1699,8 @@ export default function App() {
     await signOut(auth)
     setUser(null)
     try { setLog(JSON.parse(localStorage.getItem('rbts_log')||'[]')) } catch { setLog([]) }
+    setGear(getLocalGear())
+    setMyBands(getLocalMyBands())
   }
 
   const handleSaveEntry = useCallback(async (entry) => {
@@ -1547,6 +1760,28 @@ export default function App() {
           local.filter(e => !(e.date===entry.date && e.session===entry.session))))
       } catch {}
     }
+  }, [user])
+
+  // Gear: add or update one item (status toggle reuses this with a new status)
+  const handleSaveGear = useCallback(async (item) => {
+    const idx  = gear.findIndex(g => g.id === item.id)
+    const next = idx >= 0 ? gear.map(g => g.id === item.id ? item : g) : [...gear, item]
+    setGear(next)
+    if (user) { try { await saveGearItemToFirestore(user.uid, item) } catch (e) { console.error('Save gear failed:', e) } }
+    else saveLocalGear(next)
+  }, [user, gear])
+
+  const handleRemoveGear = useCallback(async (id) => {
+    const next = gear.filter(g => g.id !== id)
+    setGear(next)
+    if (user) { try { await deleteGearItemFromFirestore(user.uid, id) } catch (e) { console.error('Remove gear failed:', e) } }
+    else saveLocalGear(next)
+  }, [user, gear])
+
+  const handleSetMyBands = useCallback(async (next) => {
+    setMyBands(next)
+    if (user) { try { await saveMyBandsToFirestore(user.uid, next) } catch (e) { console.error('Save my bands failed:', e) } }
+    else saveLocalMyBands(next)
   }, [user])
 
   function tabStyle(active) {
@@ -1626,7 +1861,7 @@ export default function App() {
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab/>}
-        {tab==='gear'     && <GearTab/>}
+        {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands}/>}
       </div>
     </div>
   )
