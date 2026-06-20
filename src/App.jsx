@@ -11,6 +11,13 @@ import {
 } from './data'
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
+// for afternoon/evening workouts in zones behind UTC (e.g. Hawaii UTC-10).
+// ─────────────────────────────────────────────────────────────────────────────
+const localISO = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STYLE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 const widget = {
@@ -324,8 +331,8 @@ function BandPicker({ selected, onChange }) {
             const cnt = counts[b.id] || 0
             const lenMismatch = stackLen != null && b.lengthIn !== stackLen && cnt === 0
             return (
-              <div key={b.id} onClick={() => { if(!lenMismatch) addBand(b.id) }}
-                title={lenMismatch ? `Different length (${b.lengthIn}") — stack only bands of ${stackLen}"` : undefined}
+              <div key={b.id} onClick={() => { if(cnt>0){removeBandId(b.id)} else if(!lenMismatch){addBand(b.id)} }}
+                title={cnt>0 ? 'Selected — tap to remove' : (lenMismatch ? `Different length (${b.lengthIn}") — stack only bands of ${stackLen}"` : 'Tap to add')}
                 style={{
                 display:'flex',alignItems:'center',gap:8,padding:'5px 7px',
                 borderRadius:4,cursor:lenMismatch?'not-allowed':'pointer',marginBottom:2,
@@ -343,7 +350,7 @@ function BandPicker({ selected, onChange }) {
                 <span style={{fontFamily:'monospace',fontSize:9,color:lenMismatch?C.amber:C.dimGray,flexShrink:0}}>
                   {b.lengthIn}"{lenMismatch?' ≠':''}
                 </span>
-                {cnt>0 && <span style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',fontSize:9,fontWeight:'bold'}}>×{cnt}</span>}
+                {cnt>0 && <span title="Tap row to remove" style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',fontSize:9,fontWeight:'bold'}}>×{cnt} ✕</span>}
               </div>
             )
           })}
@@ -641,7 +648,7 @@ function StrengthTab({ log }) {
     { key:'all',  label:'ALL TIME',   days:-1 },
   ]
   const cfg = WINDOWS.find(w => w.key === win) || WINDOWS[2]
-  const daysAgoISO = n => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10) }
+  const daysAgoISO = n => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-n); return localISO(d) }
   const latestDate = data[data.length-1].date
 
   let winEntries, prevEntries = null
@@ -978,7 +985,7 @@ function TodayTab({ user, log, onSaveEntry }) {
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi])
-  const todayISO   = new Date().toISOString().split('T')[0]
+  const todayISO   = localISO()
   const todayStr   = new Date().toLocaleDateString('en-US',
     {weekday:'long',month:'long',day:'numeric'}).toUpperCase()
   const focusColor = getSessionFocus(info.prog, info.session).color
@@ -1130,9 +1137,90 @@ function TodayTab({ user, log, onSaveEntry }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HISTORY TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HistoryTab({ log, onMergeImport }) {
+// ── Editable past-session card — correct bands/reps/sets logged earlier ──
+function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
+  const [ex, setEx] = useState(() => JSON.parse(JSON.stringify(entry.exercises || {})))
+
+  const updateSet = (id, i, field, val) => setEx(prev => {
+    const n = { ...prev }
+    n[id] = (n[id] || []).map((s, idx) => idx === i ? { ...s, [field]: val } : s)
+    return n
+  })
+  const addSet = (id) => setEx(prev => {
+    const n = { ...prev }; const arr = (n[id] || []).slice(); const last = arr[arr.length - 1]
+    arr.push({ reps: last ? last.reps : 0, bands: last ? (last.bands || []).slice() : [] }); n[id] = arr; return n
+  })
+  const removeSet = (id, i) => setEx(prev => { const n = { ...prev }; n[id] = (n[id] || []).filter((_, idx) => idx !== i); return n })
+  const removeEx = (id) => setEx(prev => { const n = { ...prev }; delete n[id]; return n })
+
+  function save() {
+    onSave({ ...entry, exercises: ex, editedAt: new Date().toISOString() })
+    onDone(true)
+  }
+  function deleteSession() {
+    if (!window.confirm(`Delete this entire logged session (${entry.date} ${entry.session})? This cannot be undone.`)) return
+    onDelete(entry)
+    onDone(true)
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{fontFamily:'monospace',fontSize:10,color:C.amber}}>
+        ⚡ EDITING — tap a band chip's ✕ or a selected row to remove it; adjust reps; then SAVE CHANGES.
+      </div>
+      {Object.keys(ex).length===0 && (
+        <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray}}>
+          No exercises left in this session — use DELETE SESSION to remove it entirely.
+        </div>
+      )}
+      {Object.entries(ex).map(([id,sets]) => (
+        <div key={id} style={{background:C.bgInput,borderRadius:5,padding:'8px 10px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+            <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>
+              <span style={{color:C.dimGray}}>#{id} </span>{EXERCISE_NAMES[id]||id}
+            </span>
+            <button onClick={()=>removeEx(id)} title="Remove this exercise from the session"
+              style={{...btn(false,C.red),fontSize:10,padding:'3px 8px'}}>REMOVE EX</button>
+          </div>
+          {(sets||[]).map((s,i) => (
+            <div key={i} style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+              <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,paddingTop:9,flexShrink:0}}>S{i+1}</span>
+              <div style={{flex:1,minWidth:160}}>
+                <BandPicker selected={s.bands||[]} onChange={v=>updateSet(id,i,'bands',v)}/>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                  onClick={()=>updateSet(id,i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
+                <input type="number" min="0" max="999" value={s.reps||''} placeholder="0"
+                  onChange={e=>updateSet(id,i,'reps',Math.max(0,parseInt(e.target.value)||0))}
+                  style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
+                <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                  onClick={()=>updateSet(id,i,'reps',(s.reps||0)+1)}>+</button>
+                <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+              </div>
+              {sets.length>1 && (
+                <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
+                  onClick={()=>removeSet(id,i)}>✕</button>
+              )}
+            </div>
+          ))}
+          <button style={{...btn(false,C.green),fontSize:11,padding:'6px 12px'}}
+            onClick={()=>addSet(id)}>+ SET</button>
+        </div>
+      ))}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <button style={{...btn(true,C.green),padding:'6px 18px',fontSize:11}} onClick={save}>SAVE CHANGES</button>
+        <button style={{...btn(false),padding:'6px 18px',fontSize:11}} onClick={()=>onDone(false)}>CANCEL</button>
+        <button style={{...btn(false,C.red),padding:'6px 18px',fontSize:11,marginLeft:'auto'}} onClick={deleteSession}>DELETE SESSION</button>
+      </div>
+    </div>
+  )
+}
+
+function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
   const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate]     = useState(() => new Date().toISOString().split('T')[0])
+  const [toDate, setToDate]     = useState(() => localISO())
+  const [editKey, setEditKey]   = useState(null)
 
   const entries = useMemo(() =>
     log
@@ -1226,6 +1314,8 @@ function HistoryTab({ log, onMergeImport }) {
         const focusCol = getSessionFocus(PROGRAMS.find(p=>p.id===e.programId),e.session)?.color ?? C.accent
         const exCount  = Object.keys(e.exercises||{}).length
         const setCount = Object.values(e.exercises||{}).reduce((n,s)=>n+(s?s.length:0),0)
+        const entKey    = e.date+'|'+e.session
+        const isEditing = editKey===entKey
         return (
           <div key={e.date+e.session} style={widget}>
             <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12,flexWrap:'wrap'}}>
@@ -1244,7 +1334,15 @@ function HistoryTab({ log, onMergeImport }) {
                   {new Date(e.completedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
                 </span>
               )}
+              <button style={{...btn(isEditing,C.amber),fontSize:10,padding:'3px 12px',marginLeft:e.completedAt?0:'auto'}}
+                onClick={()=>setEditKey(isEditing?null:entKey)}>
+                {isEditing ? '▾ EDITING' : '✎ EDIT'}
+              </button>
             </div>
+            {isEditing ? (
+              <HistoryEntryEditor entry={e} onSave={onSaveEntry} onDelete={onDeleteEntry}
+                onDone={()=>setEditKey(null)}/>
+            ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:6}}>
               {Object.entries(e.exercises||{}).map(([exId,sets]) => (
                 <div key={exId} style={{background:C.bgInput,borderRadius:5,padding:'7px 10px'}}>
@@ -1267,6 +1365,7 @@ function HistoryTab({ log, onMergeImport }) {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )
       })}
@@ -1436,6 +1535,20 @@ export default function App() {
     return { added: incoming.length, dates: dropDates.size, synced }
   }, [user])
 
+  const handleDeleteEntry = useCallback(async (entry) => {
+    setLog(prev => prev.filter(e => !(e.date===entry.date && e.session===entry.session)))
+    if (user) {
+      try { await deleteDoc(doc(db,'users',user.uid,'workouts',`${entry.date}_${entry.session}`)) }
+      catch (e) { console.error('Delete failed:', e) }
+    } else {
+      try {
+        const local = JSON.parse(localStorage.getItem('rbts_log')||'[]')
+        localStorage.setItem('rbts_log', JSON.stringify(
+          local.filter(e => !(e.date===entry.date && e.session===entry.session))))
+      } catch {}
+    }
+  }, [user])
+
   function tabStyle(active) {
     return {
       background: active ? `${C.accent}18` : 'transparent',
@@ -1509,7 +1622,7 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab/>}
