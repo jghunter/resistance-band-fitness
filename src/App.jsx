@@ -9,6 +9,7 @@ import {
   calcToday, PROG_REPS,
   getTechMap, getWeekTechniques,
 } from './data'
+import RBTS_PHASE1 from './phase1.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
@@ -16,6 +17,12 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 const localISO = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+// ── Phase 1: ensure profile registry exists (additive · idempotent · non-destructive) ──
+try { if (RBTS_PHASE1 && RBTS_PHASE1.migrateToProfiles) RBTS_PHASE1.migrateToProfiles() }
+catch (e) { console.warn('RBTS_PHASE1 migrate failed', e) }
+const RBTS_AP = (() => { try { return localStorage.getItem('rbts_activeProfile') || 'greg' } catch { return 'greg' } })()
+const apk = (base) => (RBTS_PHASE1 ? RBTS_PHASE1.profileKey(base, RBTS_AP) : ('rbts_' + base))
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLE HELPERS
@@ -1021,9 +1028,9 @@ function LibraryTab() {
 // TODAY TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function TodayTab({ user, log, onSaveEntry }) {
-  const [startDate, setStartDate] = useLS('rbts_startDate', '2026-06-01')
-  const [sched, setSched]         = useLS('rbts_schedule', 'MWF')
-  const [pi, setPi]               = useLS('rbts_progIdx', 0)
+  const [startDate, setStartDate] = useLS(apk('startDate'), '2026-06-01')
+  const [sched, setSched]         = useLS(apk('schedule'), 'MWF')
+  const [pi, setPi]               = useLS(apk('progIdx'), 0)
   const [exLogs, setExLogs]       = useState({})
   const [saved, setSaved]         = useState(false)
 
