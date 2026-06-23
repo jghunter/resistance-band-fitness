@@ -37,22 +37,28 @@
    *      "density"    → uses segments + short intra-set rest; flag high fatigue
    * ==================================================================== */
   var INTENSIFIERS = {
-    straight:         { label: "Straight Set", alters: "none", sseMultiplier: 1.0,
-                        jointFriendly: true, minExperience: "novice" },
-    one_and_quarter:  { label: "1¼ Reps",      alters: "rom_tempo", sseMultiplier: 1.25,
-                        jointFriendly: true, minExperience: "intermediate" },
-    tempo:            { label: "Slow Eccentric", alters: "rom_tempo", sseMultiplier: 1.15,
-                        jointFriendly: true, minExperience: "novice" },
-    pause:            { label: "Paused Reps",  alters: "rom_tempo", sseMultiplier: 1.10,
-                        jointFriendly: true, minExperience: "novice" },
-    drop_set:         { label: "Drop Set",     alters: "resistance", usesSegments: true,
-                        minExperience: "intermediate" },
-    rest_pause:       { label: "Rest-Pause",   alters: "density", usesSegments: true,
-                        minExperience: "intermediate" },
-    myo_reps:         { label: "Myo-Reps",     alters: "density", usesSegments: true,
-                        minExperience: "advanced" },
-    cluster:          { label: "Cluster Set",  alters: "density", usesSegments: true,
-                        minExperience: "intermediate" },
+    // alters: how the technique changes the stimulus → drives normalization.
+    //   "none"       straight set
+    //   "rom_tempo"  same bands+reps, more stimulus/rep → apply sseMultiplier
+    //   "resistance" bands change mid-set → log segments; volume-load sums honestly
+    //   "density"    reps split by short rests past failure → log segments
+    //   "isometric"  timed hold → log seconds (not rep-multiplied)
+    //   "sequence"   a pairing/order effect across exercises (a tag, not a per-set math)
+    // sseMultiplier values are explicit, tunable PROXIES for trend tracking — not physiology truth.
+    // `order` leads the picker with Greg's most-used; lower = higher in the list.
+    straight:        { label: "Straight Set",          alters: "none",      sseMultiplier: 1.0,  jointFriendly: true,  minExperience: "novice",       order: 0 },
+    one_and_quarter: { label: "1¼ Reps",               alters: "rom_tempo", sseMultiplier: 1.25, jointFriendly: true,  minExperience: "intermediate", order: 1 },
+    drop_set:        { label: "Drop Set",              alters: "resistance", usesSegments: true,                       minExperience: "intermediate", order: 2 },
+    rest_pause:      { label: "Rest-Pause",            alters: "density",    usesSegments: true,                       minExperience: "intermediate", order: 3 },
+    tempo:           { label: "Slow Eccentric",        alters: "rom_tempo", sseMultiplier: 1.15, jointFriendly: true,  minExperience: "novice",       order: 4, params: { eccentricSec: 4 } },
+    super_slow_ecc:  { label: "Super-Slow Eccentric",  alters: "rom_tempo", sseMultiplier: 1.35, jointFriendly: true,  minExperience: "intermediate", order: 5, params: { eccentricSec: 10 } },
+    m_set:           { label: "M-Set",                 alters: "rom_tempo", sseMultiplier: 2.5, jointFriendly: true,   minExperience: "advanced",     order: 6, note: "multi-partial single rep: full + 1/4 + 1/2 + 3/4 returns; large TUT/rep (proxy ×2.5)" },
+    thirty_ten_thirty:{ label: "30-10-30",            alters: "density",    usesSegments: true,                       minExperience: "intermediate", order: 7, note: "30s eccentric + mid reps + 30s eccentric; log time-based bookend segments" },
+    iso_hold:        { label: "Isometric Hold",        alters: "isometric", timeBased: true,                          minExperience: "novice",       order: 8, note: "log hold seconds; not rep-multiplied" },
+    pre_exhaustion:  { label: "Pre-Exhaustion",        alters: "sequence",  isPairing: true,                          minExperience: "novice",       order: 9, note: "isolation immediately before compound, same muscle; a tag, not a multiplier" },
+    neg_accentuated: { label: "Negative-Accentuated",  alters: "rom_tempo", sseMultiplier: 1.30, jointFriendly: true,  minExperience: "advanced",     order: 10, note: "eccentric overload; concentric assisted/unloaded (e.g. step up to bar, lower slowly)" },
+    pause:           { label: "Paused Reps",           alters: "rom_tempo", sseMultiplier: 1.10, jointFriendly: true,  minExperience: "novice",       order: 11 },
+    cluster:         { label: "Cluster Set",           alters: "density",   usesSegments: true,                        minExperience: "intermediate", order: 12 },
   };
 
   /* ======================================================================

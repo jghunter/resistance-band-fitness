@@ -54,6 +54,60 @@ const inputStyle = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2: intensifier / segmented-set helpers (registry from phase1.js)
+// A set is EITHER a simple set ({reps,bands}) OR a segmented set
+// ({intensifier, segments:[{bands,reps}]}). Both may carry an optional `rir`.
+// These mirror the helpers in fitness_app.html so both apps read/write the
+// identical persisted shape (schemaVersion 2).
+// ─────────────────────────────────────────────────────────────────────────────
+const INTENS = (RBTS_PHASE1 && RBTS_PHASE1.INTENSIFIERS) ? RBTS_PHASE1.INTENSIFIERS : { straight:{label:'Straight Set',order:0} }
+const INTENS_OPTS = Object.keys(INTENS).sort((a,b) => (INTENS[a].order||99)-(INTENS[b].order||99))
+const intensLabel = (k) => (INTENS[k] && INTENS[k].label) || k
+const setIntensifier = (s) => (s && s.intensifier) ? s.intensifier : ((s && s.drop) ? 'drop_set' : 'straight')
+const isPlainSet = (s) => setIntensifier(s) === 'straight'
+const DEFAULT_RIR = (() => { try {
+  const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+  const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+  const p = ps.find(x => x.id === ap)
+  return (p && typeof p.rirTarget === 'number') ? p.rirTarget : 1
+} catch { return 1 } })()
+const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
+const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
+const setHasData = (s) => (s && Array.isArray(s.segments))
+  ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
+  : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
+function setTopLoad(st) {
+  if (RBTS_PHASE1 && RBTS_PHASE1.normalizeSet) {
+    const n = RBTS_PHASE1.normalizeSet(st)
+    return n.segments.reduce((m,seg) => {
+      const sr = (seg.bands||[]).reduce((a,id)=>a+bandResById(id), 0)
+      return sr > m ? sr : m
+    }, 0)
+  }
+  return setLoad(st)
+}
+function setVol(st) {
+  return (RBTS_PHASE1 && RBTS_PHASE1.volumeLoad) ? RBTS_PHASE1.volumeLoad(st, bandResById) : setLoad(st)*(st.reps||0)
+}
+// Strip empty sets and persist the canonical Phase-2 shape (matches html saveEntry)
+function cleanExercises(ex) {
+  const out = {}
+  Object.entries(ex || {}).forEach(([id, sets]) => {
+    if (!sets.some(setHasData)) return
+    out[id] = sets.map(s => {
+      const o = { reps: s.reps || 0, bands: (s.bands||[]).slice() }
+      if (s.drop) o.drop = true
+      if (s.intensifier && s.intensifier !== 'straight') o.intensifier = s.intensifier
+      if (s.rir != null && s.rir !== '') o.rir = s.rir
+      if (Array.isArray(s.segments) && s.segments.length)
+        o.segments = s.segments.map(g => ({ bands:(g.bands||[]).slice(), reps:g.reps||0, secs:g.secs }))
+      return o
+    })
+  })
+  return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // localStorage hook (for settings only)
 // ─────────────────────────────────────────────────────────────────────────────
 function useLS(key, def) {
@@ -423,11 +477,57 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 
   function addSet() {
     const last = sets[sets.length-1]
-    onSetsChange([...sets, {reps: last ? last.reps : 0, bands: last ? [...last.bands] : []}])
+    const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
+    const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
+    onSetsChange([...sets, {reps: lr, bands: [...lb]}])
   }
   function removeSet(i) { onSetsChange(sets.filter((_,idx)=>idx!==i)) }
   function updateSet(i, field, val) {
     onSetsChange(sets.map((s,idx) => idx===i ? {...s,[field]:val} : s))
+  }
+  // ── Phase 2: intensifier + segmented-set editing ──
+  const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
+  const segsOf  = (s) => Array.isArray(s.segments) ? s.segments : [{bands:(s.bands||[]).slice(), reps:s.reps||0}]
+  function changeIntens(i, k) {
+    onSetsChange(sets.map((ss,idx) => {
+      if (idx!==i) return ss
+      const n = {...ss}
+      const wantSeg = !!(INTENS[k] && INTENS[k].usesSegments)
+      if (k==='straight') {
+        if (Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0) }
+        delete n.segments; delete n.intensifier; delete n.drop
+      } else {
+        n.intensifier=k; delete n.drop
+        if (wantSeg && !Array.isArray(n.segments)) {
+          n.segments=[{bands:(n.bands||[]).slice(), reps:n.reps||0}]; delete n.bands; delete n.reps
+        } else if (!wantSeg && Array.isArray(n.segments)) {
+          n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments
+        }
+      }
+      return n
+    }))
+  }
+  function updateSeg(i, segIdx, field, val) {
+    onSetsChange(sets.map((ss,idx) => {
+      if (idx!==i) return ss
+      const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
+      segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
+    }))
+  }
+  function addSeg(i) {
+    onSetsChange(sets.map((ss,idx) => {
+      if (idx!==i) return ss
+      const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
+      const last=segs[segs.length-1]||{bands:[],reps:0}
+      segs.push({bands:(last.bands||[]).slice(), reps:0}); n.segments=segs; delete n.bands; delete n.reps; return n
+    }))
+  }
+  function removeSeg(i, segIdx) {
+    onSetsChange(sets.map((ss,idx) => {
+      if (idx!==i) return ss
+      const n={...ss}; const segs=(n.segments||segsOf(ss)).filter((_,gi)=>gi!==segIdx)
+      n.segments=segs; delete n.bands; delete n.reps; return n
+    }))
   }
 
   return (
@@ -461,38 +561,105 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
             : <span style={{color:C.dimGray}}>LAST: </span>
           }
           {prevSets.map((s,i) => {
-            const bNames = (s.bands||[]).map(bid => {
+            const bNames = (setBandsOf(s)).map(bid => {
               const b = BANDS.find(x=>x.id===bid)
               return b ? `${b.brand.split(' ')[0]} ${b.color} ${b.model} (${b.res}lbs)` : '?'
             }).join(' + ')
-            return <span key={i}>{s.reps}r [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
+            return <span key={i}>{setRepsOf(s)}r{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
           })}
         </div>
       )}
       <div style={{borderTop:'1px solid rgba(255,255,255,0.07)',paddingTop:8}}>
-        <span style={{...lbl,marginBottom:6}}>LOG SETS</span>
-        {sets.map((s,i) => (
-          <div key={i} style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:8}}>
-            <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,
-              minWidth:18,paddingTop:6,flexShrink:0}}>S{i+1}</span>
-            <div style={{flex:1,minWidth:0}}>
-              <BandPicker selected={s.bands||[]} onChange={v=>updateSet(i,'bands',v)}/>
+        <span style={{...lbl,marginBottom:2}}>LOG SETS</span>
+        <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginBottom:6}}>
+          TARGET 8–12 REPS/SET · ALL SETS ≥{PROG_REPS} → MOVE UP A BAND
+        </div>
+        {sets.map((s,i) => {
+          const seg = usesSeg(s)
+          const segs = segsOf(s)
+          const straight = isPlainSet(s)
+          return (
+            <div key={i} style={ straight
+              ? {marginBottom:8,paddingBottom:2}
+              : {border:`1px solid ${C.amber}33`,borderRadius:6,padding:'7px 8px',marginBottom:8,background:`${C.amber}08`} }>
+              <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,flexShrink:0}}>S{i+1}</span>
+                <select value={setIntensifier(s)} title="Intensifier used on this set"
+                  onChange={e=>changeIntens(i,e.target.value)}
+                  style={{background:C.bgInput,
+                    color:straight?C.dimGray:C.amber,
+                    border:`1px solid ${straight?'rgba(255,255,255,0.12)':C.amber+'66'}`,
+                    borderRadius:4,padding:'6px 4px',fontSize:10,fontFamily:'monospace',flexShrink:0,maxWidth:150}}>
+                  {INTENS_OPTS.map(k => <option key={k} value={k}>{k==='straight'?'— none —':intensLabel(k)}</option>)}
+                </select>
+                <div style={{display:'flex',alignItems:'center',gap:3,flexShrink:0}}>
+                  <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>RIR</span>
+                  <input type="number" min="0" max="9"
+                    value={s.rir==null?'':s.rir} placeholder={String(DEFAULT_RIR)}
+                    title="Reps in reserve for the whole set (blank = your default)"
+                    onChange={e=>{const v=e.target.value; updateSet(i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                    style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
+                </div>
+                <span style={{flex:1}}></span>
+                {sets.length > 1 && (
+                  <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
+                    onClick={()=>removeSet(i)}>✕</button>
+                )}
+              </div>
+              {seg ? (
+                <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:6}}>
+                  {segs.map((g,gi) => (
+                    <div key={gi} style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+                      <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}}
+                        title="Resistance phase / drop">▼{gi+1}</span>
+                      <div style={{flex:1,minWidth:150}}>
+                        <BandPicker selected={g.bands||[]} onChange={v=>updateSeg(i,gi,'bands',v)}/>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                        <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                          onClick={()=>updateSeg(i,gi,'reps',Math.max(0,(g.reps||0)-1))}>−</button>
+                        <input type="number" min="0" max="999" value={g.reps||''} placeholder="0"
+                          onChange={e=>updateSeg(i,gi,'reps',Math.max(0,parseInt(e.target.value)||0))}
+                          style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
+                        <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                          onClick={()=>updateSeg(i,gi,'reps',(g.reps||0)+1)}>+</button>
+                        <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                      </div>
+                      {segs.length > 1 && (
+                        <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
+                          onClick={()=>removeSeg(i,gi)}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <button style={{...btn(false,C.amber),fontSize:10,padding:'5px 10px'}}
+                      onClick={()=>addSeg(i)}>+ PHASE / DROP</button>
+                    <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+                      {segs.reduce((a,g)=>a+(g.reps||0),0)} total reps · one RIR for the whole set
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
+                  <div style={{flex:1,minWidth:160}}>
+                    <BandPicker selected={s.bands||[]} onChange={v=>updateSet(i,'bands',v)}/>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                    <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                      onClick={()=>updateSet(i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
+                    <input type="number" min="0" max="999" value={s.reps||''} placeholder="0"
+                      onChange={e=>updateSet(i,'reps',Math.max(0,parseInt(e.target.value)||0))}
+                      style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
+                    <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
+                      onClick={()=>updateSet(i,'reps',(s.reps||0)+1)}>+</button>
+                    <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                  </div>
+                </div>
+              )}
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
-              <input type="number" min="0" max="99"
-                value={s.reps||''}
-                placeholder="0"
-                onChange={e=>updateSet(i,'reps',Math.max(0,parseInt(e.target.value)||0))}
-                style={{...inputStyle,width:50,textAlign:'center',padding:'4px 6px'}}/>
-              <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>reps</span>
-            </div>
-            {sets.length > 1 && (
-              <button style={{...btn(false,C.red),fontSize:9,padding:'2px 6px',flexShrink:0}}
-                onClick={()=>removeSet(i)}>x</button>
-            )}
-          </div>
-        ))}
-        <button style={{...btn(false,C.green),fontSize:9,padding:'3px 9px'}} onClick={addSet}>+ SET</button>
+          )
+        })}
+        <button style={{...btn(false,C.green),fontSize:11,padding:'6px 12px'}} onClick={addSet}>+ SET</button>
       </div>
     </div>
   )
@@ -537,7 +704,9 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
 
   function renderCard(slot, id, role) {
     const prev     = getPrevSets(String(id))
-    const working  = (getPrevWorkingSets(String(id)) || []).filter(s => !s.drop)
+    // Progression flag: ignore week-6 deload entries, and only count plain
+    // (straight) sets — intensifier/drop sets end at low reps by design.
+    const working  = (getPrevWorkingSets(String(id)) || []).filter(isPlainSet)
     const progFlag = working.length > 0 && working.every(s => (s.reps||0) >= PROG_REPS)
     return (
       <LoggedExCard key={slot} id={id} role={role}
@@ -665,8 +834,8 @@ function entryStats(entry) {
   let vol=0, reps=0, top=0, sets=0
   Object.keys(entry.exercises || {}).forEach(exId => {
     (entry.exercises[exId] || []).forEach(st => {
-      const l = setLoad(st)
-      vol += l*(st.reps||0); reps += (st.reps||0); sets++
+      const l = setTopLoad(st)              // segment-aware: max phase resistance
+      vol += setVol(st); reps += setRepsOf(st); sets++
       if (l > top) top = l
     })
   })
@@ -723,12 +892,12 @@ function StrengthTab({ log }) {
 
   const allBest = {}
   data.forEach(e => Object.keys(e.exercises||{}).forEach(exId =>
-    (e.exercises[exId]||[]).forEach(st => { const l=setLoad(st); if(!allBest[exId]||l>allBest[exId]) allBest[exId]=l })))
+    (e.exercises[exId]||[]).forEach(st => { const l=setTopLoad(st); if(!allBest[exId]||l>allBest[exId]) allBest[exId]=l })))
 
   const exMap = {}
   winEntries.forEach(e => Object.keys(e.exercises||{}).forEach(exId => {
     let top=0
-    ;(e.exercises[exId]||[]).forEach(st => { const l=setLoad(st); if(l>top) top=l })
+    ;(e.exercises[exId]||[]).forEach(st => { const l=setTopLoad(st); if(l>top) top=l })
     if(!exMap[exId]) exMap[exId]=[]
     exMap[exId].push({ date:e.date, top:top })
   }))
@@ -750,7 +919,7 @@ function StrengthTab({ log }) {
         const e = data[i]
         if (e.date >= latestDate) continue
         if (e.exercises && e.exercises[r.id]) {
-          let tt=0; (e.exercises[r.id]||[]).forEach(st => { const l=setLoad(st); if(l>tt) tt=l }); prevTop=tt; break
+          let tt=0; (e.exercises[r.id]||[]).forEach(st => { const l=setTopLoad(st); if(l>tt) tt=l }); prevTop=tt; break
         }
       }
       if (prevTop != null) { r.startLoad = prevTop; r.delta = prevTop ? ((r.lastLoad-prevTop)/prevTop)*100 : null }
@@ -1049,10 +1218,16 @@ function TodayTab({ user, log, onSaveEntry }) {
   }, [info.session, todayISO, log])
 
   function handleSave() {
+    const cleanEx = cleanExercises(exLogs)
+    if (Object.keys(cleanEx).length === 0) {
+      alert('No exercise data logged yet. Enter at least one set with reps or bands.')
+      return
+    }
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
-      exercises:exLogs, completedAt:new Date().toISOString(),
+      schemaVersion:2,
+      exercises:cleanEx, completedAt:new Date().toISOString(),
     }
     onSaveEntry(entry)
     setSaved(true)
@@ -1191,17 +1366,44 @@ function TodayTab({ user, log, onSaveEntry }) {
 function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
   const [ex, setEx] = useState(() => JSON.parse(JSON.stringify(entry.exercises || {})))
 
-  const updateSet = (id, i, field, val) => setEx(prev => {
+  const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
-    n[id] = (n[id] || []).map((s, idx) => idx === i ? { ...s, [field]: val } : s)
+    n[id] = (n[id] || []).map((s, idx) => idx === i ? fn({ ...s }) : s)
     return n
   })
+  const updateSet = (id, i, field, val) => mapSet(id, i, c => { c[field] = val; return c })
   const addSet = (id) => setEx(prev => {
     const n = { ...prev }; const arr = (n[id] || []).slice(); const last = arr[arr.length - 1]
-    arr.push({ reps: last ? last.reps : 0, bands: last ? (last.bands || []).slice() : [] }); n[id] = arr; return n
+    const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
+    const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
+    arr.push({ reps: lr, bands: lb.slice() }); n[id] = arr; return n
   })
   const removeSet = (id, i) => setEx(prev => { const n = { ...prev }; n[id] = (n[id] || []).filter((_, idx) => idx !== i); return n })
   const removeEx = (id) => setEx(prev => { const n = { ...prev }; delete n[id]; return n })
+  // ── Phase-aware editing (mirrors LoggedExCard so ✎ EDIT handles segmented/intensifier/RIR sets) ──
+  const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
+  const segsOf  = (s) => Array.isArray(s.segments) ? s.segments : [{bands:(s.bands||[]).slice(), reps:s.reps||0}]
+  const changeIntens = (id, i, k) => mapSet(id, i, n => {
+    const wantSeg = !!(INTENS[k] && INTENS[k].usesSegments)
+    if (k==='straight') {
+      if (Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0) }
+      delete n.segments; delete n.intensifier; delete n.drop
+    } else {
+      n.intensifier=k; delete n.drop
+      if (wantSeg && !Array.isArray(n.segments)) { n.segments=[{bands:(n.bands||[]).slice(), reps:n.reps||0}]; delete n.bands; delete n.reps }
+      else if (!wantSeg && Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments }
+    }
+    return n
+  })
+  const updateSeg = (id, i, segIdx, field, val) => mapSet(id, i, n => {
+    const segs=(n.segments||segsOf(n)).map(g=>({...g})); segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
+  })
+  const addSeg = (id, i) => mapSet(id, i, n => {
+    const segs=(n.segments||segsOf(n)).map(g=>({...g})); const last=segs[segs.length-1]||{bands:[],reps:0}; segs.push({bands:(last.bands||[]).slice(), reps:0}); n.segments=segs; delete n.bands; delete n.reps; return n
+  })
+  const removeSeg = (id, i, segIdx) => mapSet(id, i, n => {
+    const segs=(n.segments||segsOf(n)).filter((_,gi)=>gi!==segIdx); n.segments=segs; delete n.bands; delete n.reps; return n
+  })
 
   function save() {
     onSave({ ...entry, exercises: ex, editedAt: new Date().toISOString() })
@@ -1216,7 +1418,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:8}}>
       <div style={{fontFamily:'monospace',fontSize:10,color:C.amber}}>
-        ⚡ EDITING — tap a band chip's ✕ or a selected row to remove it; adjust reps; then SAVE CHANGES.
+        ⚡ EDITING — set an intensifier (drop, M-Set…) per set to log phases (▼1, ▼2) + RIR; adjust bands/reps; then SAVE CHANGES.
       </div>
       {Object.keys(ex).length===0 && (
         <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray}}>
@@ -1232,28 +1434,80 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
             <button onClick={()=>removeEx(id)} title="Remove this exercise from the session"
               style={{...btn(false,C.red),fontSize:10,padding:'3px 8px'}}>REMOVE EX</button>
           </div>
-          {(sets||[]).map((s,i) => (
-            <div key={i} style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:8,flexWrap:'wrap'}}>
-              <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,paddingTop:9,flexShrink:0}}>S{i+1}</span>
-              <div style={{flex:1,minWidth:160}}>
-                <BandPicker selected={s.bands||[]} onChange={v=>updateSet(id,i,'bands',v)}/>
+          {(sets||[]).map((s,i) => {
+            const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
+            return (
+              <div key={i} style={ straight
+                ? {marginBottom:8,paddingBottom:2}
+                : {border:`1px solid ${C.amber}33`,borderRadius:6,padding:'7px 8px',marginBottom:8,background:`${C.amber}08`} }>
+                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                  <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,flexShrink:0}}>S{i+1}</span>
+                  <select value={setIntensifier(s)} title="Intensifier used on this set"
+                    onChange={e=>changeIntens(id,i,e.target.value)}
+                    style={{background:C.bgInput,
+                      color:straight?C.dimGray:C.amber,
+                      border:`1px solid ${straight?'rgba(255,255,255,0.12)':C.amber+'66'}`,
+                      borderRadius:4,padding:'6px 4px',fontSize:10,fontFamily:'monospace',flexShrink:0,maxWidth:150}}>
+                    {INTENS_OPTS.map(k => <option key={k} value={k}>{k==='straight'?'— none —':intensLabel(k)}</option>)}
+                  </select>
+                  <div style={{display:'flex',alignItems:'center',gap:3,flexShrink:0}}>
+                    <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>RIR</span>
+                    <input type="number" min="0" max="9"
+                      value={s.rir==null?'':s.rir} placeholder={String(DEFAULT_RIR)}
+                      title="Reps in reserve for the whole set (blank = your default)"
+                      onChange={e=>{const v=e.target.value; updateSet(id,i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                      style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
+                  </div>
+                  <span style={{flex:1}}></span>
+                  {sets.length>1 && (
+                    <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
+                      onClick={()=>removeSet(id,i)}>✕</button>
+                  )}
+                </div>
+                {seg ? (
+                  <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:6}}>
+                    {segs.map((g,gi) => (
+                      <div key={gi} style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+                        <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}} title="Resistance phase / drop">▼{gi+1}</span>
+                        <div style={{flex:1,minWidth:150}}>
+                          <BandPicker selected={g.bands||[]} onChange={v=>updateSeg(id,i,gi,'bands',v)}/>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                          <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSeg(id,i,gi,'reps',Math.max(0,(g.reps||0)-1))}>−</button>
+                          <input type="number" min="0" max="999" value={g.reps||''} placeholder="0"
+                            onChange={e=>updateSeg(id,i,gi,'reps',Math.max(0,parseInt(e.target.value)||0))}
+                            style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
+                          <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSeg(id,i,gi,'reps',(g.reps||0)+1)}>+</button>
+                          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                        </div>
+                        {segs.length>1 && (
+                          <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}} onClick={()=>removeSeg(id,i,gi)}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <button style={{...btn(false,C.amber),fontSize:10,padding:'5px 10px'}} onClick={()=>addSeg(id,i)}>+ PHASE / DROP</button>
+                      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{segs.reduce((a,g)=>a+(g.reps||0),0)} total reps · one RIR for the whole set</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
+                    <div style={{flex:1,minWidth:160}}>
+                      <BandPicker selected={s.bands||[]} onChange={v=>updateSet(id,i,'bands',v)}/>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                      <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSet(id,i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
+                      <input type="number" min="0" max="999" value={s.reps||''} placeholder="0"
+                        onChange={e=>updateSet(id,i,'reps',Math.max(0,parseInt(e.target.value)||0))}
+                        style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
+                      <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSet(id,i,'reps',(s.reps||0)+1)}>+</button>
+                      <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
-                <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
-                  onClick={()=>updateSet(id,i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
-                <input type="number" min="0" max="999" value={s.reps||''} placeholder="0"
-                  onChange={e=>updateSet(id,i,'reps',Math.max(0,parseInt(e.target.value)||0))}
-                  style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
-                <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
-                  onClick={()=>updateSet(id,i,'reps',(s.reps||0)+1)}>+</button>
-                <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
-              </div>
-              {sets.length>1 && (
-                <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
-                  onClick={()=>removeSet(id,i)}>✕</button>
-              )}
-            </div>
-          ))}
+            )
+          })}
           <button style={{...btn(false,C.green),fontSize:11,padding:'6px 12px'}}
             onClick={()=>addSet(id)}>+ SET</button>
         </div>
@@ -1400,14 +1654,16 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
                     <span style={{color:C.dimGray}}>#{exId} </span>{EXERCISE_NAMES[exId]||exId}
                   </div>
                   {(sets||[]).map((s,i) => {
-                    const bNames=(s.bands||[]).map(bid=>{
+                    const bNames=(setBandsOf(s)).map(bid=>{
                       const b=BANDS.find(x=>x.id===bid)
                       return b?`${b.brand.split(' ')[0]} ${b.color} (${b.res}lbs)`:bid
                     }).join(' + ')
+                    const reps=setRepsOf(s); const intens=setIntensifier(s)
                     return (
                       <div key={i} style={{fontFamily:'monospace',fontSize:10,color:C.textSec,marginBottom:2}}>
                         <span style={{color:C.dimGray}}>S{i+1} </span>
-                        <span style={{color:(s.reps||0)>=PROG_REPS?C.green:C.text}}>{s.reps||0}r</span>
+                        <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r</span>
+                        {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                         {bNames && <span style={{color:C.dimGray}}> {bNames}</span>}
                       </div>
                     )
