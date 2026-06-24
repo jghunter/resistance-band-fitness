@@ -71,6 +71,15 @@ const DEFAULT_RIR = (() => { try {
   const p = ps.find(x => x.id === ap)
   return (p && typeof p.rirTarget === 'number') ? p.rirTarget : 1
 } catch { return 1 } })()
+// ── Phase 3: active-profile-driven progression targets (default to legacy globals) ──
+const _ACTIVE_PROFILE = (() => { try {
+  const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+  const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+  return ps.find(x => x.id === ap) || null
+} catch { return null } })()
+const PROG_TARGET_REPS = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.progressReps === 'number') ? _ACTIVE_PROFILE.progressReps : PROG_REPS
+const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'number') ? _ACTIVE_PROFILE.rirTarget : DEFAULT_RIR
+const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
 const setHasData = (s) => (s && Array.isArray(s.segments))
@@ -572,7 +581,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       <div style={{borderTop:'1px solid rgba(255,255,255,0.07)',paddingTop:8}}>
         <span style={{...lbl,marginBottom:2}}>LOG SETS</span>
         <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginBottom:6}}>
-          TARGET 8–12 REPS/SET · ALL SETS ≥{PROG_REPS} → MOVE UP A BAND
+          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{PROG_TARGET_REPS} AT RIR ≤{RIR_TARGET} → MOVE UP A BAND
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -707,7 +716,13 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     // Progression flag: ignore week-6 deload entries, and only count plain
     // (straight) sets — intensifier/drop sets end at low reps by design.
     const working  = (getPrevWorkingSets(String(id)) || []).filter(isPlainSet)
-    const progFlag = working.length > 0 && working.every(s => (s.reps||0) >= PROG_REPS)
+    // Phase 3: double-progression, RIR-gated. Need every plain set at/above the
+    // profile rep target AND logged RIR at/under target (actually near failure)
+    // before recommending more load; high RIR ⇒ reps left ⇒ push reps first.
+    const repsHit  = working.length > 0 && working.every(s => (s.reps||0) >= PROG_TARGET_REPS)
+    const rirVals  = working.map(s => s.rir).filter(v => v != null)
+    const rirOk    = rirVals.length === 0 ? true : Math.max(...rirVals) <= RIR_TARGET
+    const progFlag = repsHit && rirOk
     return (
       <LoggedExCard key={slot} id={id} role={role}
         techKey={techMap[slot]||null}
