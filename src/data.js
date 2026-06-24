@@ -1,3 +1,5 @@
+import RBTS_PHASE1 from './phase1.js'   // Phase-1 config (SPLITS, etc.)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1344,17 +1346,20 @@ export function calcToday(startStr, sched, pi) {
   const days = SCHED_DAYS[sched];
   const today = new Date(); today.setHours(0,0,0,0);
   const isWk = days.includes(today.getDay());
+  const prog = PROGRAMS[pi] || PROGRAMS[0];
   if (isWk) {
     const n = countWkDays(startStr, days, today);
     const idx = n - 1;
-    return { isWk:true, session:["C","D","E","F","G"][idx%5],
-             week:Math.min(Math.floor(idx/3)+1,6), num:n, prog:PROGRAMS[pi] };
+    return { isWk:true, session:sessionForIdx(prog, idx),
+             week:weekForIdx(prog, idx), num:n, prog:prog,
+             blockDone: idx >= progBlockWorkouts(prog) };
   } else {
     const next = nextWkDay(today, days);
     const n2 = countWkDays(startStr, days, next);
     const idx2 = n2 - 1;
-    return { isWk:false, nextDate:next, session:["C","D","E","F","G"][idx2%5],
-             week:Math.min(Math.floor(idx2/3)+1,6), prog:PROGRAMS[pi] };
+    return { isWk:false, nextDate:next, session:sessionForIdx(prog, idx2),
+             week:weekForIdx(prog, idx2), prog:prog,
+             blockDone: idx2 >= progBlockWorkouts(prog) };
   }
 }
 
@@ -1364,18 +1369,47 @@ export function calcToday(startStr, sched, pi) {
 // week only contains 3 of 5 sessions. Remap every prescribed technique onto
 // the real occurrence of its session closest to its prescribed week.
 const SESSION_KEYS = ["C","D","E","F","G"];
+
+// ── Engine config helpers (B5 configurable split rotation + variable length) ──
+// Rotation length, block length, working weeks, and deload week DERIVE from the
+// program's Phase-1 config (splitId / lengthWeeks). Defaults reproduce legacy
+// behavior exactly: body_part_5 (C–G) rotation, 6-week block, week-6 deload.
+// Deload *policy* (every-N / style / scope) is deferred. Mirrors fitness_app.html.
+export const WORKOUTS_PER_WEEK = 3;   // both MWF and TTS schedule 3 workouts/week
+export function progSplitDays(prog) {
+  const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
+  const sp = S && prog && prog.splitId && S[prog.splitId];
+  return (sp && sp.days) || SESSION_KEYS;            // legacy C–G fallback
+}
+export function progLengthWeeks(prog) {
+  const n = prog && prog.lengthWeeks;
+  return (typeof n === "number" && n > 0) ? n : 6;   // legacy 6-week block
+}
+export const progDeloadWeek    = prog => progLengthWeeks(prog);                    // last week = deload
+export const progWorkWeeks     = prog => progLengthWeeks(prog) - 1;               // weeks carrying techniques
+export const progBlockWorkouts = prog => progLengthWeeks(prog) * WORKOUTS_PER_WEEK;
+export function sessionForIdx(prog, idx) {
+  const d = progSplitDays(prog);
+  return d[((idx % d.length) + d.length) % d.length];
+}
+export function weekForIdx(prog, idx) {
+  return Math.min(Math.floor(idx / WORKOUTS_PER_WEEK) + 1, progLengthWeeks(prog));
+}
+
 const TECH_SCHEDULES = {};
 export function buildTechSchedule(prog) {
   if (TECH_SCHEDULES[prog.id]) return TECH_SCHEDULES[prog.id];
-  const slots = new Array(15).fill(null);
-  const weekCount = wk => { let n=0; for (let i=(wk-1)*3;i<wk*3;i++) if (slots[i]) n++; return n; };
-  for (let w = 1; w <= 5; w++) {
-    (prog.techniques[`week${w}`] || []).forEach(t => {
+  const days = progSplitDays(prog), L = days.length;
+  const WPW = WORKOUTS_PER_WEEK, ww = progWorkWeeks(prog), N = ww * WPW;
+  const slots = new Array(N).fill(null);
+  const weekCount = wk => { let n=0; for (let i=(wk-1)*WPW;i<wk*WPW;i++) if (slots[i]) n++; return n; };
+  for (let w = 1; w <= ww; w++) {
+    ((prog.techniques && prog.techniques[`week${w}`]) || []).forEach(t => {
       let best = -1, bestScore = Infinity;
-      for (let idx = 0; idx < 15; idx++) {
+      for (let idx = 0; idx < N; idx++) {
         if (slots[idx]) continue;
-        if (SESSION_KEYS[idx % 5] !== t.session) continue;
-        const wk = Math.floor(idx / 3) + 1;
+        if (days[idx % L] !== t.session) continue;
+        const wk = Math.floor(idx / WPW) + 1;
         const score = Math.abs(wk - w) * 10 + weekCount(wk) * 30 + wk;
         if (score < bestScore) { bestScore = score; best = idx; }
       }
@@ -1387,19 +1421,21 @@ export function buildTechSchedule(prog) {
 }
 export function getTechMap(prog, week, sKey) {
   const map = {};
-  if (week === 6 || week < 1) return map;
-  const sched = buildTechSchedule(prog);
-  for (let idx = (week-1)*3; idx < (week-1)*3+3 && idx < 15; idx++) {
+  if (week === progDeloadWeek(prog) || week < 1) return map;
+  const days = progSplitDays(prog), L = days.length, WPW = WORKOUTS_PER_WEEK;
+  const sched = buildTechSchedule(prog), N = sched.length;
+  for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < N; idx++) {
     const a = sched[idx];
-    if (a && SESSION_KEYS[idx % 5] === sKey) map[a.slot] = a.technique;
+    if (a && days[idx % L] === sKey) map[a.slot] = a.technique;
   }
   return map;
 }
 export function getWeekTechniques(prog, week) {
-  if (week === 6 || week < 1) return [];
+  if (week === progDeloadWeek(prog) || week < 1) return [];
+  const WPW = WORKOUTS_PER_WEEK;
   const sched = buildTechSchedule(prog);
   const out = [];
-  for (let idx = (week-1)*3; idx < (week-1)*3+3 && idx < 15; idx++) {
+  for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < sched.length; idx++) {
     if (sched[idx]) out.push(sched[idx]);
   }
   return out;

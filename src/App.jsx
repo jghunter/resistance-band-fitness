@@ -8,6 +8,8 @@ import {
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
   calcToday, PROG_REPS,
   getTechMap, getWeekTechniques,
+  progSplitDays, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
+  sessionForIdx, weekForIdx, WORKOUTS_PER_WEEK,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 
@@ -292,7 +294,7 @@ function ExCard({ id, role, techKey }) {
 function SessionView({ prog, sKey, week }) {
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
-  const isDeload = week === 6
+  const isDeload = week === progDeloadWeek(prog)
   const techMap  = getTechMap(prog, week, sKey)
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -680,7 +682,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log }) {
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
-  const isDeload = week === 6
+  const isDeload = week === progDeloadWeek(prog)
   const techMap  = getTechMap(prog, week, sKey)
 
   const [showAdd, setShowAdd] = useState(false)
@@ -1041,7 +1043,7 @@ function ProgramsTab() {
   const [week, setWeek] = useState(1)
   const [sKey, setSKey] = useState('C')
   const prog            = PROGRAMS[pi]
-  const isDeload        = week === 6
+  const isDeload        = week === progDeloadWeek(prog)
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -1053,7 +1055,7 @@ function ProgramsTab() {
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
           {PROGRAMS.map((p,i) => (
             <button key={p.id} style={btn(i===pi)}
-              onClick={()=>{setPi(i);setWeek(1);setSKey('C');}}>P{p.id}</button>
+              onClick={()=>{setPi(i);setWeek(1);setSKey(progSplitDays(PROGRAMS[i])[0]);}}>P{p.id}</button>
           ))}
         </div>
         <span style={{fontFamily:'monospace',fontSize:15,color:C.readout,
@@ -1066,10 +1068,11 @@ function ProgramsTab() {
         <div style={widget}>
           <span style={lbl}>WEEK</span>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {[1,2,3,4,5].map(w => (
+            {Array.from({length:progWorkWeeks(prog)},(_,i)=>i+1).map(w => (
               <button key={w} style={btn(week===w)} onClick={()=>setWeek(w)}>{w}</button>
             ))}
-            <button style={btn(week===6,C.deload)} onClick={()=>setWeek(6)}>6 DELOAD</button>
+            <button style={btn(week===progDeloadWeek(prog),C.deload)}
+              onClick={()=>setWeek(progDeloadWeek(prog))}>{progDeloadWeek(prog)} DELOAD</button>
           </div>
           <div style={{marginTop:10}}>
             {isDeload
@@ -1308,8 +1311,8 @@ function TodayTab({ user, log, onSaveEntry }) {
               <span style={{fontFamily:'monospace',fontSize:22,fontWeight:700,color:focusColor}}>{info.session}</span>
             </div>
             <div><span style={lbl}>WEEK</span>
-              <span style={{...readoutStyle,color:info.week===6?C.deload:C.readout}}>
-                {info.week}{info.week===6?' DELOAD':''}
+              <span style={{...readoutStyle,color:info.week===progDeloadWeek(info.prog)?C.deload:C.readout}}>
+                {info.week}{info.week===progDeloadWeek(info.prog)?' DELOAD':''}
               </span>
             </div>
             <div><span style={lbl}>FOCUS</span>
@@ -1364,7 +1367,7 @@ function TodayTab({ user, log, onSaveEntry }) {
             <div>
               <span style={lbl}>WEEK</span>
               <span style={{...readoutStyle,fontSize:14}}>
-                {info.week}{info.week===6?' DELOAD':''}
+                {info.week}{info.week===progDeloadWeek(info.prog)?' DELOAD':''}
               </span>
             </div>
           </div>
