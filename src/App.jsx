@@ -4,12 +4,15 @@ import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, query, orderBy } f
 import { db, auth, googleProvider } from './firebase'
 import {
   C, EXERCISE_NAMES, TECHNIQUES, VIDEOS, PROGRAMS,
-  SESSION_FOCUS, getSessionFocus, SLOT_LABELS, exGroup, ALL_GROUPS,
+  SESSION_FOCUS, getSessionFocus, dayName, dayShort, SLOT_LABELS, exGroup, ALL_GROUPS,
+  exClass, EX_CLASS_RANK,
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
   calcToday, PROG_REPS,
   getTechMap, getWeekTechniques,
-  progSplitDays, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
+  progSplitDays, progLengthWeeks, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
   sessionForIdx, weekForIdx, WORKOUTS_PER_WEEK,
+  isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
+  saveCustomProgram, deleteCustomProgram,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 
@@ -294,7 +297,7 @@ function ExCard({ id, role, techKey }) {
 function SessionView({ prog, sKey, week }) {
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
-  const isDeload = week === progDeloadWeek(prog)
+  const isDeload = isDeloadSession(prog, week, sKey)
   const techMap  = getTechMap(prog, week, sKey)
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -327,8 +330,7 @@ function SessionView({ prog, sKey, week }) {
         <div style={{...widget,border:'1px solid rgba(168,85,247,0.3)',boxShadow:'0 0 12px rgba(168,85,247,0.15)'}}>
           <span style={lbl}>DELOAD PROTOCOL</span>
           <p style={{fontFamily:'monospace',fontSize:12,color:C.textSec,margin:0,lineHeight:1.7}}>
-            All exercises at ≤50% of normal resistance. Focus on movement quality and recovery.
-            No high-intensity techniques this week.
+            {deloadProtocolText(prog)}
           </p>
         </div>
       )}
@@ -682,7 +684,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log }) {
   const session  = prog.sessions[sKey]
   const focus    = getSessionFocus(prog, sKey)
-  const isDeload = week === progDeloadWeek(prog)
+  const isDeload = isDeloadSession(prog, week, sKey)
   const techMap  = getTechMap(prog, week, sKey)
 
   const [showAdd, setShowAdd] = useState(false)
@@ -705,10 +707,16 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
       .sort((a,b) => b.date.localeCompare(a.date))
     return found[0] ? found[0].exercises[exerciseId] : null
   }
-  // Progression flag source: skip week-6 deload entries (junk data) and drop sets
+  // Progression flag source: skip deload entries (junk data) and drop sets.
+  // Deload is per the entry's program policy, not a hardcoded week 6.
+  const entryIsDeload = (e) => {
+    if (!e) return false
+    const p = PROGRAMS.find(x => x.id === e.programId)
+    return p ? isDeloadSession(p, e.week, e.session) : e.week === 6
+  }
   function getPrevWorkingSets(exerciseId) {
     const found = log
-      .filter(e => e.exercises && e.exercises[exerciseId] && e.date < todayDate && e.week !== 6)
+      .filter(e => e.exercises && e.exercises[exerciseId] && e.date < todayDate && !entryIsDeload(e))
       .sort((a,b) => b.date.localeCompare(a.date))
     return found[0] ? found[0].exercises[exerciseId] : null
   }
@@ -822,7 +830,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         <div style={{...widget,border:'1px solid rgba(168,85,247,0.3)'}}>
           <span style={lbl}>DELOAD PROTOCOL</span>
           <p style={{fontFamily:'monospace',fontSize:12,color:C.textSec,margin:0,lineHeight:1.7}}>
-            All exercises at 50% or less of normal resistance. Focus on movement quality and recovery.
+            {deloadProtocolText(prog)}
           </p>
         </div>
       )}
@@ -1036,48 +1044,337 @@ function StrengthTab({ log }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROGRAM BUILDER (minimal) — author split + length + deload policy + exercises.
+// Saves to rbts_customPrograms (merged into PROGRAMS at load). v1 puts every
+// picked exercise into that day's accessories; technique editor is omitted.
+// ─────────────────────────────────────────────────────────────────────────────
+function ProgramBuilder({ onSaved, onCancel }) {
+  const SP = RBTS_PHASE1?.SPLITS || {}
+  const splitIds = Object.keys(SP)
+  const [name, setName] = useState('')
+  const [splitId, setSplitId] = useState(splitIds.includes('upper_lower') ? 'upper_lower' : (splitIds[0] || 'body_part_5'))
+  const [lengthWeeks, setLengthWeeks] = useState(6)
+  const [every, setEvery] = useState(6)
+  const [style, setStyle] = useState('intensity')
+  const [scope, setScope] = useState('week')
+  const [picks, setPicks] = useState({})
+  const [activeDay, setActiveDay] = useState(0)
+  const [exSearch, setExSearch] = useState('')
+  const [techs, setTechs] = useState({})        // { workingWeek: [{day, exId, technique, primary}] }
+  const [issues, setIssues] = useState(null)    // validation results awaiting confirm
+
+  const days = (SP[splitId] && SP[splitId].days) || ['C','D','E','F','G']
+  const dayKey = days[activeDay] || days[0]
+  const fieldLbl = { fontFamily:'monospace', fontSize:10, color:C.textSec, letterSpacing:'0.08em', display:'flex', flexDirection:'column', gap:3 }
+  const techKeys = Object.keys(TECHNIQUES)
+  const lenN = Math.max(2, Number(lengthWeeks) || 6)
+  const evN = Math.max(0, Number(every) || 0)
+  const isDload = w => evN >= 1 && w <= lenN && w % evN === 0
+  const workingWeeks = []
+  for (let _w = 1; _w <= lenN; _w++) if (!isDload(_w)) workingWeeks.push(_w)
+  const mutTech = (wk, fn) => setTechs(prev => {
+    const arr = (prev[wk] || []).slice(); fn(arr)
+    return { ...prev, [wk]: arr }
+  })
+  const addTech = wk => mutTech(wk, a => a.push({ day:days[0], exId:'', technique:'none', primary:false }))
+  const rmTech  = (wk,i) => mutTech(wk, a => a.splice(i,1))
+  const setTech = (wk,i,field,val) => mutTech(wk, a => { a[i] = { ...a[i], [field]:val } })
+
+  const toggleEx = (day, id) => setPicks(prev => {
+    const cur = (prev[day] || []).slice()
+    const i = cur.indexOf(id)
+    if (i >= 0) cur.splice(i, 1); else cur.push(id)
+    return { ...prev, [day]: cur }
+  })
+  const dayLbl = d => (SP[splitId] && SP[splitId].dayLabels && SP[splitId].dayLabels[d]) || String(d).toUpperCase()
+  const buildProgram = () => {
+    // Day's exercises = union of the day picker + every weekly-plan row naming
+    // that day. Sessions are static per day (exercises show every week); only
+    // techniques vary by week.
+    const priSet = {}, accSet = {}
+    days.forEach(d => { priSet[d] = new Set(); accSet[d] = new Set(picks[d] || []) })
+    workingWeeks.forEach(wk => (techs[wk] || []).forEach(e => {
+      if (e && e.exId !== '' && accSet[e.day]) {
+        if (e.primary) priSet[e.day].add(Number(e.exId))
+        else           accSet[e.day].add(Number(e.exId))
+      }
+    }))
+    const sessions = {}
+    days.forEach(d => {
+      const pri = {}, acc = {}
+      ;[...priSet[d]].sort((a,b) => EX_CLASS_RANK[exClass(a)] - EX_CLASS_RANK[exClass(b)])  // iso → compound
+        .forEach(id => { pri['ex'+id] = id })
+      ;[...accSet[d]].forEach(id => { if (!priSet[d].has(id)) acc['ex'+id] = id })
+      sessions[d] = { primary:pri, accessories:acc }
+    })
+    const techniques = {}
+    workingWeeks.forEach(wk => {
+      const list = (techs[wk] || []).filter(e =>
+        e && e.exId !== '' && e.technique && e.technique !== 'none'
+      ).map(e => ({ session:e.day, slot:'ex'+e.exId, technique:e.technique }))
+      if (list.length) techniques['week'+wk] = list
+    })
+    return {
+      id: 'c' + Date.now(), custom: true,
+      name: name.trim() || ('Custom ' + ((SP[splitId] && SP[splitId].label) || splitId)),
+      splitId, lengthWeeks: lenN,
+      deloadPolicy: { every: evN, style, scope },
+      sessions, techniques,
+    }
+  }
+  // Validate against the CLAUDE.md rules. Limits are PER WORKOUT (a week+day
+  // occurrence), not per week. iso/compound *type* isn't checkable (no per-
+  // exercise classification in the runtime) — only the focus-group size is.
+  const validateProgram = (prog) => {
+    const out = []
+    days.forEach(d => {
+      const s = prog.sessions[d]
+      const prims = Object.values(s.primary)
+      const na = Object.keys(s.accessories).length
+      if (prims.length + na === 0) out.push({ level:'error', msg:'Day ' + dayLbl(d) + ' has no exercises.' })
+      prims.forEach(id => {
+        if (exClass(id) === 'other')
+          out.push({ level:'error', msg:(EXERCISE_NAMES[id] || ('#'+id)) + ' is a mobility/stretch/carry move — not a primary lift (' + dayLbl(d) + ').' })
+      })
+      const iso = prims.filter(id => exClass(id) === 'iso').length
+      const comp = prims.filter(id => exClass(id) === 'comp').length
+      if (prims.length === 1) {
+        out.push({ level:'warn', msg:'Day ' + dayLbl(d) + ' primary has 1 lift — a focus group is one isolation + 1–2 compounds.' })
+      } else if (prims.length >= 2) {
+        if (iso === 0)  out.push({ level:'warn', msg:'Day ' + dayLbl(d) + ' primary has no isolation lift — lead with one isolation.' })
+        if (iso > 1)    out.push({ level:'warn', msg:'Day ' + dayLbl(d) + ' primary has ' + iso + ' isolation lifts — use just one.' })
+        if (comp === 0) out.push({ level:'warn', msg:'Day ' + dayLbl(d) + ' primary has no compound lift — pair the isolation with 1–2 compounds.' })
+        if (comp > 2)   out.push({ level:'warn', msg:'Day ' + dayLbl(d) + ' primary has ' + comp + ' compounds — max 2 (iso/comp/comp triplet).' })
+      }
+    })
+    workingWeeks.forEach(wk => {
+      const byDay = {}
+      ;(techs[wk] || []).forEach(e => {
+        if (e && e.exId !== '' && e.technique && e.technique !== 'none')
+          (byDay[e.day] = byDay[e.day] || []).push(e)
+      })
+      Object.keys(byDay).forEach(d => {
+        const rows = byDay[d]
+        if (rows.length > 2) out.push({ level:'warn', msg:'Wk ' + wk + ' ' + dayLbl(d) + ' workout has ' + rows.length + ' high-intensity techniques — max 2 per workout.' })
+        const exs = rows.map(r => r.exId)
+        if (new Set(exs).size < exs.length) out.push({ level:'warn', msg:'Wk ' + wk + ' ' + dayLbl(d) + ' stacks 2 techniques on the same exercise — use different exercises.' })
+      })
+    })
+    const exDays = {}
+    days.forEach(d => {
+      Object.values(prog.sessions[d].primary).concat(Object.values(prog.sessions[d].accessories)).forEach(id => {
+        (exDays[id] = exDays[id] || []).push(d)
+      })
+    })
+    Object.keys(exDays).forEach(id => {
+      if (exDays[id].length > 1) out.push({ level:'warn', msg:(EXERCISE_NAMES[id] || ('#'+id)) + ' is used on multiple days (' + exDays[id].map(dayLbl).join(', ') + ').' })
+    })
+    return out
+  }
+  const save = (force) => {
+    const prog = buildProgram()
+    const found = validateProgram(prog)
+    if (found.length && !force) { setIssues({ prog, list: found }); return }
+    saveCustomProgram(prog)
+    onSaved()
+  }
+  const canSave = days.some(d => (picks[d] || []).length > 0) ||
+    workingWeeks.some(wk => (techs[wk] || []).some(e => e.exId !== ''))
+  const allExOpts = Object.keys(EXERCISE_NAMES).map(Number)
+  const exIds = Object.keys(EXERCISE_NAMES).map(Number).filter(id =>
+    !exSearch || (EXERCISE_NAMES[id] || '').toLowerCase().includes(exSearch.toLowerCase()))
+
+  return (
+    <div style={{...widget, border:'1px solid '+C.accentDim, display:'flex', flexDirection:'column', gap:8}}>
+      <span style={lbl}>NEW PROGRAM</span>
+      <input style={inputStyle} placeholder="Program name" value={name} onChange={e=>setName(e.target.value)} />
+      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+        <label style={fieldLbl}>SPLIT
+          <select style={{...inputStyle,width:170}} value={splitId}
+            onChange={e=>{setSplitId(e.target.value); setPicks({}); setActiveDay(0)}}>
+            {splitIds.map(s=><option key={s} value={s}>{(SP[s] && SP[s].label) || s}</option>)}
+          </select>
+        </label>
+        <label style={fieldLbl}>LENGTH (weeks)
+          <input type="number" min="2" max="16" style={{...inputStyle,width:80}}
+            value={lengthWeeks} onChange={e=>setLengthWeeks(e.target.value)} />
+        </label>
+      </div>
+      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+        <label style={fieldLbl}>DELOAD EVERY (0=never)
+          <input type="number" min="0" max="16" style={{...inputStyle,width:80}}
+            value={every} onChange={e=>setEvery(e.target.value)} />
+        </label>
+        <label style={fieldLbl}>STYLE
+          <select style={{...inputStyle,width:120}} value={style} onChange={e=>setStyle(e.target.value)}>
+            <option value="intensity">intensity</option>
+            <option value="volume">volume</option>
+            <option value="rest">rest</option>
+          </select>
+        </label>
+        <label style={fieldLbl}>SCOPE
+          <select style={{...inputStyle,width:110}} value={scope} onChange={e=>setScope(e.target.value)}>
+            <option value="week">week</option>
+            <option value="session">session</option>
+          </select>
+        </label>
+      </div>
+      <span style={lbl}>EXERCISES PER DAY</span>
+      <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+        {days.map((d,i)=>(
+          <button key={d} style={btn(activeDay===i)} onClick={()=>setActiveDay(i)}>
+            {((SP[splitId] && SP[splitId].dayLabels && SP[splitId].dayLabels[d]) || d)} ({(picks[d]||[]).length})
+          </button>
+        ))}
+      </div>
+      <input style={inputStyle} placeholder={'Search exercises for '+dayKey+'…'} value={exSearch}
+        onChange={e=>setExSearch(e.target.value)} />
+      <div style={{maxHeight:200, overflowY:'auto', border:'1px solid '+C.bgInput, borderRadius:4}}>
+        {exIds.map(id => {
+          const on = (picks[dayKey] || []).includes(id)
+          return (
+            <div key={id} onClick={()=>toggleEx(dayKey, id)}
+              style={{padding:'4px 8px', fontFamily:'monospace', fontSize:11, cursor:'pointer',
+                color: on ? '#000' : C.textSec, background: on ? C.accent : 'transparent',
+                borderBottom:'1px solid '+C.bgInput}}>
+              {on ? '✓ ' : '  '}#{id} {EXERCISE_NAMES[id]}
+            </div>
+          )
+        })}
+      </div>
+
+      <span style={lbl}>WEEKLY PLAN — up to 12 exercises/week · technique optional</span>
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+        Sessions are static per day, so an exercise shows every week; only techniques vary by week.
+      </span>
+      <div style={{display:'flex', flexDirection:'column', gap:8}}>
+        {workingWeeks.map(wk => {
+          const rows = techs[wk] || []
+          return (
+            <div key={wk} style={{border:'1px solid '+C.bgInput, borderRadius:4, padding:'6px 8px'}}>
+              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:4}}>
+                <span style={{fontFamily:'monospace', fontSize:11, color:C.textSec}}>WEEK {wk} · {rows.length}/12</span>
+                {rows.length < 12 &&
+                  <button style={{...btn(false),fontSize:10,padding:'3px 8px'}} onClick={()=>addTech(wk)}>+ exercise</button>}
+              </div>
+              {rows.map((r,i) => (
+                <div key={i} style={{display:'flex', gap:4, flexWrap:'wrap', marginBottom:3}}>
+                  <select style={{...inputStyle,width:90,fontSize:10}} value={r.day}
+                    onChange={e=>setTech(wk,i,'day',e.target.value)}>
+                    {days.map(d=><option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <select style={{...inputStyle,width:160,fontSize:10}} value={r.exId}
+                    onChange={e=>setTech(wk,i,'exId',e.target.value)}>
+                    <option value="">— exercise —</option>
+                    {allExOpts.map(id=><option key={id} value={id}>#{id} {EXERCISE_NAMES[id]}</option>)}
+                  </select>
+                  <select style={{...inputStyle,width:150,fontSize:10}} value={r.technique}
+                    onChange={e=>setTech(wk,i,'technique',e.target.value)}>
+                    <option value="none">none</option>
+                    {techKeys.map(k=><option key={k} value={k}>{k}</option>)}
+                  </select>
+                  <button title="Mark as a primary (main) lift for this day"
+                    style={{...btn(!!r.primary,C.amber),fontSize:10,padding:'3px 8px'}}
+                    onClick={()=>setTech(wk,i,'primary',!r.primary)}>PRI</button>
+                  <button style={{...btn(false,C.red),fontSize:10,padding:'3px 8px'}} onClick={()=>rmTech(wk,i)}>✕</button>
+                </div>
+              ))}
+              {rows.length === 0 &&
+                <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>no exercises</span>}
+            </div>
+          )
+        })}
+      </div>
+
+      {issues &&
+        <div style={{border:'1px solid '+C.amber, borderRadius:4, padding:'8px 10px'}}>
+          <span style={lbl}>VALIDATION — {issues.list.length} item(s)</span>
+          {issues.list.map((it,i) => (
+            <div key={i} style={{fontFamily:'monospace', fontSize:11, marginTop:2,
+              color: it.level === 'error' ? C.red : C.amber}}>
+              {it.level === 'error' ? '✕ ' : '⚠ '}{it.msg}
+            </div>
+          ))}
+          <div style={{display:'flex', gap:8, marginTop:8}}>
+            <button style={{...btn(false,C.green),fontSize:11}}
+              onClick={()=>{ saveCustomProgram(issues.prog); onSaved() }}>SAVE ANYWAY</button>
+            <button style={{...btn(false),fontSize:11}} onClick={()=>setIssues(null)}>BACK TO EDIT</button>
+          </div>
+        </div>}
+
+      <div style={{display:'flex', gap:8}}>
+        <button disabled={!canSave}
+          style={{...btn(false,C.green), ...(canSave?{}:{opacity:0.4,cursor:'not-allowed'})}}
+          onClick={()=>save(false)}>SAVE PROGRAM</button>
+        <button style={btn(false)} onClick={onCancel}>CANCEL</button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PROGRAMS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function ProgramsTab() {
   const [pi, setPi]     = useState(0)
   const [week, setWeek] = useState(1)
   const [sKey, setSKey] = useState('C')
-  const prog            = PROGRAMS[pi]
-  const isDeload        = week === progDeloadWeek(prog)
+  const [building, setBuilding] = useState(false)
+  const [, setVer] = useState(0)
+  const safePi = Math.min(pi, PROGRAMS.length - 1)
+  const prog            = PROGRAMS[safePi] || PROGRAMS[0]
+  const isDeload        = isDeloadSession(prog, week, sKey)
+  const removeCustom = () => {
+    if (!prog.custom) return
+    deleteCustomProgram(prog.id)
+    setPi(0); setWeek(1); setSKey(progSplitDays(PROGRAMS[0])[0]); setVer(v=>v+1)
+  }
+  if (building) {
+    return <ProgramBuilder onCancel={()=>setBuilding(false)}
+      onSaved={()=>{ setBuilding(false); const i = PROGRAMS.length-1
+        setPi(i); setWeek(1); setSKey(progSplitDays(PROGRAMS[i])[0]); setVer(v=>v+1) }} />
+  }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={widget}>
-        <span style={lbl}>BROWSE PROGRAMS — 24 × 6-WEEK BLOCKS (~3 YEARS)</span>
+        <span style={lbl}>BROWSE PROGRAMS — {PROGRAMS.length} BLOCKS</span>
         <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,display:'block',marginBottom:6}}>
-          Reference only — to change your active program, use Today → SCHEDULE SETTINGS
+          Reference + builder. To change your active program, use Today → SCHEDULE SETTINGS
         </span>
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
           {PROGRAMS.map((p,i) => (
-            <button key={p.id} style={btn(i===pi)}
-              onClick={()=>{setPi(i);setWeek(1);setSKey(progSplitDays(PROGRAMS[i])[0]);}}>P{p.id}</button>
+            <button key={p.id} style={btn(i===safePi, p.custom?C.deload:undefined)}
+              onClick={()=>{setPi(i);setWeek(1);setSKey(progSplitDays(PROGRAMS[i])[0]);}}>
+              {p.custom ? '★' : 'P'+p.id}</button>
           ))}
+          <button style={{...btn(false,C.green),fontWeight:700}} onClick={()=>setBuilding(true)}>+ NEW</button>
         </div>
-        <span style={{fontFamily:'monospace',fontSize:15,color:C.readout,
-          textShadow:`0 0 8px ${C.accentGlow}`,letterSpacing:'0.06em'}}>
-          PROGRAM {prog.id} — {prog.name.toUpperCase()}
-        </span>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <span style={{fontFamily:'monospace',fontSize:15,color:C.readout,
+            textShadow:`0 0 8px ${C.accentGlow}`,letterSpacing:'0.06em'}}>
+            {prog.custom ? '★ ' : 'PROGRAM '+prog.id+' — '}{prog.name.toUpperCase()}
+          </span>
+          {prog.custom &&
+            <button style={{...btn(false,C.red),fontSize:10,padding:'5px 10px'}}
+              onClick={removeCustom}>DELETE</button>}
+        </div>
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div style={widget}>
           <span style={lbl}>WEEK</span>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {Array.from({length:progWorkWeeks(prog)},(_,i)=>i+1).map(w => (
-              <button key={w} style={btn(week===w)} onClick={()=>setWeek(w)}>{w}</button>
-            ))}
-            <button style={btn(week===progDeloadWeek(prog),C.deload)}
-              onClick={()=>setWeek(progDeloadWeek(prog))}>{progDeloadWeek(prog)} DELOAD</button>
+            {Array.from({length:progLengthWeeks(prog)},(_,i)=>i+1).map(w => {
+              const dl = isDeloadWeek(prog, w)
+              return <button key={w} style={btn(week===w, dl?C.deload:undefined)}
+                onClick={()=>setWeek(w)}>{dl?w+' DL':w}</button>
+            })}
           </div>
           <div style={{marginTop:10}}>
             {isDeload
               ? <span style={{fontFamily:'monospace',fontSize:11,color:C.deload}}>
-                  Recovery week — ≤50% intensity — no techniques
+                  {deloadProtocolText(prog)}
                 </span>
               : <>
                   <span style={lbl}>WEEK {week} TECHNIQUES (AS SCHEDULED)</span>
@@ -1094,18 +1391,18 @@ function ProgramsTab() {
 
         <div style={widget}>
           <span style={lbl}>SESSION</span>
-          <div style={{display:'flex',gap:6}}>
-            {['C','D','E','F','G'].map(s => (
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {progSplitDays(prog).map(s => (
               <button key={s} style={btn(sKey===s,getSessionFocus(prog,s).color)}
-                onClick={()=>setSKey(s)}>{s}</button>
+                onClick={()=>setSKey(s)}>{dayName(prog,s)}</button>
             ))}
           </div>
           <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:3}}>
-            {['C','D','E','F','G'].map(k => {
+            {progSplitDays(prog).map(k => {
               const v = getSessionFocus(prog,k);
               return (
                 <div key={k} style={{fontFamily:'monospace',fontSize:10,color:k===sKey?v.color:C.dimGray}}>
-                  {k} — {v.label}
+                  {dayName(prog,k)} — {v.label}
                 </div>
               );
             })}
@@ -1311,8 +1608,8 @@ function TodayTab({ user, log, onSaveEntry }) {
               <span style={{fontFamily:'monospace',fontSize:22,fontWeight:700,color:focusColor}}>{info.session}</span>
             </div>
             <div><span style={lbl}>WEEK</span>
-              <span style={{...readoutStyle,color:info.week===progDeloadWeek(info.prog)?C.deload:C.readout}}>
-                {info.week}{info.week===progDeloadWeek(info.prog)?' DELOAD':''}
+              <span style={{...readoutStyle,color:info.isDeload?C.deload:C.readout}}>
+                {info.week}{info.isDeload?' DELOAD':''}
               </span>
             </div>
             <div><span style={lbl}>FOCUS</span>
@@ -1361,13 +1658,13 @@ function TodayTab({ user, log, onSaveEntry }) {
             <div>
               <span style={lbl}>SESSION</span>
               <span style={{fontFamily:'monospace',fontSize:14,color:focusColor}}>
-                {info.session} {getSessionFocus(info.prog,info.session).label}
+                {dayShort(info.session)} {getSessionFocus(info.prog,info.session).label}
               </span>
             </div>
             <div>
               <span style={lbl}>WEEK</span>
               <span style={{...readoutStyle,fontSize:14}}>
-                {info.week}{info.week===progDeloadWeek(info.prog)?' DELOAD':''}
+                {info.week}{info.isDeload?' DELOAD':''}
               </span>
             </div>
           </div>
@@ -1643,7 +1940,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
             <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12,flexWrap:'wrap'}}>
               <span style={{fontFamily:'monospace',fontSize:15,color:C.readout}}>{e.date}</span>
               <span style={{...pill(focusCol),fontSize:11,padding:'3px 10px'}}>
-                {e.session} {getSessionFocus(PROGRAMS.find(p=>p.id===e.programId),e.session)?.label ?? ''}
+                {dayShort(e.session)} {getSessionFocus(PROGRAMS.find(p=>p.id===e.programId),e.session)?.label ?? ''}
               </span>
               <span style={{fontFamily:'monospace',fontSize:11,color:C.textSec}}>
                 P{e.programId} Wk{e.week} #{e.workoutNum||'?'}

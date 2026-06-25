@@ -1106,8 +1106,57 @@ export const PROGRAMS = [
       week5: [ t("F","chestComp","mechanical_drop_set"),t("G","hinge","pre_exhaustion")       ],
     },
   },
+  // ── DEMO: first program to exercise the B5 engine (split + variable length +
+  //    deload policy). Upper/Lower, 4-week block, week-4 volume deload.
+  {
+    id: 26,
+    name: "Upper / Lower — Demo (4-wk · B5 engine)",
+    splitId: "upper_lower",
+    lengthWeeks: 4,
+    deloadPolicy: { every: 4, style: "volume", scope: "week" },
+    sessionFocus: {
+      upper: { label: "UPPER", color: "#22d3ee" },
+      lower: { label: "LOWER", color: "#f472b6" },
+    },
+    sessions: {
+      upper: { primary:{ chestComp:1, backComp:23 },
+               accessories:{ shoulderComp:43, triceps:149, biceps:135, forearms:157, neck:177 } },
+      lower: { primary:{ legComp:97, hinge:117 },
+               accessories:{ glutes:78, calves:167, coreFront:59 } },
+    },
+    deload: {
+      note: "Week 4 — volume deload. ~Half the usual sets, normal load.",
+      exercises: [1, 23, 97, 117, 78, 167]
+    },
+    techniques: {
+      week1: [ t("upper","chestComp","drop_set"),      t("lower","legComp","rest_pause")     ],
+      week2: [ t("upper","backComp","1_quarter_reps"), t("lower","hinge","super_slow")       ],
+      week3: [ t("upper","shoulderComp","partials"),   t("lower","glutes","isometric_hold")  ],
+    },
+  },
 
 ];
+
+// ── Custom programs (user-authored via the program builder) ──────────────────
+// Stored in rbts_customPrograms (GLOBAL), merged into PROGRAMS at load so the
+// picker / scheduler / Today tab treat them like built-ins. Mirrors the html.
+const CUSTOM_PROG_KEY = "rbts_customPrograms";
+export function getCustomPrograms() {
+  try { return JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem(CUSTOM_PROG_KEY)) || "[]"); }
+  catch (e) { return []; }
+}
+export function saveCustomProgram(p) {
+  const all = getCustomPrograms(); all.push(p);
+  try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(all)); } catch (e) {}
+  PROGRAMS.push(p); return p;
+}
+export function deleteCustomProgram(id) {
+  const kept = getCustomPrograms().filter(p => p.id !== id);
+  try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(kept)); } catch (e) {}
+  for (let i = PROGRAMS.length - 1; i >= 0; i--)
+    if (PROGRAMS[i].id === id && PROGRAMS[i].custom) PROGRAMS.splice(i, 1);
+}
+getCustomPrograms().forEach(p => PROGRAMS.push(p));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOOKUP HELPERS
@@ -1122,7 +1171,21 @@ export const SESSION_FOCUS = {
 export function getSessionFocus(prog, sKey) {
   return (prog && prog.sessionFocus && prog.sessionFocus[sKey])
     ? prog.sessionFocus[sKey]
-    : (SESSION_FOCUS[sKey] || {label:sKey, color:"#00d4ff"});
+    : (SESSION_FOCUS[sKey] || {label:dayName(prog, sKey), color:"#00d4ff"});
+}
+// Friendly label for a split day key. Legacy C–G via SESSION_NAMES; other splits
+// via SPLITS[splitId].dayLabels when present, else the uppercased key.
+export const SESSION_NAMES = { C:"CHEST", D:"BACK", E:"TRICEPS", F:"BICEPS", G:"CORE+LEGS" };
+export function dayName(prog, key) {
+  if (SESSION_NAMES[key]) return SESSION_NAMES[key];
+  const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
+  const sp = S && prog && prog.splitId && S[prog.splitId];
+  if (sp && sp.dayLabels && sp.dayLabels[key]) return sp.dayLabels[key];
+  return String(key == null ? "" : key).toUpperCase();
+}
+export function dayShort(key) {            // compact 1-char tag for grids
+  const k = String(key == null ? "" : key);
+  return k.length === 1 ? k : k.charAt(0).toUpperCase();
 }
 
 export const SLOT_LABELS = {
@@ -1163,6 +1226,15 @@ export const exGroup = (id) => {
 
 export const ALL_GROUPS = ["All","CHEST","BACK","SHOULDERS","CORE","GLUTES","QUADS",
   "HAMSTRINGS","BICEPS","TRICEPS","FOREARMS","CALVES","NECK","FULL BODY","MOBILITY"];
+
+// Isolation (single-joint) vs compound (multi-joint) vs other (mobility / stretch
+// / carry / static hold). Derived from the exercise library (1–215). Used by the
+// program builder's validator to enforce a focused iso+compound pair/triplet and
+// to order primary lifts isolation-first. Anything not listed below is isolation.
+const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,31,32,36,37,38,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,139,142,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
+const EX_OTHER_IDS = new Set([112,166,191,192,193,194,198,199,203,204,205,206,207,208,209,210,211,212,213,214,215]);
+export const exClass = (id) => { id = Number(id); return EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"; };
+export const EX_CLASS_RANK = { iso:0, comp:1, other:2 };   // primary display order: iso → compound
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BANDS — 103 bands, 6 brands
@@ -1352,6 +1424,7 @@ export function calcToday(startStr, sched, pi) {
     const idx = n - 1;
     return { isWk:true, session:sessionForIdx(prog, idx),
              week:weekForIdx(prog, idx), num:n, prog:prog,
+             isDeload: isDeloadWorkout(prog, idx),
              blockDone: idx >= progBlockWorkouts(prog) };
   } else {
     const next = nextWkDay(today, days);
@@ -1359,6 +1432,7 @@ export function calcToday(startStr, sched, pi) {
     const idx2 = n2 - 1;
     return { isWk:false, nextDate:next, session:sessionForIdx(prog, idx2),
              week:weekForIdx(prog, idx2), prog:prog,
+             isDeload: isDeloadWorkout(prog, idx2),
              blockDone: idx2 >= progBlockWorkouts(prog) };
   }
 }
@@ -1396,18 +1470,55 @@ export function weekForIdx(prog, idx) {
   return Math.min(Math.floor(idx / WORKOUTS_PER_WEEK) + 1, progLengthWeeks(prog));
 }
 
+// ── Deload policy (every-N cadence · style · scope) ──────────────────────────
+// `program.deloadPolicy = { every, style, scope }`. Defaults reproduce legacy:
+// every = lengthWeeks (only the last week deloads), style "intensity", scope
+// "week". every:0 = no deloads. Week W deloads when W % every === 0. scope
+// "session" makes only the FIRST workout of a deload week a deload. Mirrors html.
+export function deloadPolicy(prog) {
+  const dp = prog && prog.deloadPolicy, len = progLengthWeeks(prog);
+  return {
+    every: (dp && typeof dp.every === "number") ? dp.every : len,
+    style: (dp && dp.style) || "intensity",
+    scope: (dp && dp.scope) || "week",
+  };
+}
+export function isDeloadWeek(prog, week) {
+  const every = deloadPolicy(prog).every;
+  if (!every || every < 1) return false;
+  return week >= 1 && week <= progLengthWeeks(prog) && week % every === 0;
+}
+export function isDeloadWorkout(prog, idx) {
+  const week = Math.floor(idx / WORKOUTS_PER_WEEK) + 1;
+  if (!isDeloadWeek(prog, week)) return false;
+  if (deloadPolicy(prog).scope === "session") return (idx % WORKOUTS_PER_WEEK) === 0;
+  return true;
+}
+export function isDeloadSession(prog, week, sKey) {
+  if (!isDeloadWeek(prog, week)) return false;
+  if (deloadPolicy(prog).scope === "week") return true;
+  return sessionForIdx(prog, (week-1)*WORKOUTS_PER_WEEK) === sKey;
+}
+export function deloadProtocolText(prog) {
+  const st = deloadPolicy(prog).style;
+  if (st === "volume") return "Normal load — cut volume to ~half your usual sets. Keep intensity, reduce total work. No high-intensity techniques.";
+  if (st === "rest")   return "Full rest — skip this session. Recovery only, no training load.";
+  return "All exercises at ≤50% of normal resistance. Focus on movement quality and recovery. No high-intensity techniques.";
+}
+
 const TECH_SCHEDULES = {};
 export function buildTechSchedule(prog) {
   if (TECH_SCHEDULES[prog.id]) return TECH_SCHEDULES[prog.id];
   const days = progSplitDays(prog), L = days.length;
-  const WPW = WORKOUTS_PER_WEEK, ww = progWorkWeeks(prog), N = ww * WPW;
+  const WPW = WORKOUTS_PER_WEEK, len = progLengthWeeks(prog), N = len * WPW;
   const slots = new Array(N).fill(null);
   const weekCount = wk => { let n=0; for (let i=(wk-1)*WPW;i<wk*WPW;i++) if (slots[i]) n++; return n; };
-  for (let w = 1; w <= ww; w++) {
+  for (let w = 1; w <= len; w++) {
     ((prog.techniques && prog.techniques[`week${w}`]) || []).forEach(t => {
       let best = -1, bestScore = Infinity;
       for (let idx = 0; idx < N; idx++) {
         if (slots[idx]) continue;
+        if (isDeloadWorkout(prog, idx)) continue;        // never schedule onto a deload workout
         if (days[idx % L] !== t.session) continue;
         const wk = Math.floor(idx / WPW) + 1;
         const score = Math.abs(wk - w) * 10 + weekCount(wk) * 30 + wk;
@@ -1419,9 +1530,10 @@ export function buildTechSchedule(prog) {
   TECH_SCHEDULES[prog.id] = slots;
   return slots;
 }
+// Deload workouts never receive a scheduled technique, so no deload guard needed.
 export function getTechMap(prog, week, sKey) {
   const map = {};
-  if (week === progDeloadWeek(prog) || week < 1) return map;
+  if (week < 1) return map;
   const days = progSplitDays(prog), L = days.length, WPW = WORKOUTS_PER_WEEK;
   const sched = buildTechSchedule(prog), N = sched.length;
   for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < N; idx++) {
@@ -1431,7 +1543,7 @@ export function getTechMap(prog, week, sKey) {
   return map;
 }
 export function getWeekTechniques(prog, week) {
-  if (week === progDeloadWeek(prog) || week < 1) return [];
+  if (week < 1) return [];
   const WPW = WORKOUTS_PER_WEEK;
   const sched = buildTechSchedule(prog);
   const out = [];
