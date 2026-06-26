@@ -1106,35 +1106,6 @@ export const PROGRAMS = [
       week5: [ t("F","chestComp","mechanical_drop_set"),t("G","hinge","pre_exhaustion")       ],
     },
   },
-  // ── DEMO: first program to exercise the B5 engine (split + variable length +
-  //    deload policy). Upper/Lower, 4-week block, week-4 volume deload.
-  {
-    id: 26,
-    name: "Upper / Lower — Demo (4-wk · B5 engine)",
-    splitId: "upper_lower",
-    lengthWeeks: 4,
-    deloadPolicy: { every: 4, style: "volume", scope: "week" },
-    sessionFocus: {
-      upper: { label: "UPPER", color: "#22d3ee" },
-      lower: { label: "LOWER", color: "#f472b6" },
-    },
-    sessions: {
-      upper: { primary:{ chestComp:1, backComp:23 },
-               accessories:{ shoulderComp:43, triceps:149, biceps:135, forearms:157, neck:177 } },
-      lower: { primary:{ legComp:97, hinge:117 },
-               accessories:{ glutes:78, calves:167, coreFront:59 } },
-    },
-    deload: {
-      note: "Week 4 — volume deload. ~Half the usual sets, normal load.",
-      exercises: [1, 23, 97, 117, 78, 167]
-    },
-    techniques: {
-      week1: [ t("upper","chestComp","drop_set"),      t("lower","legComp","rest_pause")     ],
-      week2: [ t("upper","backComp","1_quarter_reps"), t("lower","hinge","super_slow")       ],
-      week3: [ t("upper","shoulderComp","partials"),   t("lower","glutes","isometric_hold")  ],
-    },
-  },
-
 ];
 
 // ── Custom programs (user-authored via the program builder) ──────────────────
@@ -1392,7 +1363,46 @@ export const GEAR = [
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEDULE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-export const SCHED_DAYS = { MWF:[1,3,5], TTS:[2,4,6] };
+export const SCHED_DAYS = {
+  MWF:    [1,3,5],          // Mon/Wed/Fri  — 3 day (classic full-body)
+  TTS:    [2,4,6],          // Tue/Thu/Sat  — 3 day
+  MTThF:  [1,2,4,5],        // Mon/Tue/Thu/Fri — 4 day (upper/lower, push/pull)
+  MTWThF: [1,2,3,4,5],      // Mon–Fri — 5 day
+  MON_SAT:[1,2,3,4,5,6],    // Mon–Sat — 6 day (one rest day)
+};
+export const SCHED_PRESETS = [
+  { key:"MWF",     label:"Mon/Wed/Fri",     sub:"3 day" },
+  { key:"TTS",     label:"Tue/Thu/Sat",     sub:"3 day" },
+  { key:"MTThF",   label:"Mon/Tue/Thu/Fri", sub:"4 day" },
+  { key:"MTWThF",  label:"Mon\u2013Fri",     sub:"5 day" },
+  { key:"MON_SAT", label:"Mon\u2013Sat",     sub:"6 day" },
+];
+export const WEEKDAY_ABBR = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function unquoteSched(v) {
+  if (v == null) return v;
+  v = String(v);
+  if (v.length >= 2 && v.charAt(0) === '"' && v.charAt(v.length-1) === '"') v = v.slice(1, -1);
+  return v;
+}
+// Resolve any stored schedule value (preset key, "C:1,2,4,5" custom, array, or a
+// JSON-quoted version) into a sorted array of weekday numbers (0=Sun..6=Sat).
+export function schedDaysOf(raw) {
+  if (Array.isArray(raw)) return raw.slice().sort((a,b)=>a-b);
+  const v = unquoteSched(raw);
+  if (v && SCHED_DAYS[v]) return SCHED_DAYS[v].slice();
+  if (v && v.indexOf("C:") === 0)
+    return v.slice(2).split(",").map(Number).filter(x => x>=0 && x<=6).sort((a,b)=>a-b);
+  return SCHED_DAYS.MWF.slice();
+}
+export function schedKeyForDays(daysArr) {
+  const sorted = daysArr.slice().sort((a,b)=>a-b).join(",");
+  for (const k in SCHED_DAYS) if (SCHED_DAYS[k].slice().sort((a,b)=>a-b).join(",") === sorted) return k;
+  return "C:" + sorted;
+}
+export function schedLabel(raw) {
+  const d = schedDaysOf(raw);
+  return d.map(x => WEEKDAY_ABBR[x]).join(", ") + " (" + d.length + " day)";
+}
 
 export function countWkDays(startStr, days, upTo) {
   const s = new Date(startStr + "T00:00:00");
@@ -1415,7 +1425,7 @@ export function nextWkDay(from, days) {
 }
 
 export function calcToday(startStr, sched, pi) {
-  const days = SCHED_DAYS[sched];
+  const days = schedDaysOf(sched);
   const today = new Date(); today.setHours(0,0,0,0);
   const isWk = days.includes(today.getDay());
   const prog = PROGRAMS[pi] || PROGRAMS[0];
@@ -1449,7 +1459,20 @@ const SESSION_KEYS = ["C","D","E","F","G"];
 // program's Phase-1 config (splitId / lengthWeeks). Defaults reproduce legacy
 // behavior exactly: body_part_5 (C–G) rotation, 6-week block, week-6 deload.
 // Deload *policy* (every-N / style / scope) is deferred. Mirrors fitness_app.html.
-export const WORKOUTS_PER_WEEK = 3;   // both MWF and TTS schedule 3 workouts/week
+// Active training schedule, read from localStorage (profile-scoped). Workouts per
+// week now DERIVES from it (was a fixed 3) so program-week / deload math scales
+// with how many days/week the user trains. Defaults to 3 when unreadable so legacy
+// 3-day (MWF/TTS) behavior stays byte-identical.
+function activeSchedRaw() {
+  try {
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg';
+    const key = (RBTS_PHASE1 && RBTS_PHASE1.profileKey) ? RBTS_PHASE1.profileKey('schedule', ap) : ('rbts_' + ap + '_schedule');
+    let v = localStorage.getItem(key);
+    if (v == null) v = localStorage.getItem('rbts_schedule');   // legacy flat fallback
+    return v;
+  } catch { return null; }
+}
+export function wpw() { try { return schedDaysOf(activeSchedRaw()).length || 3; } catch { return 3; } }
 export function progSplitDays(prog) {
   const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
   const sp = S && prog && prog.splitId && S[prog.splitId];
@@ -1461,13 +1484,13 @@ export function progLengthWeeks(prog) {
 }
 export const progDeloadWeek    = prog => progLengthWeeks(prog);                    // last week = deload
 export const progWorkWeeks     = prog => progLengthWeeks(prog) - 1;               // weeks carrying techniques
-export const progBlockWorkouts = prog => progLengthWeeks(prog) * WORKOUTS_PER_WEEK;
+export const progBlockWorkouts = prog => progLengthWeeks(prog) * wpw();
 export function sessionForIdx(prog, idx) {
   const d = progSplitDays(prog);
   return d[((idx % d.length) + d.length) % d.length];
 }
 export function weekForIdx(prog, idx) {
-  return Math.min(Math.floor(idx / WORKOUTS_PER_WEEK) + 1, progLengthWeeks(prog));
+  return Math.min(Math.floor(idx / wpw()) + 1, progLengthWeeks(prog));
 }
 
 // ── Deload policy (every-N cadence · style · scope) ──────────────────────────
@@ -1489,15 +1512,15 @@ export function isDeloadWeek(prog, week) {
   return week >= 1 && week <= progLengthWeeks(prog) && week % every === 0;
 }
 export function isDeloadWorkout(prog, idx) {
-  const week = Math.floor(idx / WORKOUTS_PER_WEEK) + 1;
+  const week = Math.floor(idx / wpw()) + 1;
   if (!isDeloadWeek(prog, week)) return false;
-  if (deloadPolicy(prog).scope === "session") return (idx % WORKOUTS_PER_WEEK) === 0;
+  if (deloadPolicy(prog).scope === "session") return (idx % wpw()) === 0;
   return true;
 }
 export function isDeloadSession(prog, week, sKey) {
   if (!isDeloadWeek(prog, week)) return false;
   if (deloadPolicy(prog).scope === "week") return true;
-  return sessionForIdx(prog, (week-1)*WORKOUTS_PER_WEEK) === sKey;
+  return sessionForIdx(prog, (week-1)*wpw()) === sKey;
 }
 export function deloadProtocolText(prog) {
   const st = deloadPolicy(prog).style;
@@ -1508,9 +1531,12 @@ export function deloadProtocolText(prog) {
 
 const TECH_SCHEDULES = {};
 export function buildTechSchedule(prog) {
-  if (TECH_SCHEDULES[prog.id]) return TECH_SCHEDULES[prog.id];
+  // Cache key includes WPW: technique layout depends on workouts/week, so a
+  // schedule change (3->4 days) must build fresh, not reuse a stale schedule.
+  const WPW = wpw(), ck = prog.id + ':' + WPW;
+  if (TECH_SCHEDULES[ck]) return TECH_SCHEDULES[ck];
   const days = progSplitDays(prog), L = days.length;
-  const WPW = WORKOUTS_PER_WEEK, len = progLengthWeeks(prog), N = len * WPW;
+  const len = progLengthWeeks(prog), N = len * WPW;
   const slots = new Array(N).fill(null);
   const weekCount = wk => { let n=0; for (let i=(wk-1)*WPW;i<wk*WPW;i++) if (slots[i]) n++; return n; };
   for (let w = 1; w <= len; w++) {
@@ -1527,14 +1553,14 @@ export function buildTechSchedule(prog) {
       if (best >= 0) slots[best] = { session:t.session, slot:t.slot, technique:t.technique, prescribedWeek:w };
     });
   }
-  TECH_SCHEDULES[prog.id] = slots;
+  TECH_SCHEDULES[ck] = slots;
   return slots;
 }
 // Deload workouts never receive a scheduled technique, so no deload guard needed.
 export function getTechMap(prog, week, sKey) {
   const map = {};
   if (week < 1) return map;
-  const days = progSplitDays(prog), L = days.length, WPW = WORKOUTS_PER_WEEK;
+  const days = progSplitDays(prog), L = days.length, WPW = wpw();
   const sched = buildTechSchedule(prog), N = sched.length;
   for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < N; idx++) {
     const a = sched[idx];
@@ -1544,7 +1570,7 @@ export function getTechMap(prog, week, sKey) {
 }
 export function getWeekTechniques(prog, week) {
   if (week < 1) return [];
-  const WPW = WORKOUTS_PER_WEEK;
+  const WPW = wpw();
   const sched = buildTechSchedule(prog);
   const out = [];
   for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < sched.length; idx++) {

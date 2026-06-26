@@ -10,7 +10,8 @@ import {
   calcToday, PROG_REPS,
   getTechMap, getWeekTechniques,
   progSplitDays, progLengthWeeks, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
-  sessionForIdx, weekForIdx, WORKOUTS_PER_WEEK,
+  sessionForIdx, weekForIdx, wpw,
+  SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
   saveCustomProgram, deleteCustomProgram,
 } from './data'
@@ -56,6 +57,47 @@ const btn = (active, color=C.accent) => ({
 const inputStyle = {
   background:C.bgInput, border:`1px solid ${C.accentDim}`, color:C.text,
   borderRadius:4, padding:'5px 8px', fontFamily:'monospace', fontSize:12, outline:'none',
+}
+
+// Schedule picker: preset buttons (3–6 day) PLUS a per-weekday toggle row for any
+// custom set of training days. The active program's split rotates across whichever
+// days are chosen, automatically. Mirrors ScheduleChooser in fitness_app.html.
+function ScheduleChooser({ sched, setSched }) {
+  const days = schedDaysOf(sched)
+  const activeKey = schedKeyForDays(days)
+  const toggleDay = (dn) => {
+    const has = days.includes(dn)
+    const nd = has ? days.filter(x => x !== dn) : days.concat([dn])
+    if (nd.length === 0) return                 // never allow zero training days
+    setSched(schedKeyForDays(nd))
+  }
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:8,maxWidth:430}}>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+        {SCHED_PRESETS.map(p => (
+          <button key={p.key} style={btn(activeKey===p.key)} onClick={()=>setSched(p.key)}>
+            {p.label} · {p.sub}
+          </button>
+        ))}
+      </div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
+        <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+          letterSpacing:'0.08em',marginRight:2}}>CUSTOM</span>
+        {[1,2,3,4,5,6,0].map(dn => {
+          const on = days.includes(dn)
+          return (
+            <button key={dn} onClick={()=>toggleDay(dn)}
+              style={{...btn(on), padding:'5px 8px', minWidth:30, fontSize:11}}>
+              {WEEKDAY_ABBR[dn].charAt(0)}
+            </button>
+          )
+        })}
+      </div>
+      <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,lineHeight:1.5}}>
+        {schedLabel(sched)} — your program's split rotates across these days automatically.
+      </span>
+    </div>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1060,6 +1102,7 @@ function ProgramBuilder({ onSaved, onCancel }) {
   const [picks, setPicks] = useState({})
   const [activeDay, setActiveDay] = useState(0)
   const [exSearch, setExSearch] = useState('')
+  const [exGrp, setExGrp] = useState('All')        // muscle-group filter for the picker
   const [techs, setTechs] = useState({})        // { workingWeek: [{day, exId, technique, primary}] }
   const [issues, setIssues] = useState(null)    // validation results awaiting confirm
 
@@ -1181,8 +1224,11 @@ function ProgramBuilder({ onSaved, onCancel }) {
   const canSave = days.some(d => (picks[d] || []).length > 0) ||
     workingWeeks.some(wk => (techs[wk] || []).some(e => e.exId !== ''))
   const allExOpts = Object.keys(EXERCISE_NAMES).map(Number)
-  const exIds = Object.keys(EXERCISE_NAMES).map(Number).filter(id =>
-    !exSearch || (EXERCISE_NAMES[id] || '').toLowerCase().includes(exSearch.toLowerCase()))
+  const exIds = Object.keys(EXERCISE_NAMES).map(Number).filter(id => {
+    const nameOk = !exSearch || (EXERCISE_NAMES[id] || '').toLowerCase().includes(exSearch.toLowerCase())
+    const grpOk  = exGrp === 'All' || exGroup(id).label === exGrp
+    return nameOk && grpOk
+  })
 
   return (
     <div style={{...widget, border:'1px solid '+C.accentDim, display:'flex', flexDirection:'column', gap:8}}>
@@ -1220,6 +1266,10 @@ function ProgramBuilder({ onSaved, onCancel }) {
         </label>
       </div>
       <span style={lbl}>EXERCISES PER DAY</span>
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.5}}>
+        Pick what you do on each day. These repeat every week — your split rotates
+        the days automatically (e.g. Upper, Lower, Upper, Lower across your schedule).
+      </span>
       <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
         {days.map((d,i)=>(
           <button key={d} style={btn(activeDay===i)} onClick={()=>setActiveDay(i)}>
@@ -1227,25 +1277,42 @@ function ProgramBuilder({ onSaved, onCancel }) {
           </button>
         ))}
       </div>
+      {/* Muscle-group filter — names don't always reveal the primary muscle. */}
+      <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+        {ALL_GROUPS.map(g => (
+          <button key={g} style={{...btn(exGrp===g), fontSize:10, padding:'4px 8px'}}
+            onClick={()=>setExGrp(g)}>{g}</button>
+        ))}
+      </div>
       <input style={inputStyle} placeholder={'Search exercises for '+dayKey+'…'} value={exSearch}
         onChange={e=>setExSearch(e.target.value)} />
       <div style={{maxHeight:200, overflowY:'auto', border:'1px solid '+C.bgInput, borderRadius:4}}>
+        {exIds.length === 0 &&
+          <div style={{padding:'6px 8px',fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+            No exercises match — try a different group or clear the search.
+          </div>}
         {exIds.map(id => {
           const on = (picks[dayKey] || []).includes(id)
+          const grp = exGroup(id)
           return (
             <div key={id} onClick={()=>toggleEx(dayKey, id)}
               style={{padding:'4px 8px', fontFamily:'monospace', fontSize:11, cursor:'pointer',
+                display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
                 color: on ? '#000' : C.textSec, background: on ? C.accent : 'transparent',
                 borderBottom:'1px solid '+C.bgInput}}>
-              {on ? '✓ ' : '  '}#{id} {EXERCISE_NAMES[id]}
+              <span>{on ? '✓ ' : '  '}#{id} {EXERCISE_NAMES[id]}</span>
+              <span style={{fontSize:9, color: on ? '#000' : grp.color, opacity: on ? 0.7 : 1,
+                whiteSpace:'nowrap'}}>{grp.label}</span>
             </div>
           )
         })}
       </div>
 
-      <span style={lbl}>WEEKLY PLAN — up to 12 exercises/week · technique optional</span>
-      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
-        Sessions are static per day, so an exercise shows every week; only techniques vary by week.
+      <span style={lbl}>TECHNIQUES BY WEEK — optional intensifiers (drop sets, rest-pause…)</span>
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.5}}>
+        Optional. Your exercises (above) stay the same every week — this only layers a
+        high-intensity technique onto a specific lift on a specific week of the block,
+        and lets you mark a lift PRI (primary). Leave it empty for a plain program.
       </span>
       <div style={{display:'flex', flexDirection:'column', gap:8}}>
         {workingWeeks.map(wk => {
@@ -1580,13 +1647,7 @@ function TodayTab({ user, log, onSaveEntry }) {
           </div>
           <div>
             <span style={lbl}>SCHEDULE</span>
-            <div style={{display:'flex',gap:6}}>
-              {['MWF','TTS'].map(s => (
-                <button key={s} style={btn(sched===s)} onClick={()=>setSched(s)}>
-                  {s==='MWF'?'Mon/Wed/Fri':'Tue/Thu/Sat'}
-                </button>
-              ))}
-            </div>
+            <ScheduleChooser sched={sched} setSched={setSched}/>
           </div>
           <div>
             <span style={lbl}>PROGRAM</span>
