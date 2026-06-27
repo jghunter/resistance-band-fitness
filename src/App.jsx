@@ -1413,7 +1413,7 @@ function ProgramsTab() {
           {PROGRAMS.map((p,i) => (
             <button key={p.id} style={btn(i===safePi, p.custom?C.deload:undefined)}
               onClick={()=>{setPi(i);setWeek(1);setSKey(progSplitDays(PROGRAMS[i])[0]);}}>
-              {p.custom ? '★' : 'P'+p.id}</button>
+              {p.custom ? ('★'+PROGRAMS.slice(0,i+1).filter(x=>x.custom).length) : 'P'+p.id}</button>
           ))}
           <button style={{...btn(false,C.green),fontWeight:700}} onClick={()=>setBuilding(true)}>+ NEW</button>
         </div>
