@@ -30,6 +30,31 @@ catch (e) { console.warn('RBTS_PHASE1 migrate failed', e) }
 const RBTS_AP = (() => { try { return localStorage.getItem('rbts_activeProfile') || 'greg' } catch { return 'greg' } })()
 const apk = (base) => (RBTS_PHASE1 ? RBTS_PHASE1.profileKey(base, RBTS_AP) : ('rbts_' + base))
 
+// ── Per-account SETTINGS (Phase 2): start date, schedule, active program ──
+// Stored locally under the active profile's namespaced keys (the same keys
+// TodayTab used before) AND, when signed in, synced to users/{uid}/meta/settings
+// with last-write-wins by `updatedAt` — the same reconcile pattern as the log.
+function lsGet(key, def) {
+  try { const s = localStorage.getItem(key); return s !== null ? JSON.parse(s) : def } catch { return def }
+}
+function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)) } catch {} }
+function getLocalSettings() {
+  return {
+    startDate: lsGet(apk('startDate'), '2026-06-01'),
+    schedule:  lsGet(apk('schedule'),  'MWF'),
+    progIdx:   lsGet(apk('progIdx'),   0),
+    updatedAt: lsGet(apk('settingsUpdatedAt'), 0),
+  }
+}
+// Write settings to localStorage; when `uid` is given, also push to Firestore.
+function persistSettings(s, uid) {
+  lsSet(apk('startDate'), s.startDate)
+  lsSet(apk('schedule'),  s.schedule)
+  lsSet(apk('progIdx'),   s.progIdx)
+  lsSet(apk('settingsUpdatedAt'), s.updatedAt || 0)
+  if (uid) saveSettingsToFirestore(uid, s).catch(e => console.error('Save settings failed:', e))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +215,17 @@ async function saveEntryToFirestore(uid, entry) {
   await setDoc(doc(db, 'users', uid, 'workouts', docId), entry)
 }
 
+// Last-write-wins timestamp (ms) for a log entry. Prefers explicit updatedAt
+// (stamped on every save / merge-import / edit), falls back to completedAt,
+// else 0 (treated as oldest). Used to reconcile localStorage ↔ Firestore so a
+// re-imported or edited correction overwrites a stale cloud copy of the same date.
+function entryTs(e) {
+  if (!e) return 0
+  if (typeof e.updatedAt === 'number') return e.updatedAt
+  const c = e.completedAt ? Date.parse(e.completedAt) : NaN
+  return Number.isNaN(c) ? 0 : c
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE GEAR + MY-BANDS HELPERS
 //   gear  → users/{uid}/gear/{itemId}   (one doc per equipment item)
@@ -212,8 +248,20 @@ async function loadMyBandsFromFirestore(uid) {
 async function saveMyBandsToFirestore(uid, ids) {
   await setDoc(doc(db, 'users', uid, 'meta', 'myBands'), { ids })
 }
+async function loadSettingsFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'settings'))
+  return d.exists() ? d.data() : null
+}
+async function saveSettingsToFirestore(uid, settings) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'settings'), settings)
+}
 
-// ── Local (signed-out) gear + my-bands storage; gear seeds once from GEAR ──
+// ── Local (signed-out) gear + my-bands storage ──
+// Phase 1 (multi-user): gear no longer auto-seeds from GEAR. New and signed-out
+// users start EMPTY so nobody inherits Greg's personal inventory. Greg's own gear
+// lives in his Firestore account (loaded on sign-in) and in already-saved
+// localStorage on his existing devices. flattenGearSeed/GEAR are kept for a future
+// optional "load starter equipment" prompt.
 const GEAR_KEY = 'rbts_gear'
 function flattenGearSeed(seed) {
   const out = []; let n = 0; const t = Date.now()
@@ -225,9 +273,7 @@ function flattenGearSeed(seed) {
 }
 function getLocalGear() {
   try { const raw = localStorage.getItem(GEAR_KEY); if (raw) return JSON.parse(raw) } catch {}
-  const seeded = flattenGearSeed(GEAR)
-  try { localStorage.setItem(GEAR_KEY, JSON.stringify(seeded)) } catch {}
-  return seeded
+  return []   // no stored gear yet → start empty (do NOT seed Greg's GEAR_SEED)
 }
 function saveLocalGear(items) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(items)) } catch {} }
 function getLocalMyBands() { try { return JSON.parse(localStorage.getItem('rbts_myBands') || '[]') } catch { return [] } }
@@ -1578,10 +1624,13 @@ function LibraryTab() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TODAY TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function TodayTab({ user, log, onSaveEntry }) {
-  const [startDate, setStartDate] = useLS(apk('startDate'), '2026-06-01')
-  const [sched, setSched]         = useLS(apk('schedule'), 'MWF')
-  const [pi, setPi]               = useLS(apk('progIdx'), 0)
+function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
+  // Phase 2: settings live in App (synced per account). Read from props; change
+  // via onChangeSettings, which persists locally and to Firestore (last-write-wins).
+  const startDate = settings.startDate, sched = settings.schedule, pi = settings.progIdx
+  const setStartDate = v => onChangeSettings({ startDate: v })
+  const setSched     = v => onChangeSettings({ schedule:  v })
+  const setPi        = v => onChangeSettings({ progIdx:   v })
   const [exLogs, setExLogs]       = useState({})
   const [saved, setSaved]         = useState(false)
 
@@ -2274,6 +2323,7 @@ export default function App() {
   const [log, setLog]                 = useState([])
   const [gear, setGear]               = useState([])
   const [myBands, setMyBands]         = useState([])
+  const [settings, setSettings]       = useState(() => getLocalSettings())
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
 
@@ -2284,12 +2334,19 @@ export default function App() {
       if (u) {
         setLogLoading(true)
         try {
-          // Backfill: push any localStorage entries to Firestore that aren't there yet
+          // Reconcile localStorage ↔ Firestore by last-write-wins (entryTs):
+          // push any local entry that is NEW or NEWER than its Firestore copy.
+          // This lets a merge-imported / edited correction (freshly stamped
+          // updatedAt) overwrite a stale cloud copy of the same date, instead of
+          // being silently skipped just because the date already existed.
           const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
           if (local.length > 0) {
             const existing = await loadLogFromFirestore(u.uid)
-            const existingKeys = new Set(existing.map(e => `${e.date}_${e.session}`))
-            const toSync = local.filter(e => !existingKeys.has(`${e.date}_${e.session}`))
+            const fsByKey = new Map(existing.map(e => [`${e.date}_${e.session}`, e]))
+            const toSync = local.filter(e => {
+              const fs = fsByKey.get(`${e.date}_${e.session}`)
+              return !fs || entryTs(e) > entryTs(fs)
+            })
             await Promise.all(toSync.map(e => saveEntryToFirestore(u.uid, e)))
           }
           const entries = await loadLogFromFirestore(u.uid)
@@ -2315,6 +2372,23 @@ export default function App() {
           }
           setMyBands(fsBands)
         } catch (e) { console.error('Error loading my bands:', e); setMyBands(getLocalMyBands()) }
+        // Settings (start date / schedule / program): last-write-wins vs cloud.
+        try {
+          const localS = getLocalSettings()
+          const fsS    = await loadSettingsFromFirestore(u.uid)
+          if (!fsS) {
+            // First sign-in for this account → seed cloud from local settings.
+            const seed = { ...localS, updatedAt: localS.updatedAt || Date.now() }
+            await saveSettingsToFirestore(u.uid, seed)
+            persistSettings(seed, null); setSettings(seed)
+          } else if ((localS.updatedAt || 0) > (fsS.updatedAt || 0)) {
+            // Local edited more recently → push to cloud.
+            await saveSettingsToFirestore(u.uid, localS); setSettings(localS)
+          } else {
+            // Cloud is newer (or same) → adopt it locally.
+            persistSettings(fsS, null); setSettings(fsS)
+          }
+        } catch (e) { console.error('Error loading settings:', e) }
         setLogLoading(false)
       } else {
         try {
@@ -2323,6 +2397,7 @@ export default function App() {
         } catch { setLog([]) }
         setGear(getLocalGear())
         setMyBands(getLocalMyBands())
+        setSettings(getLocalSettings())
       }
     })
     return unsub
@@ -2340,34 +2415,50 @@ export default function App() {
     try { setLog(JSON.parse(localStorage.getItem('rbts_log')||'[]')) } catch { setLog([]) }
     setGear(getLocalGear())
     setMyBands(getLocalMyBands())
+    setSettings(getLocalSettings())
   }
 
   const handleSaveEntry = useCallback(async (entry) => {
+    // Stamp updatedAt so this write wins last-write-wins reconciliation later.
+    entry = { ...entry, updatedAt: Date.now() }
     setLog(prev => {
       const idx = prev.findIndex(e => e.date===entry.date && e.session===entry.session)
       if (idx >= 0) { const next=[...prev]; next[idx]=entry; return next }
       return [...prev, entry]
     })
+    // Keep localStorage in sync in BOTH cases so signed-out/signed-in reconcile
+    // always sees the latest copy.
+    try {
+      const local = JSON.parse(localStorage.getItem('rbts_log')||'[]')
+      const idx   = local.findIndex(e=>e.date===entry.date&&e.session===entry.session)
+      if (idx>=0) local[idx]=entry; else local.push(entry)
+      localStorage.setItem('rbts_log', JSON.stringify(local))
+    } catch {}
     if (user) {
       try { await saveEntryToFirestore(user.uid, entry) }
       catch (e) { console.error('Save failed:', e) }
-    } else {
-      try {
-        const local = JSON.parse(localStorage.getItem('rbts_log')||'[]')
-        const idx   = local.findIndex(e=>e.date===entry.date&&e.session===entry.session)
-        if (idx>=0) local[idx]=entry; else local.push(entry)
-        localStorage.setItem('rbts_log', JSON.stringify(local))
-      } catch {}
     }
   }, [user])
 
   const handleMergeImport = useCallback(async (incoming) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return { added:0, dates:0, synced:false }
+    // Stamp every imported entry with a fresh updatedAt so it authoritatively
+    // overwrites any stale Firestore copy of the same date on the next sign-in
+    // reconcile (this is what was previously dropping re-imported corrections).
+    const now = Date.now()
+    incoming = incoming.map(e => ({ ...e, updatedAt: now }))
     const dropDates = new Set(incoming.map(e => e.date))
     setLog(prev => {
       const kept = prev.filter(e => !dropDates.has(e.date))
       return kept.concat(incoming).sort((a,b) => a.date.localeCompare(b.date))
     })
+    // Always update localStorage too (both signed in and out) so the reconcile
+    // source of truth stays current regardless of auth state at merge time.
+    try {
+      const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
+      const kept  = local.filter(e => !dropDates.has(e.date))
+      localStorage.setItem('rbts_log', JSON.stringify(kept.concat(incoming).sort((a,b)=>a.date.localeCompare(b.date))))
+    } catch {}
     let synced = false
     if (user) {
       try {
@@ -2377,12 +2468,6 @@ export default function App() {
         await Promise.all(incoming.map(e => saveEntryToFirestore(user.uid, e)))
         synced = true
       } catch (err) { console.error('Merge import failed:', err) }
-    } else {
-      try {
-        const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
-        const kept  = local.filter(e => !dropDates.has(e.date))
-        localStorage.setItem('rbts_log', JSON.stringify(kept.concat(incoming).sort((a,b)=>a.date.localeCompare(b.date))))
-      } catch {}
     }
     return { added: incoming.length, dates: dropDates.size, synced }
   }, [user])
@@ -2421,6 +2506,15 @@ export default function App() {
     setMyBands(next)
     if (user) { try { await saveMyBandsToFirestore(user.uid, next) } catch (e) { console.error('Save my bands failed:', e) } }
     else saveLocalMyBands(next)
+  }, [user])
+
+  // Settings change: merge the patch, stamp updatedAt, persist locally + to cloud.
+  const handleChangeSettings = useCallback((patch) => {
+    setSettings(prev => {
+      const next = { ...prev, ...patch, updatedAt: Date.now() }
+      persistSettings(next, user ? user.uid : null)
+      return next
+    })
   }, [user])
 
   function tabStyle(active) {
@@ -2495,7 +2589,7 @@ export default function App() {
             Syncing workouts from cloud…
           </div>
         )}
-        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry}/>}
+        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings}/>}
         {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}

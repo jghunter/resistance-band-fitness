@@ -1355,7 +1355,7 @@ export const GEAR = [
   ]},
   { brand:"HeavyDutyBar", items:[
     {name:"Bantam Bar",qty:1,status:"owned"},{name:"Qlaw Handles",qty:2,status:"owned"},
-    {name:"Qdeck",qty:1,status:"preorder",note:"In transit"},{name:"Tension Master",qty:1,status:"owned",note:"PO"},
+    {name:"Qdeck",qty:1,status:"owned"},{name:"Tension Master",qty:1,status:"owned",note:"PO"},
     {name:"Elevators",qty:2,status:"owned"},
   ]},
 ];
