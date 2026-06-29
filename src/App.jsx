@@ -2079,17 +2079,27 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
                     <span style={{color:C.dimGray}}>#{exId} </span>{EXERCISE_NAMES[exId]||exId}
                   </div>
                   {(sets||[]).map((s,i) => {
-                    const bNames=(setBandsOf(s)).map(bid=>{
+                    const nameBands=(arr)=>(arr||[]).map(bid=>{
                       const b=BANDS.find(x=>x.id===bid)
                       return b?`${b.brand.split(' ')[0]} ${b.color} (${b.res}lbs)`:bid
                     }).join(' + ')
                     const reps=setRepsOf(s); const intens=setIntensifier(s)
+                    const segs=Array.isArray(s.segments)?s.segments:null
                     return (
-                      <div key={i} style={{fontFamily:'monospace',fontSize:10,color:C.textSec,marginBottom:2}}>
-                        <span style={{color:C.dimGray}}>S{i+1} </span>
-                        <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r</span>
-                        {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
-                        {bNames && <span style={{color:C.dimGray}}> {bNames}</span>}
+                      <div key={i} style={{marginBottom:segs?4:2}}>
+                        <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+                          <span style={{color:C.dimGray}}>S{i+1} </span>
+                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r</span>
+                          {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
+                          {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
+                        </div>
+                        {segs && segs.map((g,j) => (
+                          <div key={j} style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,paddingLeft:18}}>
+                            <span style={{color:C.amber}}>{j===0?'└':'·'} </span>
+                            <span style={{color:C.textSec}}>{g.reps||0}r</span>
+                            {nameBands(g.bands) && <span> {nameBands(g.bands)}</span>}
+                          </div>
+                        ))}
                       </div>
                     )
                   })}
@@ -2109,7 +2119,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Editable equipment inventory + MY BANDS. Controlled by App (Firestore-synced
 // when signed in, localStorage when signed out) via props.
-function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands }) {
+function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRestoreGear }) {
   const [open, setOpen]   = useState({})
   const isOpen   = k => !!open[k]
   const toggle   = k => setOpen(o => ({ ...o, [k]: !o[k] }))
@@ -2267,9 +2277,15 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands }) {
           </div>
         )}
         {gBrands.length===0 ? (
-          <span style={{fontFamily:'monospace',fontSize:12,color:C.dimGray}}>
-            No equipment yet. Use + ADD GEAR to start your inventory.
-          </span>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            <span style={{fontFamily:'monospace',fontSize:12,color:C.dimGray}}>
+              No equipment yet. Use + ADD GEAR to start your inventory{onRestoreGear?', or load the full starter set below.':'.'}
+            </span>
+            {onRestoreGear && (
+              <button style={{...btn(false,C.green),fontSize:11,padding:'7px 14px',alignSelf:'flex-start'}}
+                onClick={onRestoreGear}>⤓ LOAD STARTER EQUIPMENT</button>
+            )}
+          </div>
         ) : (
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             {gBrands.map(br => {
@@ -2502,6 +2518,16 @@ export default function App() {
     else saveLocalGear(next)
   }, [user, gear])
 
+  // One-time recovery: rebuild the full inventory from the bundled GEAR master
+  // list and persist it (cloud when signed in, else local). Offered only when
+  // gear is empty so it never silently re-seeds an account that has its own gear.
+  const handleRestoreGear = useCallback(async () => {
+    const items = flattenGearSeed(GEAR)
+    setGear(items)
+    if (user) { try { await Promise.all(items.map(g => saveGearItemToFirestore(user.uid, g))) } catch (e) { console.error('Restore gear failed:', e) } }
+    else saveLocalGear(items)
+  }, [user])
+
   const handleSetMyBands = useCallback(async (next) => {
     setMyBands(next)
     if (user) { try { await saveMyBandsToFirestore(user.uid, next) } catch (e) { console.error('Save my bands failed:', e) } }
@@ -2594,7 +2620,7 @@ export default function App() {
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab/>}
-        {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands}/>}
+        {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear}/>}
       </div>
     </div>
   )
