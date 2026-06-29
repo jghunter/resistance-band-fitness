@@ -1317,6 +1317,33 @@ export const BANDS = [
   {id:"b100",brand:"HeavyDutyBar", color:"Black",     model:"Travel",    lengthIn:41,res:"~25-70"},
   {id:"b101",brand:"HeavyDutyBar", color:"Purple",    model:"Travel",    lengthIn:41,res:"~40-100"},
   {id:"b102",brand:"HeavyDutyBar", color:"Green",     model:"Travel",    lengthIn:41,res:"~60-150"},
+  // ── Synced from fitness_app.html (b106–b131): Clench mini, Harambe deficit, Undersun, Tribe, Dingzhou Baiyun ──
+  {id:"b106",brand:"Clench",       color:"Green",     model:"Mini",      lengthIn:13,res:"2-20"},
+  {id:"b107",brand:"Clench",       color:"Black",     model:"Mini",      lengthIn:13,res:"5-30"},
+  {id:"b108",brand:"Clench",       color:"Purple",    model:"Mini",      lengthIn:13,res:"10-40"},
+  {id:"b109",brand:"Clench",       color:"Heavy Green",model:"Mini",     lengthIn:13,res:"12-50"},
+  {id:"b110",brand:"Clench",       color:"Blue",      model:"Mini",      lengthIn:13,res:"15-60"},
+  {id:"b111",brand:"Harambe",      color:"Blue",      model:"Kong 4in wide",lengthIn:38,res:"160-320"},
+  {id:"b112",brand:"Harambe",      color:"Orange",    model:"Deficit 1/4in",lengthIn:34,res:"5-10"},
+  {id:"b113",brand:"Harambe",      color:"Yellow",    model:"Deficit 1/4in",lengthIn:34,res:"10-20"},
+  {id:"b114",brand:"Harambe",      color:"White",     model:"Deficit 1/2in",lengthIn:34,res:"20-40"},
+  {id:"b115",brand:"Harambe",      color:"Light Green",model:"Deficit 1in", lengthIn:34,res:"40-80"},
+  {id:"b116",brand:"Harambe",      color:"Heavy Green",model:"Deficit 2in", lengthIn:34,res:"80-160"},
+  {id:"b117",brand:"Undersun",     color:"Extra Light",model:"",         lengthIn:41,res:"5-15"},
+  {id:"b118",brand:"Undersun",     color:"Light",      model:"",         lengthIn:41,res:"20-35"},
+  {id:"b119",brand:"Undersun",     color:"Medium",     model:"",         lengthIn:41,res:"30-50"},
+  {id:"b120",brand:"Undersun",     color:"Heavy",      model:"",         lengthIn:41,res:"40-80"},
+  {id:"b121",brand:"Undersun",     color:"Extra Heavy",model:"",         lengthIn:41,res:"50-120"},
+  {id:"b122",brand:"Tribe",        color:"X-Light",    model:"",         lengthIn:41,res:"10-30"},
+  {id:"b123",brand:"Tribe",        color:"Light",      model:"",         lengthIn:41,res:"20-70"},
+  {id:"b124",brand:"Tribe",        color:"Medium",     model:"",         lengthIn:41,res:"30-110"},
+  {id:"b125",brand:"Tribe",        color:"Heavy",      model:"",         lengthIn:41,res:"40-140"},
+  {id:"b126",brand:"Tribe",        color:"X-Heavy",    model:"",         lengthIn:41,res:"50-170"},
+  {id:"b127",brand:"Dingzhou Baiyun",color:"Yellow",   model:"",         lengthIn:41,res:"5-15"},
+  {id:"b128",brand:"Dingzhou Baiyun",color:"Red",      model:"",         lengthIn:41,res:"15-35"},
+  {id:"b129",brand:"Dingzhou Baiyun",color:"Black",    model:"",         lengthIn:41,res:"25-65"},
+  {id:"b130",brand:"Dingzhou Baiyun",color:"Purple",   model:"",         lengthIn:41,res:"35-85"},
+  {id:"b131",brand:"Dingzhou Baiyun",color:"Green",    model:"",         lengthIn:41,res:"55-125"},
 ];
 
 export const COLOR_HEX = {
@@ -1325,9 +1352,12 @@ export const COLOR_HEX = {
   "Grey":"#9ca3af","White":"#f1f5f9","Lt Grey":"#d1d5db","Dk Grey":"#6b7280",
   "Lt Green":"#86efac","Hvy Green":"#15803d","Org Heavy":"#ea580c",
   "White UL":"#ecfdf5",
+  "Heavy Green":"#15803d","Light Green":"#86efac",
+  "Extra Light":"#bbf7d0","X-Light":"#86efac","Light":"#4ade80",
+  "Medium":"#eab308","Heavy":"#f97316","Extra Heavy":"#dc2626","X-Heavy":"#991b1b",
 };
 
-export const BAND_BRANDS = ["All","Serious Steel","Harambe","X3","Clench","Quantum","HeavyDutyBar"];
+export const BAND_BRANDS = ["All","Serious Steel","Harambe","X3","Clench","Quantum","HeavyDutyBar","Undersun","Tribe","Dingzhou Baiyun"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GEAR INVENTORY
