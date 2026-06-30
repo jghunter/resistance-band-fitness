@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# diagnostic leftover (safe to delete)
+_parsecheck.cjs
