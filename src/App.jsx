@@ -399,7 +399,7 @@ function SessionView({ prog, sKey, week }) {
           <span style={pill(C.amber)}>{Object.keys(techMap).length} TECHNIQUE{Object.keys(techMap).length>1?'S':''}</span>}
       </div>
       <div>
-        <span style={lbl}>PRIMARY — ISOLATION + COMPOUND</span>
+        <span style={lbl}>PRIMARY — COMPOUND + ISOLATION</span>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
           {Object.entries(session.primary).map(([slot,id]) => (
             <ExCard key={slot} id={id} role={SLOT_LABELS[slot]} techKey={techMap[slot]??null}/>
@@ -1191,7 +1191,7 @@ function ProgramBuilder({ onSaved, onCancel }) {
     const sessions = {}
     days.forEach(d => {
       const pri = {}, acc = {}
-      ;[...priSet[d]].sort((a,b) => EX_CLASS_RANK[exClass(a)] - EX_CLASS_RANK[exClass(b)])  // iso → compound
+      ;[...priSet[d]].sort((a,b) => EX_CLASS_RANK[exClass(a)] - EX_CLASS_RANK[exClass(b)])  // compound → iso
         .forEach(id => { pri['ex'+id] = id })
       ;[...accSet[d]].forEach(id => { if (!priSet[d].has(id)) acc['ex'+id] = id })
       sessions[d] = { primary:pri, accessories:acc }
