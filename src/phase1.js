@@ -70,29 +70,91 @@
    *      core = LOWER (purely to keep the two days' exercise counts close).
    *    The kids' profiles can adopt the conventional assignment instead.
    * ==================================================================== */
+  /* Flexible-splits rework (SPEC_programs_flexible_splits.md, FINAL 2026-07-04):
+   * validDayCounts = weekday-stable day counts (warn-don't-block, P2);
+   * focusCycles = rotating per-occurrence emphasis labels (P5);
+   * push_pull (Greg): deadlifts = push -> hams+glutes on push; squats kept off
+   * deadlift day -> quads on pull. back_chest_legs (Greg): front-view/rear-view
+   * rule; core rides with legs to balance counts. Mirrors fitness_app.html.
+   */
   var SPLITS = {
-    full_body:   { label: "Full Body", days: ["fb"], freqNote: "2–3×/wk" },
+    full_body:   { label: "Full Body", days: ["fb"], freqNote: "2–3×/wk",
+      validDayCounts: [1, 2, 3, 4, 5, 6, 7],
+      muscleDay: {
+        chest: "fb", back: "fb", shoulders: "fb",
+        biceps: "fb", triceps: "fb", forearms: "fb", neck: "fb",
+        quads: "fb", hamstrings: "fb", glutes: "fb", calves: "fb", core: "fb",
+      },
+      focusCycles: { fb: ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core"] },
+    },
     upper_lower: {
       label: "Upper / Lower", days: ["upper", "lower"],
+      validDayCounts: [2, 4, 6],
       muscleDay: {
         chest: "upper", back: "upper", shoulders: "upper",
         biceps: "upper", triceps: "upper", forearms: "upper", neck: "upper",
         quads: "lower", hamstrings: "lower", glutes: "lower",
         calves: "lower", core: "lower",
       },
+      focusCycles: {
+        upper: ["Chest", "Back", "Abs", "Neck Sides"],
+        lower: ["Quads", "Hamstrings", "Calves", "Forearms (supinated)"],
+      },
     },
     upper_lower_textbook: {
       label: "Upper / Lower (conventional)", days: ["upper", "lower"],
+      validDayCounts: [2, 4, 6],
       muscleDay: {
         chest: "upper", back: "upper", shoulders: "upper",
         biceps: "upper", triceps: "upper", forearms: "upper", neck: "upper",
         core: "upper",
         quads: "lower", hamstrings: "lower", glutes: "lower", calves: "lower",
       },
+      focusCycles: {
+        upper: ["Chest", "Back", "Abs", "Neck Sides"],
+        lower: ["Quads", "Hamstrings", "Calves", "Forearms (supinated)"],
+      },
     },
-    ppl:         { label: "Push / Pull / Legs", days: ["push", "pull", "legs"] },
+    push_pull: {
+      label: "Push / Pull", days: ["push", "pull"],
+      validDayCounts: [2, 4, 6],
+      muscleDay: {
+        chest: "push", shoulders: "push", triceps: "push",
+        hamstrings: "push", glutes: "push", core: "push", neck: "push",
+        back: "pull", biceps: "pull", forearms: "pull",
+        quads: "pull", calves: "pull",
+      },
+      focusCycles: {
+        push: ["Presses", "Deadlifts", "Obliques", "Neck Up/Down"],
+        pull: ["Rows", "Squats", "Extensions", "Forearms (pronated)"],
+      },
+    },
+    ppl:         { label: "Push / Pull / Legs", days: ["push", "pull", "legs"],
+      validDayCounts: [3, 6],
+      // Provisional routing (not Greg-confirmed): forearms + neck with pull
+      // (grip/traps), core with legs (his B/C/L count-balancing rationale).
+      muscleDay: {
+        chest: "push", shoulders: "push", triceps: "push",
+        back: "pull", biceps: "pull", forearms: "pull", neck: "pull",
+        quads: "legs", hamstrings: "legs", glutes: "legs",
+        calves: "legs", core: "legs",
+      },
+    },
+    back_chest_legs: {
+      label: "Back / Chest / Legs", days: ["back", "chest", "legs"],
+      validDayCounts: [3, 6],
+      dayLabels: { back: "BACK DAY", chest: "CHEST DAY", legs: "LEGS DAY" },
+      muscleDay: {
+        back: "back", triceps: "back", shoulders: "back",
+        chest: "chest", biceps: "chest", neck: "chest", forearms: "chest",
+        quads: "legs", hamstrings: "legs", glutes: "legs",
+        calves: "legs", core: "legs",
+      },
+    },
     body_part_5: { label: "Body-Part (legacy)", days: ["C", "D", "E", "F", "G"],
                    legacy: true,
+                   freeRotation: true,
+                   validDayCounts: [5],
                    dayLabels: { C: "CHEST", D: "BACK", E: "TRICEPS",
                                 F: "BICEPS", G: "CORE+LEGS" } },
   };

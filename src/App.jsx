@@ -14,6 +14,9 @@ import {
   SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
   saveCustomProgram, deleteCustomProgram,
+  getSessionEx, effSplitId, progNativeSplitId, splitsReg,
+  splitScheduleCheck, weekdayMapFor,
+  focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 
@@ -43,6 +46,7 @@ function getLocalSettings() {
     startDate: lsGet(apk('startDate'), '2026-06-01'),
     schedule:  lsGet(apk('schedule'),  'MWF'),
     progIdx:   lsGet(apk('progIdx'),   0),
+    splitId:   lsGet(apk('splitId'),   ''),   // P6: global split override ('' = program native)
     updatedAt: lsGet(apk('settingsUpdatedAt'), 0),
   }
 }
@@ -51,6 +55,7 @@ function persistSettings(s, uid) {
   lsSet(apk('startDate'), s.startDate)
   lsSet(apk('schedule'),  s.schedule)
   lsSet(apk('progIdx'),   s.progIdx)
+  lsSet(apk('splitId'),   s.splitId ?? '')
   lsSet(apk('settingsUpdatedAt'), s.updatedAt || 0)
   if (uid) saveSettingsToFirestore(uid, s).catch(e => console.error('Save settings failed:', e))
 }
@@ -87,9 +92,13 @@ const inputStyle = {
 // Schedule picker: preset buttons (3–6 day) PLUS a per-weekday toggle row for any
 // custom set of training days. The active program's split rotates across whichever
 // days are chosen, automatically. Mirrors ScheduleChooser in fitness_app.html.
-function ScheduleChooser({ sched, setSched }) {
+function ScheduleChooser({ sched, setSched, prog, startDate }) {
   const days = schedDaysOf(sched)
   const activeKey = schedKeyForDays(days)
+  // P2: optional prog/startDate light up the compatibility banner + weekday map
+  const chk = prog ? splitScheduleCheck(prog, sched) : null
+  const map = (prog && chk && chk.ok && chk.driftFree)
+    ? weekdayMapFor(prog, startDate, sched) : null
   const toggleDay = (dn) => {
     const has = days.includes(dn)
     const nd = has ? days.filter(x => x !== dn) : days.concat([dn])
@@ -120,6 +129,53 @@ function ScheduleChooser({ sched, setSched }) {
       </div>
       <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,lineHeight:1.5}}>
         {schedLabel(sched)} — your program's split rotates across these days automatically.
+      </span>
+      {chk && (!chk.ok || !chk.driftFree) && (
+        <div style={{border:`1px solid ${C.amber}`,borderRadius:6,padding:'8px 10px',
+          display:'flex',flexDirection:'column',gap:6}}>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,lineHeight:1.5}}>
+            ⚠ {chk.msg}
+          </span>
+          {chk.suggestions.length > 0 && (
+            <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+                letterSpacing:'0.08em'}}>TRY:</span>
+              {chk.suggestions.map((p,i) => (
+                <button key={i} onClick={()=>setSched(schedKeyForDays(p.days))}
+                  style={{...btn(false),padding:'4px 8px',fontSize:10}}>{p.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {map && (
+        <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6}}>
+          {map.map(m => WEEKDAY_ABBR[m.dn].toUpperCase()+' '+dayName(prog, m.sKey)).join(' · ')}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// P3: global split picker — one setting, applies to the active program.
+// '' = program's own split; anything else re-derives sessions per muscle.
+function SplitChooser({ split, setSplit, prog }) {
+  const S = splitsReg()
+  const native = progNativeSplitId(prog)
+  const cur = split || ''
+  const nativeLbl = (S[native] && S[native].label) || native
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:6,maxWidth:430}}>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button style={btn(cur==='')} onClick={()=>setSplit('')}>
+          PROGRAM DEFAULT · {nativeLbl}</button>
+        {Object.keys(S).map(id => (
+          <button key={id} style={btn(cur===id)} onClick={()=>setSplit(id)}>{S[id].label}</button>
+        ))}
+      </div>
+      <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,lineHeight:1.5}}>
+        Sessions re-derive from the program's per-muscle exercises. Your week and
+        workout count are kept when you switch.
       </span>
     </div>
   )
@@ -383,10 +439,11 @@ function ExCard({ id, role, techKey }) {
 // SESSION VIEW (read-only, for Programs tab)
 // ─────────────────────────────────────────────────────────────────────────────
 function SessionView({ prog, sKey, week }) {
-  const session  = prog.sessions[sKey]
+  const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
   const techMap  = getTechMap(prog, week, sKey)
+  const focusLabel = focusForWeekSession(prog, week, sKey)   // P5 (null for legacy)
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
@@ -394,6 +451,7 @@ function SessionView({ prog, sKey, week }) {
           color:focus.color,textShadow:`0 0 12px ${focus.color}66`}}>{sKey}</span>
         <span style={{fontFamily:'monospace',fontSize:13,color:focus.color,
           letterSpacing:'0.12em'}}>{focus.label}</span>
+        {focusLabel && <span style={pill(C.readout)}>FOCUS: {String(focusLabel).toUpperCase()}</span>}
         {isDeload && <span style={pill(C.deload)}>DELOAD ≤50%</span>}
         {!isDeload && Object.keys(techMap).length > 0 &&
           <span style={pill(C.amber)}>{Object.keys(techMap).length} TECHNIQUE{Object.keys(techMap).length>1?'S':''}</span>}
@@ -409,7 +467,7 @@ function SessionView({ prog, sKey, week }) {
       <div>
         <span style={lbl}>ACCESSORIES</span>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:8}}>
-          {Object.entries(session.accessories).map(([slot,id]) => (
+          {orderSlotsByFocus(session.accessories, focusMuscleOf(focusLabel)).map(([slot,id]) => (
             <ExCard key={slot} id={id} techKey={techMap[slot]??null}/>
           ))}
         </div>
@@ -769,8 +827,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log }) {
-  const session  = prog.sessions[sKey]
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel }) {
+  const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
   const techMap  = getTechMap(prog, week, sKey)
@@ -862,6 +920,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           color:focus.color,textShadow:`0 0 12px ${focus.color}66`}}>{sKey}</span>
         <span style={{fontFamily:'monospace',fontSize:13,color:focus.color,
           letterSpacing:'0.12em'}}>{focus.label}</span>
+        {focusLabel && <span style={pill(C.readout)}>FOCUS: {String(focusLabel).toUpperCase()}</span>}
         {isDeload && <span style={pill(C.deload)}>DELOAD 50%</span>}
       </div>
       <div>
@@ -873,7 +932,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
       <div>
         <span style={lbl}>ACCESSORIES</span>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:8}}>
-          {Object.entries(session.accessories).map(([slot,id]) => renderCard(slot,id,null))}
+          {orderSlotsByFocus(session.accessories, focusMuscleOf(focusLabel)).map(([slot,id]) => renderCard(slot,id,null))}
         </div>
       </div>
       {extraIds.length > 0 && (
@@ -1631,10 +1690,12 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
   const setStartDate = v => onChangeSettings({ startDate: v })
   const setSched     = v => onChangeSettings({ schedule:  v })
   const setPi        = v => onChangeSettings({ progIdx:   v })
+  const splitSel     = settings.splitId || ''               // P6: synced split override
+  const setSplitSel  = v => onChangeSettings({ splitId: v })
   const [exLogs, setExLogs]       = useState({})
   const [saved, setSaved]         = useState(false)
 
-  const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi])
+  const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
   const todayISO   = localISO()
   const todayStr   = new Date().toLocaleDateString('en-US',
     {weekday:'long',month:'long',day:'numeric'}).toUpperCase()
@@ -1657,6 +1718,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
+      splitId:effSplitId(info.prog),          // P4: which split produced this key
       schemaVersion:2,
       exercises:cleanEx, completedAt:new Date().toISOString(),
     }
@@ -1696,7 +1758,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
           </div>
           <div>
             <span style={lbl}>SCHEDULE</span>
-            <ScheduleChooser sched={sched} setSched={setSched}/>
+            <ScheduleChooser sched={sched} setSched={setSched}
+              prog={PROGRAMS[Number(pi)]||PROGRAMS[0]} startDate={startDate}/>
+          </div>
+          <div>
+            <span style={lbl}>SPLIT</span>
+            <SplitChooser split={splitSel} setSplit={setSplitSel}
+              prog={PROGRAMS[Number(pi)]||PROGRAMS[0]}/>
           </div>
           <div>
             <span style={lbl}>PROGRAM</span>
@@ -1725,6 +1793,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
             <div><span style={lbl}>FOCUS</span>
               <span style={{fontFamily:'monospace',fontSize:13,color:focusColor}}>
                 {getSessionFocus(info.prog, info.session).label}
+                {info.focus ? ' · ' + String(info.focus).toUpperCase() : ''}
               </span>
             </div>
             <div><span style={lbl}>PROGRAM</span>
@@ -1736,6 +1805,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
           <div style={widget}>
             <LoggedSessionView
               prog={info.prog} sKey={info.session} week={info.week}
+              focusLabel={info.focus}
               exercises={exLogs}
               onExercisesChange={ex=>{setExLogs(ex);setSaved(false);}}
               todayDate={todayISO} log={log}/>

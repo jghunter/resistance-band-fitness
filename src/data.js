@@ -1139,10 +1139,14 @@ export const SESSION_FOCUS = {
   F:{label:"BICEPS DAY",  color:"#f97316"},
   G:{label:"CORE + LEGS DAY",    color:"#ec4899"},
 };
+const DAY_COLORS = { upper:"#00d4ff", lower:"#f97316", push:"#00d4ff",
+  pull:"#22c55e", legs:"#f97316", fb:"#e8f4f8", back:"#22c55e", chest:"#00d4ff" };
 export function getSessionFocus(prog, sKey) {
   return (prog && prog.sessionFocus && prog.sessionFocus[sKey])
     ? prog.sessionFocus[sKey]
-    : (SESSION_FOCUS[sKey] || {label:dayName(prog, sKey), color:"#00d4ff"});
+    : (SESSION_FOCUS[sKey] ||
+       {label: dayName(prog, sKey) + (String(sKey).length > 1 && !/DAY/.test(dayName(prog, sKey)) ? " DAY" : ""),
+        color: DAY_COLORS[sKey] || "#00d4ff"});
 }
 // Friendly label for a split day key. Legacy C–G via SESSION_NAMES; other splits
 // via SPLITS[splitId].dayLabels when present, else the uppercased key.
@@ -1150,13 +1154,16 @@ export const SESSION_NAMES = { C:"CHEST", D:"BACK", E:"TRICEPS", F:"BICEPS", G:"
 export function dayName(prog, key) {
   if (SESSION_NAMES[key]) return SESSION_NAMES[key];
   const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
-  const sp = S && prog && prog.splitId && S[prog.splitId];
+  const sp = S && prog && S[effSplitId(prog)];   // P3: effective split labels
   if (sp && sp.dayLabels && sp.dayLabels[key]) return sp.dayLabels[key];
   return String(key == null ? "" : key).toUpperCase();
 }
-export function dayShort(key) {            // compact 1-char tag for grids
+const DAY_SHORT = { upper:"U", lower:"L", push:"PU", pull:"PL", legs:"LG",
+                    fb:"FB", back:"BK", chest:"CH" };
+export function dayShort(key) {            // compact tag for grids (P4)
   const k = String(key == null ? "" : key);
-  return k.length === 1 ? k : k.charAt(0).toUpperCase();
+  if (k.length === 1) return k;
+  return DAY_SHORT[k] || k.charAt(0).toUpperCase();
 }
 
 export const SLOT_LABELS = {
@@ -1465,6 +1472,7 @@ export function calcToday(startStr, sched, pi) {
     return { isWk:true, session:sessionForIdx(prog, idx),
              week:weekForIdx(prog, idx), num:n, prog:prog,
              isDeload: isDeloadWorkout(prog, idx),
+             focus: focusForIdx(prog, idx),           // P5
              blockDone: idx >= progBlockWorkouts(prog) };
   } else {
     const next = nextWkDay(today, days);
@@ -1473,6 +1481,7 @@ export function calcToday(startStr, sched, pi) {
     return { isWk:false, nextDate:next, session:sessionForIdx(prog, idx2),
              week:weekForIdx(prog, idx2), prog:prog,
              isDeload: isDeloadWorkout(prog, idx2),
+             focus: focusForIdx(prog, idx2),          // P5
              blockDone: idx2 >= progBlockWorkouts(prog) };
   }
 }
@@ -1504,8 +1513,9 @@ function activeSchedRaw() {
 }
 export function wpw() { try { return schedDaysOf(activeSchedRaw()).length || 3; } catch { return 3; } }
 export function progSplitDays(prog) {
+  // P3: rotation days come from the EFFECTIVE split (user override wins).
   const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
-  const sp = S && prog && prog.splitId && S[prog.splitId];
+  const sp = S && prog && S[effSplitId(prog)];
   return (sp && sp.days) || SESSION_KEYS;            // legacy C–G fallback
 }
 export function progLengthWeeks(prog) {
@@ -1521,6 +1531,219 @@ export function sessionForIdx(prog, idx) {
 }
 export function weekForIdx(prog, idx) {
   return Math.min(Math.floor(idx / wpw()) + 1, progLengthWeeks(prog));
+}
+
+// ── P3: split-agnostic session derivation (spec §2; mirrors fitness_app.html) ──
+export function splitsReg() { return (RBTS_PHASE1 && RBTS_PHASE1.SPLITS) || {}; }
+function activeSplitRaw() {
+  try {
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg';
+    const key = (RBTS_PHASE1 && RBTS_PHASE1.profileKey) ? RBTS_PHASE1.profileKey('splitId', ap) : ('rbts_' + ap + '_splitId');
+    let v = localStorage.getItem(key);
+    if (v == null) v = localStorage.getItem('rbts_splitId');   // legacy flat fallback
+    return v;
+  } catch { return null; }
+}
+export function userSplitId() {
+  try {
+    const v = unquoteSched(activeSplitRaw()) || "";
+    return splitsReg()[v] ? v : "";
+  } catch { return ""; }
+}
+export function progNativeSplitId(prog) { return (prog && prog.splitId) || "body_part_5"; }
+export function effSplitId(prog) { return userSplitId() || progNativeSplitId(prog); }
+export function isNativeSplit(prog) {
+  const u = userSplitId();
+  return !u || u === progNativeSplitId(prog);
+}
+const GROUP_MUSCLE = { CHEST:"chest", BACK:"back", SHOULDERS:"shoulders",
+  CORE:"core", GLUTES:"glutes", QUADS:"quads", HAMSTRINGS:"hamstrings",
+  BICEPS:"biceps", TRICEPS:"triceps", FOREARMS:"forearms", CALVES:"calves",
+  NECK:"neck" };
+export function exMuscle(id) { return GROUP_MUSCLE[exGroup(Number(id)).label] || null; }
+const MUSCLE_ORDER = ["chest","back","shoulders","biceps","triceps","forearms",
+  "neck","quads","hamstrings","glutes","calves","core"];
+const MUSCLE_PFX = { chest:"chest", back:"back", triceps:"tri", biceps:"bi",
+  core:"core", shoulders:"shoulder", quads:"quad", hamstrings:"ham",
+  glutes:"glute", forearms:"forearm", neck:"neck", calves:"calf" };
+const MUSCLE_SINGLE_KEY = { hamstrings:"hams" };
+const SLOT_MUSCLE = { chest:"chest", back:"back", triceps:"triceps", biceps:"biceps",
+  forearms:"forearms", neck:"neck", calves:"calves", quads:"quads",
+  hams:"hamstrings", glutes:"glutes", shoulders:"shoulders", core:"core",
+  coreFront:"core", coreBack:"core", coreSides:"core", lats:"back",
+  hinge:"hamstrings",
+  chestComp:"chest", chestIso:"chest", backComp:"back", backIso:"back",
+  triComp:"triceps", triIso:"triceps", biComp:"biceps", biIso:"biceps",
+  coreComp:"core", coreIso:"core", legComp:"quads", legIso:"quads",
+  shoulderComp:"shoulders", shoulderIso:"shoulders",
+  quadComp:"quads", quadIso:"quads", hamComp:"hamstrings", hamIso:"hamstrings",
+  gluteComp:"glutes", gluteIso:"glutes", forearmComp:"forearms",
+  forearmIso:"forearms", neckComp:"neck", neckIso:"neck",
+  calfComp:"calves", calfIso:"calves" };
+export function slotMuscle(slot, exId) {
+  return SLOT_MUSCLE[slot] || (exId != null ? exMuscle(exId) : null);
+}
+// One exercise per muscle: prog.muscleEx wins; else flatten authored sessions
+// (primaries first with slot-role hints — biComp holds an isolation but stays
+// in the comp position; accessories fill gaps; duplicates collapse).
+const MUSCLE_EX_CACHE = new WeakMap();
+export function progMuscleEx(prog) {
+  if (!prog) return {};
+  if (prog.muscleEx) return prog.muscleEx;
+  if (MUSCLE_EX_CACHE.has(prog)) return MUSCLE_EX_CACHE.get(prog);
+  const me = {};
+  function put(id, roleHint) {
+    if (id == null) return;
+    const m = exMuscle(id); if (!m) return;
+    let cls = roleHint || exClass(id); if (cls === "other") cls = "iso";
+    const e = me[m] || (me[m] = {});
+    if (e[cls] == null) e[cls] = Number(id);
+  }
+  const sessions = prog.sessions || {};
+  const keys = Object.keys(sessions);
+  keys.forEach(k => { const s = sessions[k];
+    if (s && s.primary) Object.keys(s.primary).forEach(sl => {
+      const hint = /Comp$/.test(sl) ? "comp" : /Iso$/.test(sl) ? "iso" : null;
+      put(s.primary[sl], hint);
+    }); });
+  keys.forEach(k => { const s = sessions[k];
+    if (s && s.accessories) Object.keys(s.accessories).forEach(sl => put(s.accessories[sl], null)); });
+  MUSCLE_EX_CACHE.set(prog, me);
+  return me;
+}
+// First pair-bearing muscle (MUSCLE_ORDER) = PRIMARY pair; rest accessories.
+const DERIVE_CACHE = new WeakMap();
+export function deriveSession(prog, splitId, dayKey) {
+  const ck = splitId + ":" + dayKey;
+  let byProg = DERIVE_CACHE.get(prog);
+  if (byProg && byProg[ck]) return byProg[ck];
+  const sp = splitsReg()[splitId];
+  const md = (sp && sp.muscleDay) || {};
+  const me = progMuscleEx(prog);
+  const primary = {}, accessories = {};
+  let primDone = false;
+  MUSCLE_ORDER.forEach(m => {
+    if (md[m] !== dayKey) return;
+    const e = me[m]; if (!e) return;
+    const pfx = MUSCLE_PFX[m];
+    if (e.comp != null && e.iso != null && !primDone) {
+      primary[pfx + "Comp"] = e.comp; primary[pfx + "Iso"] = e.iso;
+      primDone = true;
+    } else if (e.comp != null && e.iso != null) {
+      accessories[pfx + "Comp"] = e.comp; accessories[pfx + "Iso"] = e.iso;
+    } else {
+      const id = (e.comp != null) ? e.comp : e.iso;
+      if (id != null) accessories[MUSCLE_SINGLE_KEY[m] || m] = id;
+    }
+  });
+  const sess = { primary, accessories, derived: true };
+  if (!byProg) { byProg = {}; DERIVE_CACHE.set(prog, byProg); }
+  byProg[ck] = sess;
+  return sess;
+}
+// P4: foreign-key tolerant accessor — replaces direct prog.sessions[sKey] reads.
+export function splitOwningDay(sKey) {
+  const S = splitsReg();
+  for (const id of Object.keys(S)) {
+    if ((S[id].days || []).includes(sKey)) return id;
+  }
+  return null;
+}
+export function getSessionEx(prog, sKey) {
+  if (!prog) return { primary:{}, accessories:{} };
+  const eff = effSplitId(prog);
+  const effDays = (splitsReg()[eff] || {}).days || SESSION_KEYS;
+  const foreign = !effDays.includes(sKey);
+  if (prog.sessions && (isNativeSplit(prog) || foreign) && prog.sessions[sKey])
+    return prog.sessions[sKey];
+  if (!foreign) return deriveSession(prog, eff, sKey);
+  const owner = splitOwningDay(sKey);
+  if (owner) return deriveSession(prog, owner, sKey);
+  return { primary:{}, accessories:{} };
+}
+
+// ── P5: rotating focus (emphasis badge — spec §5; mirrors fitness_app.html) ──
+export function focusCycleFor(prog, dayKey) {
+  const pc = prog && prog.focusCycles && prog.focusCycles[dayKey];
+  if (pc && pc.length) return pc;
+  const sc = (splitsReg()[effSplitId(prog)] || {}).focusCycles;
+  return (sc && sc[dayKey] && sc[dayKey].length) ? sc[dayKey] : null;
+}
+export function focusForIdx(prog, idx) {
+  if (idx == null || idx < 0) return null;
+  const days = progSplitDays(prog), L = days.length;
+  const cyc = focusCycleFor(prog, days[((idx % L) + L) % L]);
+  if (!cyc) return null;
+  return cyc[Math.floor(idx / L) % cyc.length];
+}
+export function focusForWeekSession(prog, week, sKey) {
+  if (!week || week < 1) return null;
+  const days = progSplitDays(prog), L = days.length, WPW = wpw();
+  for (let idx = (week - 1) * WPW; idx < week * WPW; idx++) {
+    if (days[((idx % L) + L) % L] === sKey) return focusForIdx(prog, idx);
+  }
+  return null;
+}
+const FOCUS_MUSCLE = { "chest":"chest", "back":"back", "abs":"core",
+  "neck sides":"neck", "neck up/down":"neck", "quads":"quads",
+  "hamstrings":"hamstrings", "calves":"calves",
+  "forearms (supinated)":"forearms", "forearms (pronated)":"forearms",
+  "presses":"chest", "deadlifts":"hamstrings", "obliques":"core",
+  "rows":"back", "squats":"quads", "legs":"quads", "shoulders":"shoulders",
+  "arms":"biceps", "core":"core" };
+export function focusMuscleOf(label) {
+  return label ? (FOCUS_MUSCLE[String(label).toLowerCase()] || null) : null;
+}
+export function orderSlotsByFocus(obj, focusMuscle) {
+  const ent = Object.entries(obj || {});
+  if (!focusMuscle) return ent;
+  const hit = ent.filter(e => exMuscle(e[1]) === focusMuscle);
+  if (!hit.length) return ent;
+  return hit.concat(ent.filter(e => exMuscle(e[1]) !== focusMuscle));
+}
+
+// ── P2: split ↔ schedule compatibility (warn, don't block — spec §4) ────────
+export const SPLIT_SCHED_PATTERNS = {
+  2: [ {label:"Mon/Thu",days:[1,4]}, {label:"Tue/Fri",days:[2,5]},
+       {label:"Sat/Tue",days:[2,6]}, {label:"Sun/Wed",days:[0,3]} ],
+  3: [ {label:"Mon/Wed/Fri",days:[1,3,5]}, {label:"Tue/Thu/Sat",days:[2,4,6]} ],
+  4: [ {label:"Mon+Tue / Thu+Fri",days:[1,2,4,5]},
+       {label:"Tue+Wed / Fri+Sat",days:[2,3,5,6]},
+       {label:"Sat+Sun / Tue+Wed",days:[0,2,3,6]} ],
+  6: [ {label:"Mon–Sat (Sun off)",days:[1,2,3,4,5,6]} ],
+};
+export function progSplitDef(prog) {
+  const S = splitsReg();
+  return (prog && S[effSplitId(prog)]) || null;
+}
+export function splitScheduleCheck(prog, sched) {
+  const sp = progSplitDef(prog);
+  if (!sp || sp.freeRotation || !sp.validDayCounts)
+    return { ok:true, driftFree:true, suggestions:[] };
+  const days = schedDaysOf(sched);
+  const ok = sp.validDayCounts.includes(days.length);
+  const driftFree = days.length % sp.days.length === 0;
+  if (ok && driftFree) return { ok:true, driftFree:true, suggestions:[] };
+  const sug = [];
+  sp.validDayCounts.forEach(n => (SPLIT_SCHED_PATTERNS[n] || []).forEach(p => sug.push(p)));
+  const msg = (sp.label || "This split").toUpperCase() +
+    " keeps each session on the same weekday only at " +
+    sp.validDayCounts.join(", ") + " days/wk — this schedule has " +
+    days.length + ". You can continue, but sessions will drift across weekdays.";
+  return { ok, driftFree, msg, suggestions: sug };
+}
+export function weekdayMapFor(prog, startStr, sched) {
+  const sp = progSplitDef(prog);
+  if (!sp || sp.freeRotation || sp.days.length < 2) return null;
+  const days = schedDaysOf(sched);
+  if (!days.length || days.length % sp.days.length !== 0) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return days.map(dn => {
+    const d = new Date(today);
+    while (d.getDay() !== dn) d.setDate(d.getDate()+1);
+    const idx = countWkDays(startStr, days, d) - 1;
+    return { dn, sKey: sessionForIdx(prog, idx < 0 ? 0 : idx) };
+  });
 }
 
 // ── Deload policy (every-N cadence · style · scope) ──────────────────────────
@@ -1563,24 +1786,30 @@ const TECH_SCHEDULES = {};
 export function buildTechSchedule(prog) {
   // Cache key includes WPW: technique layout depends on workouts/week, so a
   // schedule change (3->4 days) must build fresh, not reuse a stale schedule.
-  const WPW = wpw(), ck = prog.id + ':' + WPW;
+  // P3: cache key + targeting include the EFFECTIVE split; under an override
+  // each technique follows its exercise's muscle (slot → muscle → muscleDay).
+  const WPW = wpw(), eff = effSplitId(prog), native = isNativeSplit(prog);
+  const ck = prog.id + ':' + WPW + ':' + eff;
   if (TECH_SCHEDULES[ck]) return TECH_SCHEDULES[ck];
+  const md = (splitsReg()[eff] || {}).muscleDay || {};
   const days = progSplitDays(prog), L = days.length;
   const len = progLengthWeeks(prog), N = len * WPW;
   const slots = new Array(N).fill(null);
   const weekCount = wk => { let n=0; for (let i=(wk-1)*WPW;i<wk*WPW;i++) if (slots[i]) n++; return n; };
   for (let w = 1; w <= len; w++) {
     ((prog.techniques && prog.techniques[`week${w}`]) || []).forEach(t => {
+      const tDay = native ? t.session : (md[slotMuscle(t.slot)] || null);
+      if (!tDay) return;                               // unroutable → skip cleanly
       let best = -1, bestScore = Infinity;
       for (let idx = 0; idx < N; idx++) {
         if (slots[idx]) continue;
         if (isDeloadWorkout(prog, idx)) continue;        // never schedule onto a deload workout
-        if (days[idx % L] !== t.session) continue;
+        if (days[idx % L] !== tDay) continue;
         const wk = Math.floor(idx / WPW) + 1;
         const score = Math.abs(wk - w) * 10 + weekCount(wk) * 30 + wk;
         if (score < bestScore) { bestScore = score; best = idx; }
       }
-      if (best >= 0) slots[best] = { session:t.session, slot:t.slot, technique:t.technique, prescribedWeek:w };
+      if (best >= 0) slots[best] = { session:tDay, slot:t.slot, technique:t.technique, prescribedWeek:w };
     });
   }
   TECH_SCHEDULES[ck] = slots;
