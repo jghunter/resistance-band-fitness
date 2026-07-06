@@ -1369,6 +1369,26 @@ export const BAND_BRANDS = ["All","Serious Steel","Harambe","X3","Clench","Quant
 // ─────────────────────────────────────────────────────────────────────────────
 // GEAR INVENTORY
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Gear types (mirrors fitness_app.html): drives the in-workout GEAR picker's
+// per-type selection cap — one bar / one footplate / one belt at a time, but up
+// to two handles or two anchor points; no cap on "other". ──
+export const GEAR_TYPES = ["bar","footplate","handle","anchor","belt","other"];
+export const GEAR_TYPE_LABELS = { bar:"Bar", footplate:"Footplate", handle:"Handle", anchor:"Anchor", belt:"Belt", other:"Other" };
+export const GEAR_TYPE_CAP = { bar:1, footplate:1, handle:2, anchor:2, belt:1 };
+export function gearTypeCap(t){ return GEAR_TYPE_CAP[t] || Infinity; }
+// Best-effort type guess from the item name — used to backfill gear saved
+// before the `type` field existed (localStorage AND Firestore docs), and as
+// the default when seeding from GEAR.
+export function inferGearType(name){
+  const n = (name||"").toLowerCase();
+  if (/belt/.test(n)) return "belt";
+  if (/footplate|platform|deck|plate/.test(n)) return "footplate";
+  if (/anchor/.test(n)) return "anchor";
+  if (/handle/.test(n)) return "handle";
+  if (/\bbar\b/.test(n)) return "bar";
+  return "other";
+}
+
 export const GEAR = [
   { brand:"Harambe", items:[
     {name:"T Bar",qty:1,status:"owned"},{name:"Cyberplate",qty:1,status:"owned"},

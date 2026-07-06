@@ -7,6 +7,7 @@ import {
   SESSION_FOCUS, getSessionFocus, dayName, dayShort, SLOT_LABELS, exGroup, ALL_GROUPS,
   exClass, EX_CLASS_RANK,
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
+  GEAR_TYPES, GEAR_TYPE_LABELS, GEAR_TYPE_CAP, gearTypeCap, inferGearType,
   calcToday, PROG_REPS,
   getTechMap, getWeekTechniques,
   progSplitDays, progLengthWeeks, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
@@ -210,6 +211,22 @@ const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'num
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
+// ── Per-side (L/R) logging for unilateral exercises (mirrors fitness_app.html) ──
+// side is OPTIONAL and set-level (like rir): absent = bilateral, zero migration.
+// Coexists with intensifiers/segments — a drop set on the left leg =
+// side:"L" + segments, so partial/drop reps can differ per side naturally.
+const setSide  = (s) => (s && (s.side === 'L' || s.side === 'R')) ? s.side : null
+const nextSide = (cur) => cur == null ? 'L' : (cur === 'L' ? 'R' : null)
+// Unilateral moves pre-tag the Today card's first two sets L/R. Alternating
+// moves (105, 132) intentionally excluded — both sides happen inside one set.
+const EX_UNILATERAL = new Set([
+  5, 12, 24, 27, 29, 44, 49, 80, 91, 92, 93, 102, 103, 104, 106, 107, 108,
+  118, 133, 146, 147, 152, 169, 217,
+])
+const isUnilateral = (id) => EX_UNILATERAL.has(Number(id))
+const initSets = (id) => isUnilateral(id)
+  ? [{reps:0,bands:[],side:'L'},{reps:0,bands:[],side:'R'}]
+  : [{reps:0,bands:[]}]
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
@@ -323,9 +340,21 @@ function flattenGearSeed(seed) {
   const out = []; let n = 0; const t = Date.now()
   seed.forEach(g => (g.items || []).forEach(it => {
     out.push({ id:`g${t}_${n++}`, brand:g.brand, name:it.name, qty:it.qty || 1,
-      status:(it.status === 'preorder' ? 'inbound' : (it.status || 'owned')), note:it.note || '' })
+      status:(it.status === 'preorder' ? 'inbound' : (it.status || 'owned')), note:it.note || '',
+      type: inferGearType(it.name) })
   }))
   return out
+}
+// Backfill `type` on gear saved before the field existed (applies to both
+// Firestore docs and localStorage), and retag belts stuck on "other" from
+// before the belt type existed. Recomputed on every load — persisted lazily
+// whenever an item is next edited in the GEAR tab.
+function withGearTypes(items) {
+  return (items || []).map(it => {
+    if (!it.type) return { ...it, type: inferGearType(it.name) }
+    if (it.type === 'other' && /belt/i.test(it.name || '')) return { ...it, type: 'belt' }
+    return it
+  })
 }
 function getLocalGear() {
   try { const raw = localStorage.getItem(GEAR_KEY); if (raw) return JSON.parse(raw) } catch {}
@@ -629,7 +658,154 @@ function BandPicker({ selected, onChange }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED EXERCISE CARD
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// GEAR PICKER — in-workout equipment selector (port of fitness_app.html's)
+// Gear is logged PER EXERCISE, not per set (equipment setup doesn't change
+// set-to-set the way band resistance does). Cap-1 types (bar/footplate/belt)
+// behave like radios — picking a new one swaps out the old; cap-2 types
+// (handle/anchor) grey out once full. Inventory comes in as a prop (App's
+// Firestore-synced gear state), unlike the HTML which reads localStorage.
+// ─────────────────────────────────────────────────────────────────────────────
+function GearPicker({ inv, selected, onChange }) {
+  const [open, setOpen]       = useState(false)
+  const [tFilter, setTFilter] = useState('All')
+  const pickerRef             = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleOut(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleOut)
+    return () => document.removeEventListener('mousedown', handleOut)
+  }, [open])
+
+  const sel  = selected || []
+  const all  = inv || []
+  const byId = {}; all.forEach(g => { byId[g.id] = g })
+
+  const typeCounts = {}
+  sel.forEach(id => {
+    const g = byId[id]; const t = g ? (g.type || 'other') : 'other'
+    typeCounts[t] = (typeCounts[t] || 0) + 1
+  })
+
+  function toggle(id) {
+    const g = byId[id]; if (!g) return
+    const t = g.type || 'other'
+    const cap = gearTypeCap(t)
+    if (sel.indexOf(id) >= 0) { onChange(sel.filter(x => x !== id)); return }
+    if (cap === 1) {
+      // Radio behavior within the type — a bar swaps for a bar, never stacks.
+      onChange(sel.filter(x => { const og = byId[x]; return !og || (og.type || 'other') !== t }).concat([id]))
+      return
+    }
+    if ((typeCounts[t] || 0) >= cap) return
+    onChange([...sel, id])
+  }
+  const removeId = (id) => onChange(sel.filter(x => x !== id))
+
+  const filtered = all.filter(g => {
+    if (g.status === 'inbound' && sel.indexOf(g.id) < 0) return false
+    if (tFilter !== 'All' && (g.type || 'other') !== tFilter) return false
+    return true
+  }).sort((a, b) => {
+    // Group by type (bar → footplate → handle → anchor → belt → other), then
+    // brand, so items are findable in the long scrolling list.
+    const ta = GEAR_TYPES.indexOf(a.type || 'other'), tb = GEAR_TYPES.indexOf(b.type || 'other')
+    if (ta !== tb) return ta - tb
+    const ba = (a.brand || '') + ' ' + (a.name || ''), bb = (b.brand || '') + ' ' + (b.name || '')
+    return ba < bb ? -1 : ba > bb ? 1 : 0
+  })
+
+  return (
+    <div ref={pickerRef} style={{position:'relative'}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,alignItems:'center'}}>
+        {sel.map(id => {
+          const g = byId[id]
+          if (!g) return null
+          return (
+            <span key={id} style={{
+              background:`${C.readout}18`,border:`1px solid ${C.readout}55`,borderRadius:4,
+              padding:'2px 7px',fontFamily:'monospace',fontSize:9,color:C.text,
+              display:'flex',alignItems:'center',gap:4,
+            }}>
+              <span style={{color:C.dimGray}}>{GEAR_TYPE_LABELS[g.type||'other']}</span>
+              {g.brand} {g.name}
+              <span onClick={()=>removeId(id)}
+                style={{cursor:'pointer',color:C.dimGray,fontSize:14,lineHeight:1,padding:'4px 6px',margin:'-4px -4px -4px 0'}}>✕</span>
+            </span>
+          )
+        })}
+        <button style={{...btn(false),fontSize:9,padding:'2px 8px'}}
+          onClick={()=>setOpen(o=>!o)}>
+          {sel.length ? '+ MORE GEAR' : '+ GEAR'}
+        </button>
+      </div>
+      {open && (
+        <div style={{
+          position:'absolute',zIndex:300,top:'100%',left:0,marginTop:4,
+          background:C.bgPanel,border:`1px solid ${C.accentDim}`,borderRadius:6,
+          boxShadow:'0 8px 32px rgba(0,0,0,0.75)',padding:10,
+          width:'min(360px, calc(100vw - 48px))',
+          maxHeight:320,overflow:'auto',
+        }}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>EQUIPMENT FOR THIS EXERCISE</span>
+            <button style={{...btn(false,C.green),fontSize:10,padding:'4px 10px'}}
+              onClick={()=>setOpen(false)}>DONE</button>
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:3,marginBottom:8}}>
+            <button style={{...btn(tFilter==='All'),fontSize:9,padding:'2px 6px'}}
+              onClick={()=>setTFilter('All')}>All</button>
+            {GEAR_TYPES.map(t => (
+              <button key={t} style={{...btn(tFilter===t),fontSize:9,padding:'2px 6px'}}
+                onClick={()=>setTFilter(t)}>
+                {GEAR_TYPE_LABELS[t]}{GEAR_TYPE_CAP[t]?` (max ${GEAR_TYPE_CAP[t]})`:''}
+              </button>
+            ))}
+          </div>
+          {all.length === 0 && (
+            <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,padding:'8px 4px'}}>
+              No equipment in your inventory yet — add it in the GEAR tab
+              (or tap ⤓ LOAD STARTER EQUIPMENT there).
+            </div>
+          )}
+          {filtered.map(g => {
+            const t = g.type || 'other'
+            const cap = gearTypeCap(t)
+            const isSel = sel.indexOf(g.id) >= 0
+            const atCap = !isSel && cap !== Infinity && (typeCounts[t]||0) >= cap
+            return (
+              <div key={g.id}
+                title={isSel ? 'Selected — tap to remove' : (atCap ? `Max ${cap} ${GEAR_TYPE_LABELS[t].toLowerCase()}${cap>1?'s':''} — tap one above to swap` : 'Tap to add')}
+                onClick={()=>{ if (isSel || !atCap || cap===1) toggle(g.id) }}
+                style={{
+                  display:'flex',alignItems:'center',gap:8,padding:'5px 7px',
+                  borderRadius:4,cursor:(atCap && cap!==1)?'not-allowed':'pointer',marginBottom:2,
+                  opacity:(atCap && cap!==1)?0.4:1,
+                  background:isSel ? `${C.accent}18` : 'transparent',
+                  border:`1px solid ${isSel ? C.accent : 'transparent'}`,
+                }}>
+                <span style={pill(C.dimGray)}>{GEAR_TYPE_LABELS[t]}</span>
+                <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>{g.brand} {g.name}</span>
+                {g.status==='inbound' && <span style={pill(C.amber)}>inbound</span>}
+                {isSel && <span style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',fontSize:9,fontWeight:'bold'}}>✓</span>}
+              </div>
+            )
+          })}
+          {filtered.length === 0 && all.length > 0 && (
+            <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,padding:'8px 4px'}}>
+              No gear in this category
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -638,7 +814,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
     const last = sets[sets.length-1]
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
     const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
-    onSetsChange([...sets, {reps: lr, bands: [...lb]}])
+    const n = {reps: lr, bands: [...lb]}
+    // Auto-alternate sides: after a Left set the next defaults to Right.
+    const ls = last ? setSide(last) : null
+    if (ls === 'L') n.side = 'R'; else if (ls === 'R') n.side = 'L'
+    onSetsChange([...sets, n])
   }
   function removeSet(i) { onSetsChange(sets.filter((_,idx)=>idx!==i)) }
   function updateSet(i, field, val) {
@@ -716,7 +896,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           borderRadius:4,padding:'5px 8px',
         }}>
           {progFlag
-            ? <span style={{color:C.amber,fontWeight:700}}>READY TO PROGRESS — last: </span>
+            ? <span style={{color:C.amber,fontWeight:700}}>READY TO PROGRESS{progSides
+                ? ' ('+[progSides.hasL ? 'L '+(progSides.L?'✓':'–') : null,
+                        progSides.hasR ? 'R '+(progSides.R?'✓':'–') : null]
+                    .filter(Boolean).join(' · ')+')'
+                : ''} — last: </span>
             : <span style={{color:C.dimGray}}>LAST: </span>
           }
           {prevSets.map((s,i) => {
@@ -724,7 +908,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               const b = BANDS.find(x=>x.id===bid)
               return b ? `${b.brand.split(' ')[0]} ${b.color} ${b.model} (${b.res}lbs)` : '?'
             }).join(' + ')
-            return <span key={i}>{setRepsOf(s)}r{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
+            return <span key={i}>{setRepsOf(s)}r{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
           })}
         </div>
       )}
@@ -732,6 +916,10 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         <span style={{...lbl,marginBottom:2}}>LOG SETS</span>
         <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginBottom:6}}>
           TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{PROG_TARGET_REPS} AT RIR ≤{RIR_TARGET} → MOVE UP A BAND
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
+          <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -743,6 +931,14 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               : {border:`1px solid ${C.amber}33`,borderRadius:6,padding:'7px 8px',marginBottom:8,background:`${C.amber}08`} }>
               <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                 <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,flexShrink:0}}>S{i+1}</span>
+                <span onClick={()=>updateSet(i,'side', nextSide(setSide(s)) || undefined)}
+                  title="Which side this set worked — tap to cycle: — bilateral · L left · R right"
+                  style={{fontFamily:'monospace',fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
+                    color: setSide(s) ? C.readout : C.dimGray,
+                    border:`1px solid ${setSide(s) ? C.readout+'66' : 'rgba(255,255,255,0.12)'}`,
+                    borderRadius:4,padding:'5px 7px',flexShrink:0,minWidth:12,textAlign:'center'}}>
+                  {setSide(s) || '—'}
+                </span>
                 <select value={setIntensifier(s)} title="Intensifier used on this set"
                   onChange={e=>changeIntens(i,e.target.value)}
                   style={{background:C.bgInput,
@@ -827,7 +1023,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange }) {
   const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
@@ -835,16 +1031,23 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
 
   const [showAdd, setShowAdd] = useState(false)
   const [addSrch, setAddSrch] = useState('')
-  function getOrInit(id) { return exercises[id] || [{reps:0,bands:[]}] }
+  function getOrInit(id) { return exercises[id] || initSets(id) }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
   function addEx(id) {
     const key = String(id)
     if (exercises && exercises[key]) { setShowAdd(false); setAddSrch(''); return }
-    onExercisesChange({...exercises, [key]:[{reps:0,bands:[]}]})
+    onExercisesChange({...exercises, [key]:initSets(id)})
     setShowAdd(false); setAddSrch('')
   }
   function removeEx(id) {
     const next = {...exercises}; delete next[String(id)]; onExercisesChange(next)
+    // Keep the per-exercise gear map scoped to exercises that are actually logged.
+    if (gear && gear[String(id)] && onGearChange) {
+      const g = {...gear}; delete g[String(id)]; onGearChange(g)
+    }
+  }
+  function updateExGear(id, ids) {
+    if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
   }
 
   function getPrevSets(exerciseId) {
@@ -875,15 +1078,31 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     // Phase 3: double-progression, RIR-gated. Need every plain set at/above the
     // profile rep target AND logged RIR at/under target (actually near failure)
     // before recommending more load; high RIR ⇒ reps left ⇒ push reps first.
-    const repsHit  = working.length > 0 && working.every(s => (s.reps||0) >= PROG_TARGET_REPS)
-    const rirVals  = working.map(s => s.rir).filter(v => v != null)
-    const rirOk    = rirVals.length === 0 ? true : Math.max(...rirVals) <= RIR_TARGET
-    const progFlag = repsHit && rirOk
+    // Per-side logging: L and R sets are evaluated INDEPENDENTLY (reps and
+    // partials can differ per side); untagged sets keep the legacy behavior.
+    const sideReady = (list) => {
+      if (!list.length) return false
+      const rh = list.every(s => (s.reps||0) >= PROG_TARGET_REPS)
+      const rv = list.map(s => s.rir).filter(v => v != null)
+      const ro = rv.length === 0 ? true : Math.max(...rv) <= RIR_TARGET
+      return rh && ro
+    }
+    const bySide = {B:[], L:[], R:[]}
+    working.forEach(s => { bySide[setSide(s)||'B'].push(s) })
+    const progSides = (bySide.L.length || bySide.R.length)
+      ? { hasL:bySide.L.length>0, hasR:bySide.R.length>0,
+          L:sideReady(bySide.L), R:sideReady(bySide.R) }
+      : null
+    const progFlag = progSides
+      ? (progSides.L || progSides.R)          // either side ready → show the flag
+      : sideReady(bySide.B)                   // legacy path — identical to before
     return (
       <LoggedExCard key={slot} id={id} role={role}
         techKey={techMap[slot]||null}
         sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
-        prevSets={prev} progFlag={progFlag}/>
+        prevSets={prev} progFlag={progFlag} progSides={progSides}
+        gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
+        onGearChange={ids=>updateExGear(id,ids)}/>
     )
   }
 
@@ -908,7 +1127,9 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
             fontSize:11,lineHeight:1,cursor:'pointer',padding:'2px 6px'}}>✕</button>
         <LoggedExCard id={id} role={'added'} techKey={null}
           sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
-          prevSets={prev} progFlag={false}/>
+          prevSets={prev} progFlag={false}
+          gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
+          onGearChange={ids=>updateExGear(id,ids)}/>
       </div>
     )
   }
@@ -1683,7 +1904,7 @@ function LibraryTab() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TODAY TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
+function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv }) {
   // Phase 2: settings live in App (synced per account). Read from props; change
   // via onChangeSettings, which persists locally and to Firestore (last-write-wins).
   const startDate = settings.startDate, sched = settings.schedule, pi = settings.progIdx
@@ -1693,6 +1914,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
   const splitSel     = settings.splitId || ''               // P6: synced split override
   const setSplitSel  = v => onChangeSettings({ splitId: v })
   const [exLogs, setExLogs]       = useState({})
+  const [gearLogs, setGearLogs]   = useState({})   // per-exercise equipment {exId: [gearItemId,...]}
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
@@ -1705,6 +1927,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
     if (info.isWk) {
       const existing = log.find(e => e.date === todayISO && e.session === info.session)
       setExLogs(existing?.exercises ?? {})
+      setGearLogs(existing?.gear ?? {})
       setSaved(!!(existing?.completedAt))
     }
   }, [info.session, todayISO, log])
@@ -1715,12 +1938,19 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
       alert('No exercise data logged yet. Enter at least one set with reps or bands.')
       return
     }
+    // Gear rides along per exercise — keep only exercises that survived
+    // cleaning, and drop empty selections.
+    const cleanGear = {}
+    Object.keys(cleanEx).forEach(id => {
+      const g = (gearLogs||{})[id]
+      if (Array.isArray(g) && g.length) cleanGear[id] = g
+    })
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
       splitId:effSplitId(info.prog),          // P4: which split produced this key
       schemaVersion:2,
-      exercises:cleanEx, completedAt:new Date().toISOString(),
+      exercises:cleanEx, gear:cleanGear, completedAt:new Date().toISOString(),
     }
     onSaveEntry(entry)
     setSaved(true)
@@ -1808,6 +2038,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
               focusLabel={info.focus}
               exercises={exLogs}
               onExercisesChange={ex=>{setExLogs(ex);setSaved(false);}}
+              gearInv={gearInv} gear={gearLogs}
+              onGearChange={g=>{setGearLogs(g);setSaved(false);}}
               todayDate={todayISO} log={log}/>
           </div>
           <div style={{...widget,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
@@ -1858,8 +2090,9 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings }) {
 // HISTORY TAB
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Editable past-session card — correct bands/reps/sets logged earlier ──
-function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
+function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
   const [ex, setEx] = useState(() => JSON.parse(JSON.stringify(entry.exercises || {})))
+  const [gr, setGr] = useState(() => JSON.parse(JSON.stringify(entry.gear || {})))
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
@@ -1871,10 +2104,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
     const n = { ...prev }; const arr = (n[id] || []).slice(); const last = arr[arr.length - 1]
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
     const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
-    arr.push({ reps: lr, bands: lb.slice() }); n[id] = arr; return n
+    const ns = { reps: lr, bands: lb.slice() }
+    const lside = last ? setSide(last) : null
+    if (lside === 'L') ns.side = 'R'; else if (lside === 'R') ns.side = 'L'
+    arr.push(ns); n[id] = arr; return n
   })
   const removeSet = (id, i) => setEx(prev => { const n = { ...prev }; n[id] = (n[id] || []).filter((_, idx) => idx !== i); return n })
-  const removeEx = (id) => setEx(prev => { const n = { ...prev }; delete n[id]; return n })
+  const removeEx = (id) => {
+    setEx(prev => { const n = { ...prev }; delete n[id]; return n })
+    setGr(prev => { const n = { ...prev }; delete n[id]; return n })
+  }
   // ── Phase-aware editing (mirrors LoggedExCard so ✎ EDIT handles segmented/intensifier/RIR sets) ──
   const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
   const segsOf  = (s) => Array.isArray(s.segments) ? s.segments : [{bands:(s.bands||[]).slice(), reps:s.reps||0}]
@@ -1901,7 +2140,13 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
   })
 
   function save() {
-    onSave({ ...entry, exercises: ex, editedAt: new Date().toISOString() })
+    // Keep gear scoped to exercises still in the session; drop empty selections.
+    const cleanGear = {}
+    Object.keys(ex).forEach(id => {
+      const g = gr[id]
+      if (Array.isArray(g) && g.length) cleanGear[id] = g
+    })
+    onSave({ ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() })
     onDone(true)
   }
   function deleteSession() {
@@ -1929,6 +2174,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
             <button onClick={()=>removeEx(id)} title="Remove this exercise from the session"
               style={{...btn(false,C.red),fontSize:10,padding:'3px 8px'}}>REMOVE EX</button>
           </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:6}}>
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
+            <GearPicker inv={gearInv} selected={gr[id]||[]}
+              onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}/>
+          </div>
           {(sets||[]).map((s,i) => {
             const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
             return (
@@ -1937,6 +2187,14 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
                 : {border:`1px solid ${C.amber}33`,borderRadius:6,padding:'7px 8px',marginBottom:8,background:`${C.amber}08`} }>
                 <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                   <span style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,minWidth:20,flexShrink:0}}>S{i+1}</span>
+                  <span onClick={()=>updateSet(id,i,'side', nextSide(setSide(s)) || undefined)}
+                    title="Which side this set worked — tap to cycle: — bilateral · L left · R right"
+                    style={{fontFamily:'monospace',fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
+                      color: setSide(s) ? C.readout : C.dimGray,
+                      border:`1px solid ${setSide(s) ? C.readout+'66' : 'rgba(255,255,255,0.12)'}`,
+                      borderRadius:4,padding:'5px 7px',flexShrink:0,minWidth:12,textAlign:'center'}}>
+                    {setSide(s) || '—'}
+                  </span>
                   <select value={setIntensifier(s)} title="Intensifier used on this set"
                     onChange={e=>changeIntens(id,i,e.target.value)}
                     style={{background:C.bgInput,
@@ -2016,7 +2274,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
+function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry, gearInv }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -2029,7 +2287,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
 
   function exportCSV() {
     const header = ['Date','Day','Program','Week','Session','Workout',
-      'Exercise ID','Exercise Name','Set','Reps',
+      'Exercise ID','Exercise Name','Set','Side','Reps',
       'Band 1','Band 1 Res','Band 2','Band 2 Res','Band 3','Band 3 Res']
     const rows = [header]
     entries.forEach(e => {
@@ -2043,7 +2301,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
           }
           const b1=getBand(0),b2=getBand(1),b3=getBand(2)
           rows.push([e.date,dayName,e.programId||'',e.week||'',e.session,e.workoutNum||'',
-            exId,EXERCISE_NAMES[exId]||exId,si+1,s.reps||0,
+            exId,EXERCISE_NAMES[exId]||exId,si+1,setSide(s)||'',s.reps||0,
             b1[0],b1[1],b2[0],b2[1],b3[0],b3[1]])
         })
       })
@@ -2140,7 +2398,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
             </div>
             {isEditing ? (
               <HistoryEntryEditor entry={e} onSave={onSaveEntry} onDelete={onDeleteEntry}
-                onDone={()=>setEditKey(null)}/>
+                onDone={()=>setEditKey(null)} gearInv={gearInv}/>
             ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:6}}>
               {Object.entries(e.exercises||{}).map(([exId,sets]) => (
@@ -2148,6 +2406,14 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
                   <div style={{fontFamily:'monospace',fontSize:11,color:C.text,marginBottom:5}}>
                     <span style={{color:C.dimGray}}>#{exId} </span>{EXERCISE_NAMES[exId]||exId}
                   </div>
+                  {e.gear && Array.isArray(e.gear[exId]) && e.gear[exId].length > 0 && (
+                    <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
+                      ⚙ {e.gear[exId].map(gid => {
+                        const g = (gearInv||[]).find(x=>x.id===gid)
+                        return g ? `${g.brand} ${g.name}` : null
+                      }).filter(Boolean).join(' + ') || '(gear no longer in inventory)'}
+                    </div>
+                  )}
                   {(sets||[]).map((s,i) => {
                     const nameBands=(arr)=>(arr||[]).map(bid=>{
                       const b=BANDS.find(x=>x.id===bid)
@@ -2159,7 +2425,7 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry }) {
                       <div key={i} style={{marginBottom:segs?4:2}}>
                         <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
                           <span style={{color:C.dimGray}}>S{i+1} </span>
-                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r</span>
+                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{setSide(s)?' '+setSide(s):''}</span>
                           {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                           {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
                         </div>
@@ -2215,7 +2481,8 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
     const name  = gf.name.trim()
     if (!brand || !name) return
     onSaveGear({ id:`g${Date.now()}`, brand, name,
-      qty:Math.max(1, parseInt(gf.qty,10)||1), status:gf.status, note:'' })
+      qty:Math.max(1, parseInt(gf.qty,10)||1), status:gf.status, note:'',
+      type:inferGearType(name) })
     setGf({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
     setAddingGear(false); openBrand('gear:'+brand)
   }
@@ -2382,6 +2649,14 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                             {it.qty>1?it.qty+'× ':''}{it.name}
                             {it.note?<span style={{color:C.dimGray,fontSize:10}}> ({it.note})</span>:null}
                           </span>
+                          <span title="Equipment type — drives the in-workout GEAR picker's selection caps. Tap to change if the guess is wrong."
+                            onClick={() => {
+                              const i = GEAR_TYPES.indexOf(it.type||'other')
+                              onSaveGear({...it, type: GEAR_TYPES[(i+1)%GEAR_TYPES.length]})
+                            }}
+                            style={{...pill(C.dimGray),cursor:'pointer',userSelect:'none'}}>
+                            {GEAR_TYPE_LABELS[it.type||'other']}
+                          </span>
                           {it.status==='inbound' && <span style={pill(C.amber)}>inbound</span>}
                           <span onClick={() => onRemoveGear(it.id)}
                             title="Remove item"
@@ -2446,8 +2721,8 @@ export default function App() {
             await Promise.all(localGear.map(g => saveGearItemToFirestore(u.uid, g)))
             fsGear = localGear
           }
-          setGear(fsGear)
-        } catch (e) { console.error('Error loading gear:', e); setGear(getLocalGear()) }
+          setGear(withGearTypes(fsGear))
+        } catch (e) { console.error('Error loading gear:', e); setGear(withGearTypes(getLocalGear())) }
         // My bands: backfill local → Firestore when absent, then load
         try {
           let fsBands = await loadMyBandsFromFirestore(u.uid)
@@ -2481,7 +2756,7 @@ export default function App() {
           const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
           setLog(local)
         } catch { setLog([]) }
-        setGear(getLocalGear())
+        setGear(withGearTypes(getLocalGear()))
         setMyBands(getLocalMyBands())
         setSettings(getLocalSettings())
       }
@@ -2499,7 +2774,7 @@ export default function App() {
     await signOut(auth)
     setUser(null)
     try { setLog(JSON.parse(localStorage.getItem('rbts_log')||'[]')) } catch { setLog([]) }
-    setGear(getLocalGear())
+    setGear(withGearTypes(getLocalGear()))
     setMyBands(getLocalMyBands())
     setSettings(getLocalSettings())
   }
@@ -2685,8 +2960,8 @@ export default function App() {
             Syncing workouts from cloud…
           </div>
         )}
-        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry}/>}
+        {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab/>}
