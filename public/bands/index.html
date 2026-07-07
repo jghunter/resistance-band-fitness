@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050810">
+<title>Band Reference &middot; RB Fitness</title>
+<style>
+  :root{
+    --bg:#050810; --panel:#0a1020; --panel2:#0d1526; --line:#1a2a45;
+    --txt:#c8d6ee; --dim:#5a6f92; --hi:#4fd1c5; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%}
+  .wrap{max-width:860px;margin:0 auto;padding:14px 10px 60px}
+  header{display:flex;justify-content:space-between;align-items:baseline;
+    gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  h1{font-size:15px;letter-spacing:2px;margin:0;color:var(--hi);
+    font-family:ui-monospace,Consolas,monospace}
+  .sub{font-size:11px;color:var(--dim);font-family:ui-monospace,Consolas,monospace}
+  a.back{color:var(--dim);font-size:11px;text-decoration:none;
+    font-family:ui-monospace,Consolas,monospace;letter-spacing:1px}
+  a.back:hover{color:var(--hi)}
+  .tabs,.filters{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+  .tabs button,.filters button{
+    background:var(--panel);border:1px solid var(--line);color:var(--dim);
+    padding:6px 10px;border-radius:6px;font-size:11px;letter-spacing:1px;
+    font-family:ui-monospace,Consolas,monospace;cursor:pointer}
+  .tabs button.on{color:var(--bg);background:var(--hi);border-color:var(--hi);font-weight:700}
+  .filters button.on{color:var(--amber);border-color:var(--amber)}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  table{border-collapse:collapse;width:100%;min-width:560px}
+  th,td{padding:5px 8px;text-align:left;white-space:nowrap;font-size:12.5px}
+  th{background:var(--panel2);color:var(--dim);font-size:10px;letter-spacing:1.5px;
+    text-transform:uppercase;position:sticky;top:0;
+    font-family:ui-monospace,Consolas,monospace}
+  tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+  td{border-top:1px solid #101a30}
+  td.num{font-family:ui-monospace,Consolas,monospace;color:var(--hi)}
+  td.dbl{font-family:ui-monospace,Consolas,monospace;color:var(--amber)}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;
+    margin-right:6px;vertical-align:-1px;border:1px solid rgba(255,255,255,.25)}
+  .brand{color:var(--txt);font-weight:600}
+  .model{color:var(--dim)}
+  tr.ghead td{background:var(--panel2);color:var(--amber);font-weight:700;
+    font-size:11px;letter-spacing:2px;border-top:2px solid var(--line);
+    font-family:ui-monospace,Consolas,monospace}
+  .note{color:var(--dim);font-size:11px}
+  .est{color:var(--amber)}
+  footer{margin-top:12px;font-size:10px;color:var(--dim);
+    font-family:ui-monospace,Consolas,monospace;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>BAND REFERENCE</h1>
+      <div class="sub" id="counts"></div>
+    </div>
+    <a class="back" href="/">&larr; BACK TO APP</a>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="filters" id="filters"></div>
+  <div class="tablewrap"><table>
+    <thead><tr>
+      <th>Brand</th><th>Band</th><th>Len</th>
+      <th>Single (lbs)</th><th>Doubled (lbs)</th><th>Max&nbsp;Str</th><th>Note</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <footer>~ = ESTIMATED FROM DIMENSIONS &middot; GENERATED 2026-07-06 FROM band.rb</footer>
+</div>
+
+<script>
+var BANDS = [{"brand":"Serious Steel","color":"Orange","model":"#0","len":12,"single":"2–15","doubled":"4–30","maxStretch":24,"note":"12\" Mini Band","est":false,"low":2,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Serious Steel","color":"Purple","model":"#1","len":12,"single":"5–35","doubled":"10–70","maxStretch":24,"note":"12\" Mini Band","est":false,"low":5,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Serious Steel","color":"Red","model":"#2","len":12,"single":"10–50","doubled":"20–100","maxStretch":24,"note":"12\" Mini Band","est":false,"low":10,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Serious Steel","color":"Blue","model":"#3","len":12,"single":"25–80","doubled":"50–160","maxStretch":24,"note":"12\" Mini Band","est":false,"low":25,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Serious Steel","color":"Green","model":"#4","len":12,"single":"50–120","doubled":"100–240","maxStretch":24,"note":"12\" Mini Band","est":false,"low":50,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Serious Steel","color":"Purple","model":"#1","len":20,"single":"10–25","doubled":"20–50","maxStretch":50,"note":"20\" Deadlift Band","est":false,"low":10,"group":"20\" (Deadlift)","groupOrder":1},{"brand":"Serious Steel","color":"Red","model":"#2","len":20,"single":"15–40","doubled":"30–80","maxStretch":50,"note":"20\" Deadlift Band","est":false,"low":15,"group":"20\" (Deadlift)","groupOrder":1},{"brand":"Serious Steel","color":"Blue","model":"#3","len":20,"single":"20–50","doubled":"40–100","maxStretch":50,"note":"20\" Deadlift Band","est":false,"low":20,"group":"20\" (Deadlift)","groupOrder":1},{"brand":"Serious Steel","color":"Green","model":"#4","len":20,"single":"40–100","doubled":"80–200","maxStretch":50,"note":"20\" Deadlift Band","est":false,"low":40,"group":"20\" (Deadlift)","groupOrder":1},{"brand":"Serious Steel","color":"Black","model":"#5","len":20,"single":"55–140","doubled":"110–280","maxStretch":50,"note":"20\" Deadlift Band","est":false,"low":55,"group":"20\" (Deadlift)","groupOrder":1},{"brand":"Serious Steel","color":"Orange","model":"#0","len":32,"single":"2–15","doubled":"4–30","maxStretch":80,"note":"32\" Band","est":false,"low":2,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Purple","model":"#1","len":32,"single":"5–35","doubled":"10–70","maxStretch":80,"note":"32\" Band","est":false,"low":5,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Red","model":"#2","len":32,"single":"10–50","doubled":"20–100","maxStretch":80,"note":"32\" Band","est":false,"low":10,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Blue","model":"#3","len":32,"single":"25–80","doubled":"50–160","maxStretch":80,"note":"32\" Band","est":false,"low":25,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Green","model":"#4","len":32,"single":"50–120","doubled":"100–240","maxStretch":80,"note":"32\" Band","est":false,"low":50,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Black","model":"#5","len":32,"single":"60–150","doubled":"120–300","maxStretch":80,"note":"32\" Band","est":false,"low":60,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Yellow","model":"#6","len":32,"single":"80–200","doubled":"160–400","maxStretch":80,"note":"32\" Band","est":false,"low":80,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Gray","model":"#6.5","len":32,"single":"115–290","doubled":"230–580","maxStretch":80,"note":"32\" Band","est":false,"low":115,"group":"~32–34\"","groupOrder":2},{"brand":"Serious Steel","color":"Orange","model":"#0","len":37,"single":"2–15","doubled":"4–30","maxStretch":92,"note":"37\" Band","est":false,"low":2,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Purple","model":"#1","len":37,"single":"5–35","doubled":"10–70","maxStretch":92,"note":"37\" Band","est":false,"low":5,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Red","model":"#2","len":37,"single":"10–50","doubled":"20–100","maxStretch":92,"note":"37\" Band","est":false,"low":10,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Blue","model":"#3","len":37,"single":"25–80","doubled":"50–160","maxStretch":92,"note":"37\" Band","est":false,"low":25,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Green","model":"#4","len":37,"single":"50–120","doubled":"100–240","maxStretch":92,"note":"37\" Band","est":false,"low":50,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Black","model":"#5","len":37,"single":"60–150","doubled":"120–300","maxStretch":92,"note":"37\" Band","est":false,"low":60,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Yellow","model":"#6","len":37,"single":"80–200","doubled":"160–400","maxStretch":92,"note":"37\" Band","est":false,"low":80,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Gray","model":"#6.5","len":37,"single":"115–290","doubled":"230–580","maxStretch":92,"note":"37\" Band","est":false,"low":115,"group":"~37–38\"","groupOrder":3},{"brand":"Serious Steel","color":"Orange","model":"#0","len":41,"single":"2–15","doubled":"4–30","maxStretch":102,"note":"41\" Band","est":false,"low":2,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Purple","model":"#1","len":41,"single":"5–35","doubled":"10–70","maxStretch":102,"note":"41\" Band","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Red","model":"#2","len":41,"single":"10–50","doubled":"20–100","maxStretch":102,"note":"41\" Band","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Blue","model":"#3","len":41,"single":"25–80","doubled":"50–160","maxStretch":102,"note":"41\" Band","est":false,"low":25,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Green","model":"#4","len":41,"single":"50–120","doubled":"100–240","maxStretch":102,"note":"41\" Band","est":false,"low":50,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Black","model":"#5","len":41,"single":"60–150","doubled":"120–300","maxStretch":102,"note":"41\" Band","est":false,"low":60,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Yellow","model":"#6","len":41,"single":"80–200","doubled":"160–400","maxStretch":102,"note":"41\" Band","est":false,"low":80,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Gray","model":"#6.5","len":41,"single":"115–290","doubled":"230–580","maxStretch":102,"note":"41\" Band","est":false,"low":115,"group":"41\"","groupOrder":4},{"brand":"Serious Steel","color":"Orange","model":"#7","len":41,"single":"120–300+","doubled":"240–600+","maxStretch":102,"note":"41\" Mega Band","est":false,"low":120,"group":"41\"","groupOrder":4},{"brand":"Harambe","color":"Yellow","model":"Standard","len":38,"single":"10–20","doubled":"20–40","maxStretch":95,"note":"38\" Band · ¼\" wide","est":false,"low":10,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"White","model":"Standard","len":38,"single":"20–40","doubled":"40–80","maxStretch":95,"note":"38\" Band · ½\" wide","est":false,"low":20,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Light Green","model":"Standard","len":38,"single":"40–80","doubled":"80–160","maxStretch":95,"note":"38\" Band · 1\" wide","est":false,"low":40,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Heavy Green","model":"Standard","len":38,"single":"80–160","doubled":"160–320","maxStretch":95,"note":"38\" Band · 2\" wide","est":false,"low":80,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Black","model":"Standard","len":38,"single":"100–200","doubled":"200–400","maxStretch":95,"note":"38\" Band · 2½\" wide","est":false,"low":100,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Blue","model":"Kong","len":38,"single":"160–320","doubled":"320–640","maxStretch":95,"note":"38\" Kong Band · 4\" wide","est":false,"low":160,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Orange","model":"Deficit","len":38,"single":"5–10","doubled":"10–20","maxStretch":95,"note":"38\" Deficit Band · ¼\" wide","est":false,"low":5,"group":"~37–38\"","groupOrder":3},{"brand":"Harambe","color":"Orange","model":"Deficit","len":34,"single":"5–10","doubled":"10–20","maxStretch":85,"note":"34\" Deficit Band · ¼\" wide","est":false,"low":5,"group":"~32–34\"","groupOrder":2},{"brand":"Harambe","color":"Yellow","model":"Deficit","len":34,"single":"10–20","doubled":"20–40","maxStretch":85,"note":"34\" Deficit Band · ¼\" wide","est":false,"low":10,"group":"~32–34\"","groupOrder":2},{"brand":"Harambe","color":"White","model":"Deficit","len":34,"single":"20–40","doubled":"40–80","maxStretch":85,"note":"34\" Deficit Band · ½\" wide","est":false,"low":20,"group":"~32–34\"","groupOrder":2},{"brand":"Harambe","color":"Light Green","model":"Deficit","len":34,"single":"40–80","doubled":"80–160","maxStretch":85,"note":"34\" Deficit Band · 1\" wide","est":false,"low":40,"group":"~32–34\"","groupOrder":2},{"brand":"Harambe","color":"Heavy Green","model":"Deficit","len":34,"single":"80–160","doubled":"160–320","maxStretch":85,"note":"34\" Deficit Band · 2\" wide","est":false,"low":80,"group":"~32–34\"","groupOrder":2},{"brand":"X3","color":"White (Ultra Light)","model":"Ultra Light","len":41,"single":"<10–30","doubled":"<20–60","maxStretch":102,"note":"41\" Ultra Light","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"X3","color":"White","model":"Standard","len":41,"single":"10–50+","doubled":"20–100+","maxStretch":102,"note":"41\" Band","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Light Grey","model":"Standard","len":41,"single":"25–80+","doubled":"50–160+","maxStretch":102,"note":"41\" Band","est":false,"low":25,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Dark Grey","model":"Standard","len":41,"single":"50–120+","doubled":"100–240+","maxStretch":102,"note":"41\" Band","est":false,"low":50,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Black","model":"Standard","len":41,"single":"60–150+","doubled":"120–300+","maxStretch":102,"note":"41\" Band","est":false,"low":60,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Orange","model":"Elite","len":41,"single":"110–300+","doubled":"220–600+","maxStretch":102,"note":"41\" Elite Band (sold separately)","est":false,"low":110,"group":"41\"","groupOrder":4},{"brand":"X3","color":"White","model":"Short Set","len":34,"single":"10–50+","doubled":"20–100+","maxStretch":85,"note":"34\" Short Band","est":false,"low":10,"group":"~32–34\"","groupOrder":2},{"brand":"X3","color":"Light Grey","model":"Short Set","len":34,"single":"25–80+","doubled":"50–160+","maxStretch":85,"note":"34\" Short Band","est":false,"low":25,"group":"~32–34\"","groupOrder":2},{"brand":"X3","color":"Dark Grey","model":"Short Set","len":34,"single":"50–120+","doubled":"100–240+","maxStretch":85,"note":"34\" Short Band","est":false,"low":50,"group":"~32–34\"","groupOrder":2},{"brand":"X3","color":"Black","model":"Short Set","len":34,"single":"60–150+","doubled":"120–300+","maxStretch":85,"note":"34\" Short Band","est":false,"low":60,"group":"~32–34\"","groupOrder":2},{"brand":"X3","color":"White (Ultra Light)","model":"Gen 2 Performance","len":41,"single":"<10–30","doubled":"<20–60","maxStretch":102,"note":"41\" Gen 2 ParaForce · Ultra Light","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"X3","color":"White","model":"Gen 2 Performance","len":41,"single":"10–50+","doubled":"20–100+","maxStretch":102,"note":"41\" Gen 2 ParaForce","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Light Grey","model":"Gen 2 Performance","len":41,"single":"25–80+","doubled":"50–160+","maxStretch":102,"note":"41\" Gen 2 ParaForce","est":false,"low":25,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Dark Grey","model":"Gen 2 Performance","len":41,"single":"50–120+","doubled":"100–240+","maxStretch":102,"note":"41\" Gen 2 ParaForce","est":false,"low":50,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Black","model":"Gen 2 Performance","len":41,"single":"60–150+","doubled":"120–300+","maxStretch":102,"note":"41\" Gen 2 ParaForce","est":false,"low":60,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Orange","model":"Gen 2 Performance","len":41,"single":"120–300+","doubled":"240–600+","maxStretch":102,"note":"41\" Gen 2 ParaForce · Elite","est":false,"low":120,"group":"41\"","groupOrder":4},{"brand":"X3","color":"Orange","model":"Gen 2 Performance","len":41,"single":"<5–20","doubled":"<10–40","maxStretch":102,"note":"41\" Gen 2 ParaForce · Ultra Light","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Orange","model":"Light","len":34,"single":"5–15","doubled":"10–30","maxStretch":85,"note":"34\" Band","est":false,"low":5,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Red","model":"Light","len":34,"single":"15–35","doubled":"30–70","maxStretch":85,"note":"34\" Band","est":false,"low":15,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Black","model":"Medium","len":34,"single":"35–75","doubled":"70–150","maxStretch":85,"note":"34\" Band","est":false,"low":35,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Purple","model":"Heavy","len":34,"single":"50–100","doubled":"100–200","maxStretch":85,"note":"34\" Band","est":false,"low":50,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Green","model":"XH","len":34,"single":"75–150","doubled":"150–300","maxStretch":85,"note":"34\" Band","est":false,"low":75,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Blue","model":"XXH","len":34,"single":"90–230","doubled":"180–460","maxStretch":85,"note":"34\" Band","est":false,"low":90,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Orange Heavy","model":"Monster","len":34,"single":"110–300","doubled":"220–600","maxStretch":85,"note":"34\" Band","est":false,"low":110,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Grey","model":"Mega","len":34,"single":"150–400","doubled":"300–800","maxStretch":85,"note":"34\" Band","est":false,"low":150,"group":"~32–34\"","groupOrder":2},{"brand":"Clench","color":"Orange","model":"Light","len":41,"single":"5–15","doubled":"10–30","maxStretch":102,"note":"41\" Band","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Red","model":"Light","len":41,"single":"15–35","doubled":"30–70","maxStretch":102,"note":"41\" Band","est":false,"low":15,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Black","model":"Medium","len":41,"single":"35–75","doubled":"70–150","maxStretch":102,"note":"41\" Band","est":false,"low":35,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Purple","model":"Heavy","len":41,"single":"50–100","doubled":"100–200","maxStretch":102,"note":"41\" Band","est":false,"low":50,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Green","model":"XH","len":41,"single":"75–150","doubled":"150–300","maxStretch":102,"note":"41\" Band","est":false,"low":75,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Blue","model":"XXH","len":41,"single":"90–230","doubled":"180–460","maxStretch":102,"note":"41\" Band","est":false,"low":90,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Orange Heavy","model":"Monster","len":41,"single":"110–300","doubled":"220–600","maxStretch":102,"note":"41\" Band","est":false,"low":110,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Grey","model":"Mega","len":41,"single":"150–400","doubled":"300–800","maxStretch":102,"note":"41\" Band","est":false,"low":150,"group":"41\"","groupOrder":4},{"brand":"Clench","color":"Green","model":"Mini","len":13,"single":"2–20","doubled":"4–40","maxStretch":26,"note":"13\" Mini Band","est":false,"low":2,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Clench","color":"Black","model":"Mini","len":13,"single":"5–30","doubled":"10–60","maxStretch":26,"note":"13\" Mini Band","est":false,"low":5,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Clench","color":"Purple","model":"Mini","len":13,"single":"10–40","doubled":"20–80","maxStretch":26,"note":"13\" Mini Band","est":false,"low":10,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Clench","color":"Heavy Green","model":"Mini","len":13,"single":"12–50","doubled":"24–100","maxStretch":26,"note":"13\" Mini Band","est":false,"low":12,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Clench","color":"Blue","model":"Mini","len":13,"single":"15–60","doubled":"30–120","maxStretch":26,"note":"13\" Mini Band","est":false,"low":15,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Quantum","color":"Orange","model":"Micro","len":13,"single":"5–30","doubled":"10–60","maxStretch":26,"note":"13\" Mini Band","est":false,"low":5,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Quantum","color":"Yellow","model":"Super Micro","len":13,"single":"10–40","doubled":"20–80","maxStretch":26,"note":"13\" Mini Band","est":false,"low":10,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Quantum","color":"Red","model":"Mini","len":13,"single":"15–55","doubled":"30–110","maxStretch":26,"note":"13\" Mini Band","est":false,"low":15,"group":"~12–13\" (Mini)","groupOrder":0},{"brand":"Quantum","color":"Orange","model":"Micro","len":41,"single":"5–30","doubled":"10–60","maxStretch":102,"note":"41\" Band · ½\" wide · 2.5mm","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Yellow","model":"Super Micro","len":41,"single":"10–40","doubled":"20–80","maxStretch":102,"note":"41\" Band · 13/16\" wide · 2.5mm","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Red","model":"Mini","len":41,"single":"15–55","doubled":"30–110","maxStretch":102,"note":"41\" Band · ½\" wide · 5mm","est":false,"low":15,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Black","model":"Medium","len":41,"single":"20–85","doubled":"40–170","maxStretch":102,"note":"41\" Band · ¾\" wide · 5mm","est":false,"low":20,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Purple","model":"Large","len":41,"single":"30–115","doubled":"60–230","maxStretch":102,"note":"41\" Band · 1⅛\" wide · 5mm","est":false,"low":30,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Green","model":"XL","len":41,"single":"40–180","doubled":"80–360","maxStretch":102,"note":"41\" Band · 1¾\" wide · 5mm","est":false,"low":40,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Blue","model":"XXL","len":41,"single":"65–230","doubled":"130–460","maxStretch":102,"note":"41\" Band · 2½\" wide · 5mm","est":false,"low":65,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Gray","model":"XXXL","len":41,"single":"110–300","doubled":"220–600","maxStretch":102,"note":"41\" Band · 3\" wide · 5mm","est":false,"low":110,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Black","model":"Mega","len":41,"single":"150–400","doubled":"300–800","maxStretch":102,"note":"41\" Mega Band · 5mm","est":false,"low":150,"group":"41\"","groupOrder":4},{"brand":"Quantum","color":"Orange","model":"Thunder","len":73,"single":"5–30","doubled":"10–60","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":5,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Yellow","model":"Thunder","len":73,"single":"10–40","doubled":"20–80","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":10,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Red","model":"Thunder","len":73,"single":"15–55","doubled":"30–110","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":15,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Black","model":"Thunder","len":73,"single":"20–85","doubled":"40–170","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":20,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Purple","model":"Thunder","len":73,"single":"30–115","doubled":"60–230","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":30,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Green","model":"Thunder","len":73,"single":"40–180","doubled":"80–360","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":40,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Blue","model":"Thunder","len":73,"single":"65–230","doubled":"130–460","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":65,"group":"73\" (Thunder)","groupOrder":5},{"brand":"Quantum","color":"Gray","model":"Thunder","len":73,"single":"110–300","doubled":"220–600","maxStretch":182,"note":"73\" Thunder Band","est":false,"low":110,"group":"73\" (Thunder)","groupOrder":5},{"brand":"HeavyDutyBar","color":"Yellow","model":"PO Band","len":41,"single":"~5–25","doubled":"~10–50","maxStretch":102,"note":"41\" PO · ¼\" wide · est.","est":true,"low":5,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Red","model":"PO Band","len":41,"single":"~15–50","doubled":"~30–100","maxStretch":102,"note":"41\" PO · ½\" wide · est.","est":true,"low":15,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Blue","model":"PO Band","len":41,"single":"~30–90","doubled":"~60–180","maxStretch":102,"note":"41\" PO · 1⅛\" wide · est.","est":true,"low":30,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Black","model":"PO Band","len":41,"single":"~55–130","doubled":"~110–260","maxStretch":102,"note":"41\" PO · 1¾\" wide · est.","est":true,"low":55,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Green","model":"PO Band","len":41,"single":"~90–200","doubled":"~180–400","maxStretch":102,"note":"41\" PO · 3¼\" wide · est.","est":true,"low":90,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"White","model":"PO Band","len":41,"single":"~120–300+","doubled":"~240–600+","maxStretch":102,"note":"41\" PO · 4\" wide · est. · hardest on market","est":true,"low":120,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Purple","model":"Monster","len":38,"single":"~65–160","doubled":"~130–320","maxStretch":95,"note":"38\" Monster · 2½\" wide · est.","est":true,"low":65,"group":"~37–38\"","groupOrder":3},{"brand":"HeavyDutyBar","color":"Yellow","model":"Travel","len":41,"single":"~5–20","doubled":"~10–40","maxStretch":102,"note":"41\" Travel · est.","est":true,"low":5,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Red","model":"Travel","len":41,"single":"~10–35","doubled":"~20–70","maxStretch":102,"note":"41\" Travel · est.","est":true,"low":10,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Black","model":"Travel","len":41,"single":"~25–70","doubled":"~50–140","maxStretch":102,"note":"41\" Travel · est.","est":true,"low":25,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Purple","model":"Travel","len":41,"single":"~40–100","doubled":"~80–200","maxStretch":102,"note":"41\" Travel · est.","est":true,"low":40,"group":"41\"","groupOrder":4},{"brand":"HeavyDutyBar","color":"Green","model":"Travel","len":41,"single":"~60–150","doubled":"~120–300","maxStretch":102,"note":"41\" Travel · est.","est":true,"low":60,"group":"41\"","groupOrder":4},{"brand":"Dingzhou Baiyun","color":"Yellow","model":"","len":41,"single":"5–15","doubled":"10–30","maxStretch":102,"note":"41\" Band","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Dingzhou Baiyun","color":"Red","model":"","len":41,"single":"15–35","doubled":"30–70","maxStretch":102,"note":"41\" Band","est":false,"low":15,"group":"41\"","groupOrder":4},{"brand":"Dingzhou Baiyun","color":"Black","model":"","len":41,"single":"25–65","doubled":"50–130","maxStretch":102,"note":"41\" Band","est":false,"low":25,"group":"41\"","groupOrder":4},{"brand":"Dingzhou Baiyun","color":"Purple","model":"","len":41,"single":"35–85","doubled":"70–170","maxStretch":102,"note":"41\" Band","est":false,"low":35,"group":"41\"","groupOrder":4},{"brand":"Dingzhou Baiyun","color":"Green","model":"","len":41,"single":"55–125","doubled":"110–250","maxStretch":102,"note":"41\" Band","est":false,"low":55,"group":"41\"","groupOrder":4},{"brand":"Tribe","color":"X-Light","model":"","len":41,"single":"10–30","doubled":"20–60","maxStretch":102,"note":"41\" Band","est":false,"low":10,"group":"41\"","groupOrder":4},{"brand":"Tribe","color":"Light","model":"","len":41,"single":"20–70","doubled":"40–140","maxStretch":102,"note":"41\" Band","est":false,"low":20,"group":"41\"","groupOrder":4},{"brand":"Tribe","color":"Medium","model":"","len":41,"single":"30–110","doubled":"60–220","maxStretch":102,"note":"41\" Band","est":false,"low":30,"group":"41\"","groupOrder":4},{"brand":"Tribe","color":"Heavy","model":"","len":41,"single":"40–140","doubled":"80–280","maxStretch":102,"note":"41\" Band","est":false,"low":40,"group":"41\"","groupOrder":4},{"brand":"Tribe","color":"X-Heavy","model":"","len":41,"single":"50–170","doubled":"100–340","maxStretch":102,"note":"41\" Band","est":false,"low":50,"group":"41\"","groupOrder":4},{"brand":"Undersun","color":"Extra Light","model":"","len":41,"single":"5–15","doubled":"10–30","maxStretch":102,"note":"41\" Band","est":false,"low":5,"group":"41\"","groupOrder":4},{"brand":"Undersun","color":"Light","model":"","len":41,"single":"20–35","doubled":"40–70","maxStretch":102,"note":"41\" Band","est":false,"low":20,"group":"41\"","groupOrder":4},{"brand":"Undersun","color":"Medium","model":"","len":41,"single":"30–50","doubled":"60–100","maxStretch":102,"note":"41\" Band","est":false,"low":30,"group":"41\"","groupOrder":4},{"brand":"Undersun","color":"Heavy","model":"","len":41,"single":"40–80","doubled":"80–160","maxStretch":102,"note":"41\" Band","est":false,"low":40,"group":"41\"","groupOrder":4},{"brand":"Undersun","color":"Extra Heavy","model":"","len":41,"single":"50–120","doubled":"100–240","maxStretch":102,"note":"41\" Band","est":false,"low":50,"group":"41\"","groupOrder":4}];
+var BRANDS = ["Serious Steel","Harambe","X3","Clench","Quantum","HeavyDutyBar","Dingzhou Baiyun","Tribe","Undersun"];
+
+var COLOR_HEX = {
+  "Orange":"#f97316","Orange Heavy":"#c2410c","Purple":"#a855f7","Red":"#ef4444",
+  "Blue":"#3b82f6","Light Blue":"#7dd3fc","Green":"#22c55e","Light Green":"#86efac",
+  "Heavy Green":"#15803d","Black":"#111827","Yellow":"#eab308","Gray":"#9ca3af",
+  "Grey":"#9ca3af","Light Grey":"#d1d5db","Dark Grey":"#4b5563","White":"#f8fafc",
+  "White (Ultra Light)":"#f8fafc"
+};
+
+var VIEWS = [
+  { id:"v1", label:"BRAND&rarr;LEN&rarr;STR",
+    sort:function(a,b){ return cmp(a.brand,b.brand)||cmp(a.len,b.len)||cmp(a.low,b.low); } },
+  { id:"v2", label:"STR&rarr;LEN",
+    sort:function(a,b){ return cmp(a.low,b.low)||cmp(a.len,b.len); } },
+  { id:"v3", label:"LEN&rarr;STR",
+    sort:function(a,b){ return cmp(a.len,b.len)||cmp(a.low,b.low); } },
+  { id:"v4", label:"GROUPED", grouped:true,
+    sort:function(a,b){ return cmp(a.groupOrder,b.groupOrder)||cmp(a.low,b.low); } }
+];
+
+var view = "v1", brand = "All";
+
+function cmp(a,b){ return a<b?-1:(a>b?1:0); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function swatch(color){
+  var hex = COLOR_HEX[color] || "#64748b";
+  return '<span class="sw" style="background:'+hex+'"></span>';
+}
+
+function rowHtml(b){
+  var est = b.est ? ' <span class="est">~</span>' : '';
+  return '<tr>'+
+    '<td class="brand">'+esc(b.brand)+'</td>'+
+    '<td>'+swatch(b.color)+esc(b.color)+(b.model?' <span class="model">'+esc(b.model)+'</span>':'')+'</td>'+
+    '<td class="num">'+b.len+'&Prime;</td>'+
+    '<td class="num">'+esc(b.single)+est+'</td>'+
+    '<td class="dbl">'+esc(b.doubled)+est+'</td>'+
+    '<td class="num">'+b.maxStretch+'&Prime;</td>'+
+    '<td class="note">'+esc(b.note)+'</td>'+
+    '</tr>';
+}
+
+function render(){
+  var v = VIEWS.filter(function(x){return x.id===view;})[0];
+  var list = BANDS.filter(function(b){ return brand==="All" || b.brand===brand; })
+                  .slice().sort(v.sort);
+  var html = "";
+  if(v.grouped){
+    var last = null;
+    list.forEach(function(b){
+      if(b.group !== last){
+        last = b.group;
+        html += '<tr class="ghead"><td colspan="7">'+esc(b.group)+'</td></tr>';
+      }
+      html += rowHtml(b);
+    });
+  } else {
+    html = list.map(rowHtml).join("");
+  }
+  document.getElementById("rows").innerHTML = html;
+  document.getElementById("counts").textContent =
+    list.length+" BANDS SHOWN · "+BANDS.length+" TOTAL · "+BRANDS.length+" BRANDS";
+  document.querySelectorAll("#tabs button").forEach(function(btn){
+    btn.className = btn.dataset.v===view ? "on" : "";
+  });
+  document.querySelectorAll("#filters button").forEach(function(btn){
+    btn.className = btn.dataset.b===brand ? "on" : "";
+  });
+}
+
+var tabs = document.getElementById("tabs");
+VIEWS.forEach(function(v){
+  var btn = document.createElement("button");
+  btn.innerHTML = v.label; btn.dataset.v = v.id;
+  btn.onclick = function(){ view = v.id; render(); };
+  tabs.appendChild(btn);
+});
+var filters = document.getElementById("filters");
+["All"].concat(BRANDS).forEach(function(name){
+  var btn = document.createElement("button");
+  btn.textContent = name.toUpperCase(); btn.dataset.b = name;
+  btn.onclick = function(){ brand = name; render(); };
+  filters.appendChild(btn);
+});
+render();
+</script>
+</body>
+</html>
