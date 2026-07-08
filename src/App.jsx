@@ -2472,6 +2472,23 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
   owned.forEach(b => { (bByBrand[b.brand] = bByBrand[b.brand] || []).push(b) })
   const bBrands = Object.keys(bByBrand).sort()
 
+  // Per-band count = duplicate ids in MY BANDS. Some exercises (wide anchored
+  // chest flies, X squats, …) need two IDENTICAL bands or the load is unbalanced,
+  // so the same id may appear up to BAND_QTY_MAX times. Default 1.
+  const BAND_QTY_MAX = 5
+  const bandCnt = {}
+  myBands.forEach(id => { bandCnt[id] = (bandCnt[id]||0)+1 })
+  let totalUnits = 0
+  owned.forEach(b => { totalUnits += bandCnt[b.id]||1 })
+  function bumpBand(id, d) {
+    const cnt = bandCnt[id]||0
+    if (d > 0) { if (cnt >= BAND_QTY_MAX) return; onSetMyBands([...myBands, id]) }
+    else if (cnt > 1) {
+      const idx = myBands.indexOf(id); if (idx < 0) return
+      const next = myBands.slice(); next.splice(idx, 1); onSetMyBands(next)
+    }
+  }
+
   // add-gear form
   const [addingGear, setAddingGear] = useState(false)
   const [gf, setGf] = useState({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
@@ -2493,12 +2510,12 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
   BANDS.forEach(b => { if (allBandBrands.indexOf(b.brand) < 0) allBandBrands.push(b.brand) })
   allBandBrands.sort()
   const [bf, setBf] = useState({ brand: allBandBrands[0] || '', bandId:'' })
-  const bfChoices = BANDS.filter(b => b.brand === bf.brand && myBands.indexOf(b.id) < 0)
+  const bfChoices = BANDS.filter(b => b.brand === bf.brand && (bandCnt[b.id]||0) < BAND_QTY_MAX)
     .sort((a,b) => a.lengthIn - b.lengthIn || bandResMid(a.res) - bandResMid(b.res))
   function addBandSel() {
     if (!bf.bandId) return
     const br = (BANDS.find(b => b.id === bf.bandId) || {}).brand
-    if (myBands.indexOf(bf.bandId) < 0) onSetMyBands([...myBands, bf.bandId])
+    if ((bandCnt[bf.bandId]||0) < BAND_QTY_MAX) onSetMyBands([...myBands, bf.bandId])
     setBf({ brand: bf.brand, bandId:'' }); setAddingBand(false)
     if (br) openBrand('band:'+br)
   }
@@ -2519,7 +2536,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
       <div style={widget}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-          <span style={lbl}>MY BANDS{owned.length?' · '+owned.length:''}</span>
+          <span style={lbl}>MY BANDS{owned.length?' · '+owned.length:''}{totalUnits>owned.length?' ('+totalUnits+' PCS)':''}</span>
           <button style={{...btn(addingBand),fontSize:10,padding:'4px 10px'}}
             onClick={() => setAddingBand(!addingBand)}>{addingBand?'✕ CANCEL':'+ ADD BAND'}</button>
         </div>
@@ -2534,11 +2551,11 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
               style={{...inputStyle,minWidth:210}}>
               <option value="">— select band —</option>
               {bfChoices.map(b => (
-                <option key={b.id} value={b.id}>{b.color+' '+b.model+' · '+b.lengthIn+'" · '+b.res}</option>
+                <option key={b.id} value={b.id}>{b.color+' '+b.model+' · '+b.lengthIn+'" · '+b.res+((bandCnt[b.id]||0)>0?' · owned ×'+bandCnt[b.id]:'')}</option>
               ))}
             </select>
             <button style={{...btn(true,C.green),fontSize:11}} onClick={addBandSel}>ADD</button>
-            {bfChoices.length===0 && <span style={{fontSize:10,color:C.dimGray}}>all {bf.brand} bands already owned</span>}
+            {bfChoices.length===0 && <span style={{fontSize:10,color:C.dimGray}}>all {bf.brand} bands owned at max ×{BAND_QTY_MAX}</span>}
           </div>
         )}
         {bBrands.length===0 ? (
@@ -2551,7 +2568,8 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
               const key = 'band:'+br; const list = bByBrand[br]
               return (
                 <div key={key}>
-                  {brandHeader(key, br, <span style={pill(C.amber)}>{list.length}</span>)}
+                  {brandHeader(key, br, (() => { let u = 0; list.forEach(b => { u += bandCnt[b.id]||1 })
+                    return <span style={pill(C.amber)}>{u>list.length ? list.length+' ('+u+')' : list.length}</span> })())}
                   {isOpen(key) && (
                     <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'8px 6px 2px 24px'}}>
                       {list.slice().sort((a,b) => a.lengthIn-b.lengthIn || bandResMid(a.res)-bandResMid(b.res)).map(b => {
@@ -2565,8 +2583,20 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                             {b.color} {b.model}
                             <span style={{color:C.dimGray}}>{b.lengthIn}"</span>
                             <span style={{color:C.readout+'cc'}}>{b.res}</span>
+                            <span style={{display:'inline-flex',alignItems:'center',gap:2,marginLeft:2}}>
+                              <span onClick={() => bumpBand(b.id,-1)}
+                                title="One fewer of this band"
+                                style={{cursor:(bandCnt[b.id]||1)>1?'pointer':'default',fontWeight:700,padding:'0 3px',
+                                  color:(bandCnt[b.id]||1)>1?C.accent:C.dimGray+'66'}}>−</span>
+                              <span title="How many of this exact band you own"
+                                style={{fontSize:10,color:(bandCnt[b.id]||1)>1?C.amber:C.dimGray}}>×{bandCnt[b.id]||1}</span>
+                              <span onClick={() => bumpBand(b.id,1)}
+                                title={'One more of this band (max '+BAND_QTY_MAX+')'}
+                                style={{cursor:(bandCnt[b.id]||1)<BAND_QTY_MAX?'pointer':'default',fontWeight:700,padding:'0 3px',
+                                  color:(bandCnt[b.id]||1)<BAND_QTY_MAX?C.accent:C.dimGray+'66'}}>+</span>
+                            </span>
                             <span onClick={() => onSetMyBands(myBands.filter(x => x !== b.id))}
-                              title="Remove from My Bands"
+                              title="Remove from My Bands (all copies)"
                               style={{cursor:'pointer',color:C.red,fontWeight:700,marginLeft:2}}>✕</span>
                           </span>
                         )
