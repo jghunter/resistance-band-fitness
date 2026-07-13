@@ -99,6 +99,10 @@ export const EXERCISE_NAMES = {
   211:"Quad Stretch Assist", 212:"Banded Good Morning (Stretch)",
   213:"Overhead Shoulder Mob", 214:"Wrist Flexor Stretch",
   215:"Wrist Extensor Stretch",
+  // ADDED EXERCISES — sit outside the 1–215 ID-range group table; group/class
+  // come from EX_GROUP_OVERRIDE / EX_CLASS_OVERRIDE below. User-added custom
+  // exercises use IDs ≥1000 and are merged at load via registerCustomEx.
+  216:"Pec Crossover", 217:"Split Squat (Belt)",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -349,6 +353,8 @@ export const VIDEOS = {
   213:"https://www.youtube.com/watch?v=7p-Ma0eksaY",
   214:"https://www.youtube.com/watch?v=I9lvT_fJQIM",
   215:"https://www.youtube.com/watch?v=c2JIMZpTtoA",
+  216:{url:"https://www.youtube.com/watch?v=Q-lnd6SWR5A", start:117, end:162},  // pec crossover 1:57–2:42
+  217:{url:"https://www.youtube.com/shorts/K6rSbbyAVTo", start:11},             // split squat w/ belt — 3rd move, ~0:11 in
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1185,7 +1191,34 @@ export const SLOT_LABELS = {
   lats:"Lats",
 };
 
+// Canonical {label,color} per muscle group — used by the override map and by
+// custom-exercise registration (mirrors fitness_app.html's GROUP_META).
+export const GROUP_META = {
+  CHEST:      {label:"CHEST",     color:"#00d4ff"},
+  BACK:       {label:"BACK",      color:"#22c55e"},
+  SHOULDERS:  {label:"SHOULDERS", color:"#60a5fa"},
+  CORE:       {label:"CORE",      color:"#ec4899"},
+  GLUTES:     {label:"GLUTES",    color:"#c084fc"},
+  QUADS:      {label:"QUADS",     color:"#f97316"},
+  HAMSTRINGS: {label:"HAMSTRINGS",color:"#fb923c"},
+  BICEPS:     {label:"BICEPS",    color:"#4ade80"},
+  TRICEPS:    {label:"TRICEPS",   color:"#f59e0b"},
+  FOREARMS:   {label:"FOREARMS",  color:"#94a3b8"},
+  CALVES:     {label:"CALVES",    color:"#38bdf8"},
+  NECK:       {label:"NECK",      color:"#f87171"},
+  "FULL BODY":{label:"FULL BODY", color:"#00d4ff"},
+  MOBILITY:   {label:"MOBILITY",  color:"#86efac"},
+};
+
+// Explicit per-ID group/class for exercises outside the 1–215 ID-range table:
+// the two built-in additions (216/217) plus user-added customs (IDs ≥1000),
+// extended at load via registerCustomEx. Consulted FIRST by exGroup/exClass.
+const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS };
+const EX_CLASS_OVERRIDE = { 217: "comp" };   // 216 (fly) defaults to iso
+
 export const exGroup = (id) => {
+  id = Number(id);
+  if (EX_GROUP_OVERRIDE[id]) return EX_GROUP_OVERRIDE[id];
   if (id<=20)  return {label:"CHEST",     color:"#00d4ff"};
   if (id<=42)  return {label:"BACK",      color:"#22c55e"};
   if (id<=58)  return {label:"SHOULDERS", color:"#60a5fa"};
@@ -1211,11 +1244,39 @@ export const ALL_GROUPS = ["All","CHEST","BACK","SHOULDERS","CORE","GLUTES","QUA
 // to order primary lifts isolation-first. Anything not listed below is isolation.
 const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,31,32,36,37,38,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,139,142,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
 const EX_OTHER_IDS = new Set([112,166,191,192,193,194,198,199,203,204,205,206,207,208,209,210,211,212,213,214,215]);
-export const exClass = (id) => { id = Number(id); return EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"; };
+export const exClass = (id) => { id = Number(id); return EX_CLASS_OVERRIDE[id] || (EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"); };
+
+// ── Custom exercises (IDs ≥1000) ─────────────────────────────────────────────
+// Merge one custom exercise {id,name,group,cls,url?,start?,end?} into the live
+// catalog + override maps so every EXERCISE_NAMES/exGroup/exClass/VIDEOS
+// consumer resolves it. Mirrors fitness_app.html's registerCustomEx.
+export function registerCustomEx(ex) {
+  if (!ex || ex.id == null) return;
+  EXERCISE_NAMES[ex.id] = ex.name;
+  EX_GROUP_OVERRIDE[ex.id] = GROUP_META[ex.group] || { label: ex.group, color: "#00d4ff" };
+  EX_CLASS_OVERRIDE[ex.id] = ex.cls || "iso";
+  if (ex.url) {
+    VIDEOS[ex.id] = (ex.start != null || ex.end != null)
+      ? { url: ex.url, start: (ex.start != null ? ex.start : undefined), end: (ex.end != null ? ex.end : undefined) }
+      : ex.url;
+  } else {
+    delete VIDEOS[ex.id];
+  }
+}
+export function unregisterCustomEx(id) {
+  id = Number(id);
+  if (id < 1000) return;   // never remove built-ins (incl. 216/217)
+  delete EXERCISE_NAMES[id];
+  delete VIDEOS[id];
+  delete EX_GROUP_OVERRIDE[id];
+  delete EX_CLASS_OVERRIDE[id];
+}
 export const EX_CLASS_RANK = { comp:0, iso:1, other:2 };   // primary display order: compound → isolation
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BANDS — 103 bands, 6 brands
+// BANDS — mirrors fitness_app.html's BANDS array (drift is checked
+// report-only by resistance_bands_rails/sync_bands.rb; fix by hand-copying
+// changed entries from fitness_app.html)
 // ─────────────────────────────────────────────────────────────────────────────
 export const BANDS = [
   {id:"b0",  brand:"Serious Steel",color:"Orange",    model:"#0",        lengthIn:12,res:"2-15"},

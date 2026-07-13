@@ -5,7 +5,7 @@ import { db, auth, googleProvider } from './firebase'
 import {
   C, EXERCISE_NAMES, TECHNIQUES, VIDEOS, PROGRAMS,
   SESSION_FOCUS, getSessionFocus, dayName, dayShort, SLOT_LABELS, exGroup, ALL_GROUPS,
-  exClass, EX_CLASS_RANK,
+  exClass, EX_CLASS_RANK, GROUP_META, registerCustomEx, unregisterCustomEx,
   BANDS, COLOR_HEX, BAND_BRANDS, GEAR,
   GEAR_TYPES, GEAR_TYPE_LABELS, GEAR_TYPE_CAP, gearTypeCap, inferGearType,
   calcToday, PROG_REPS,
@@ -328,6 +328,13 @@ async function loadSettingsFromFirestore(uid) {
 async function saveSettingsToFirestore(uid, settings) {
   await setDoc(doc(db, 'users', uid, 'meta', 'settings'), settings)
 }
+async function loadCustomExFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'customExercises'))
+  return d.exists() ? d.data() : null   // { list:[...], updatedAt }
+}
+async function saveCustomExToFirestore(uid, payload) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'customExercises'), payload)
+}
 
 // ── Local (signed-out) gear + my-bands storage ──
 // Phase 1 (multi-user): gear no longer auto-seeds from GEAR. New and signed-out
@@ -364,6 +371,29 @@ function saveLocalGear(items) { try { localStorage.setItem(GEAR_KEY, JSON.string
 function getLocalMyBands() { try { return JSON.parse(localStorage.getItem('rbts_myBands') || '[]') } catch { return [] } }
 function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON.stringify(ids)) } catch {} }
 
+// ── Custom exercises (GLOBAL key — shared across profiles, mirrors the HTML
+// app's rbts_customExercises). Each item: {id(≥1000), name, group, cls, url?,
+// start?, end?, custom:true}. Registered into the live catalog at load and
+// whenever the list changes; synced to users/{uid}/meta/customExercises with
+// doc-level last-write-wins (same pattern as settings).
+const CUSTOM_EX_KEY    = 'rbts_customExercises'
+const CUSTOM_EX_TS_KEY = 'rbts_customExercisesUpdatedAt'
+function getLocalCustomEx() { try { return JSON.parse(localStorage.getItem(CUSTOM_EX_KEY) || '[]') } catch { return [] } }
+function saveLocalCustomEx(list) { try { localStorage.setItem(CUSTOM_EX_KEY, JSON.stringify(list)) } catch {} }
+function getLocalCustomExTs() { try { return JSON.parse(localStorage.getItem(CUSTOM_EX_TS_KEY) || '0') } catch { return 0 } }
+function saveLocalCustomExTs(ts) { try { localStorage.setItem(CUSTOM_EX_TS_KEY, JSON.stringify(ts)) } catch {} }
+function nextCustomExId(list) { let max = 999; list.forEach(e => { if (e.id > max) max = e.id }); return max + 1 }
+// Swap the registered set from `prev` to `next`: unregister removed ids, then
+// (re)register everything in next.
+function applyCustomExList(prev, next) {
+  const keep = new Set(next.map(e => Number(e.id)))
+  ;(prev || []).forEach(e => { if (!keep.has(Number(e.id))) unregisterCustomEx(e.id) })
+  next.forEach(registerCustomEx)
+}
+// Register persisted customs immediately so every consumer (Today, History,
+// Library, program builder, CSV export) resolves them from the first render.
+getLocalCustomEx().forEach(registerCustomEx)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VIDEO HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -371,7 +401,10 @@ function resolveVideo(id) {
   const v = VIDEOS[id]
   if (!v) return null
   if (typeof v === 'string') return { url:v, embedUrl:null }
-  const m = v.url.match(/[?&]v=([^&]+)/)
+  // Extract the YouTube video id from any common URL shape: watch?v=, /shorts/,
+  // youtu.be/, or /embed/. Shorts embed fine via the /embed/ID player.
+  const m = v.url.match(/[?&]v=([^&]+)/) || v.url.match(/\/shorts\/([^?&/]+)/)
+        || v.url.match(/youtu\.be\/([^?&/]+)/) || v.url.match(/\/embed\/([^?&/]+)/)
   if (!m) return { url:v.url, embedUrl:null }
   const vid = m[1]
   let p = 'autoplay=1&rel=0'
@@ -1831,16 +1864,97 @@ function ProgramsTab() {
 // ─────────────────────────────────────────────────────────────────────────────
 // LIBRARY TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function LibraryTab() {
+// Parse a timestamp typed as seconds ("117") OR mm:ss ("1:57") OR h:mm:ss.
+// Returns a number of seconds, or undefined for blank/invalid input.
+function parseTs(v) {
+  v = String(v == null ? '' : v).trim()
+  if (!v) return undefined
+  if (v.indexOf(':') < 0) { const n = parseInt(v,10); return isNaN(n) ? undefined : n }
+  let s = 0
+  v.split(':').forEach(p => { s = s*60 + (parseInt(p,10)||0) })
+  return s
+}
+
+// "+ ADD EXERCISE" form (Library tab). Calls onAdd({name,group,cls,url?,start?,end?})
+// then onDone to close. Group/class are stored explicitly (IDs ≥1000 sit
+// outside the ID-range group table). Video is optional; start/end accept mm:ss.
+function AddExerciseForm({ onAdd, onDone }) {
+  const [name, setName]   = useState('')
+  const [grp, setGrp]     = useState('CHEST')
+  const [cls, setCls]     = useState('iso')
+  const [url, setUrl]     = useState('')
+  const [start, setStart] = useState('')
+  const [end, setEnd]     = useState('')
+  const [err, setErr]     = useState('')
+  const groups = ALL_GROUPS.filter(g => g !== 'All')
+  const field = (label, node) => (
+    <label style={{display:'flex',flexDirection:'column',gap:4}}>
+      <span style={lbl}>{label}</span>{node}
+    </label>
+  )
+  function save() {
+    const nm = name.trim()
+    if (!nm) { setErr('Name is required.'); return }
+    const u = url.trim()
+    if ((start.trim() || end.trim()) && !u) { setErr('Add a video URL to use timestamps.'); return }
+    onAdd({
+      name: nm, group: grp, cls,
+      url: u || undefined,
+      start: u ? parseTs(start) : undefined,
+      end:   u ? parseTs(end)   : undefined,
+    })
+    onDone()
+  }
+  return (
+    <div style={{background:C.bgInput,borderRadius:6,padding:14,
+      border:`1px solid ${C.accentDim}`,display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+        {field('EXERCISE NAME',
+          <input value={name} onChange={e=>setName(e.target.value)}
+            placeholder="e.g. Pec Crossover" style={{...inputStyle,width:240}}/>)}
+        {field('MUSCLE GROUP',
+          <select value={grp} onChange={e=>setGrp(e.target.value)} style={{...inputStyle,width:150}}>
+            {groups.map(g=><option key={g} value={g}>{g}</option>)}
+          </select>)}
+        {field('TYPE',
+          <select value={cls} onChange={e=>setCls(e.target.value)} style={{...inputStyle,width:150}}>
+            <option value="iso">Isolation</option>
+            <option value="comp">Compound</option>
+            <option value="other">Other / mobility</option>
+          </select>)}
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
+        {field('VIDEO URL (optional)',
+          <input value={url} onChange={e=>setUrl(e.target.value)}
+            placeholder="youtube.com/watch?v=… or /shorts/…" style={{...inputStyle,width:300}}/>)}
+        {field('START (mm:ss)',
+          <input value={start} onChange={e=>setStart(e.target.value)}
+            placeholder="1:57" style={{...inputStyle,width:90}}/>)}
+        {field('END (mm:ss)',
+          <input value={end} onChange={e=>setEnd(e.target.value)}
+            placeholder="2:42" style={{...inputStyle,width:90}}/>)}
+      </div>
+      {err && <div style={{fontFamily:'monospace',fontSize:11,color:C.amber}}>{err}</div>}
+      <div style={{display:'flex',gap:8}}>
+        <button style={btn(true,C.green)} onClick={save}>SAVE EXERCISE</button>
+        <button style={btn(false)} onClick={onDone}>CANCEL</button>
+      </div>
+    </div>
+  )
+}
+
+function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
   const [search, setSearch] = useState('')
   const [group, setGroup]   = useState('All')
   const [vidOnly, setVid]   = useState(false)
+  const [adding, setAdding] = useState(false)   // add-exercise form open?
   const totalVerified       = Object.keys(VIDEOS).length
 
   const allEx = useMemo(() =>
     Object.entries(EXERCISE_NAMES).map(([id,name]) => ({
       id:Number(id), name, group:exGroup(Number(id)), url:VIDEOS[Number(id)]??null,
-    })), [])
+      custom:Number(id)>=1000,
+    })).sort((a,b)=>a.id-b.id), [customEx])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -1869,7 +1983,13 @@ function LibraryTab() {
             placeholder="SEARCH BY NAME OR #"
             style={{...inputStyle,width:220,letterSpacing:'0.04em'}}/>
           <button style={btn(vidOnly,C.green)} onClick={()=>setVid(!vidOnly)}>▶ WITH VIDEO ONLY</button>
+          <button style={btn(adding,C.accent)} onClick={()=>setAdding(a=>!a)}>
+            {adding ? '✕ CANCEL' : '+ ADD EXERCISE'}
+          </button>
         </div>
+        {adding && (
+          <AddExerciseForm onAdd={onAddEx} onDone={()=>setAdding(false)}/>
+        )}
         <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
           {ALL_GROUPS.map(g => (
             <button key={g} style={{...btn(group===g,
@@ -1883,9 +2003,19 @@ function LibraryTab() {
         {filtered.map(ex => (
           <div key={ex.id} style={{background:C.bgWidget,borderRadius:8,padding:'10px 12px',
             border:`1px solid ${ex.group.color}33`,display:'flex',flexDirection:'column',gap:6}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>#{ex.id}</span>
-              <span style={pill(ex.group.color)}>{ex.group.label}</span>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:6}}>
+              <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+                #{ex.id}{ex.custom ? ' ★' : ''}
+              </span>
+              <span style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={pill(ex.group.color)}>{ex.group.label}</span>
+                {ex.custom && (
+                  <button title="Delete custom exercise"
+                    style={{background:'none',border:'none',color:C.dimGray,cursor:'pointer',
+                      fontFamily:'monospace',fontSize:11,padding:0,lineHeight:1}}
+                    onClick={()=>{ if (confirm(`Delete "${ex.name}" (#${ex.id})? Logged history keeps the id but will show it as a number.`)) onDeleteEx(ex.id) }}>✕</button>
+                )}
+              </span>
             </div>
             <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4,flex:1}}>{ex.name}</div>
             <WatchDemoButton id={ex.id}/>
@@ -2274,7 +2404,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry, gearInv }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -2315,7 +2445,11 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry, gearInv })
   }
 
   function exportJSON() {
-    const data = { exportedAt: new Date().toISOString(), rbts_log: log }
+    const data = {
+      exportedAt: new Date().toISOString(),
+      rbts_log: log,
+      rbts_customExercises: getLocalCustomEx(),   // definitions travel with the log
+    }
     const a = document.createElement('a')
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
     a.download = `rbts_backup_${new Date().toISOString().slice(0,10)}.json`
@@ -2330,9 +2464,18 @@ function HistoryTab({ log, onMergeImport, onSaveEntry, onDeleteEntry, gearInv })
         const state = JSON.parse(ev.target.result)
         const incoming = Array.isArray(state.rbts_log) ? state.rbts_log
                        : (Array.isArray(state) ? state : null)
-        if (!incoming) { alert('Invalid file — expected an rbts_log array.'); return }
+        // Custom exercise definitions (from the HTML app or another PWA device)
+        // ride along in the same backup file — merge them first so imported log
+        // entries referencing ids ≥1000 (or 216/217) resolve to names.
+        const customs = Array.isArray(state && state.rbts_customExercises) ? state.rbts_customExercises : []
+        const addedEx = customs.length && onImportCustomEx ? onImportCustomEx(customs) : 0
+        if (!incoming) {
+          if (customs.length) { alert(`No rbts_log in file — imported ${customs.length} custom exercise definition(s) (${addedEx} new).`); return }
+          alert('Invalid file — expected an rbts_log array.'); return
+        }
         const res = await onMergeImport(incoming)
         alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
+          (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).'))
       } catch (err) { alert('Could not read file: ' + err.message) }
     }
@@ -2715,6 +2858,7 @@ export default function App() {
   const [gear, setGear]               = useState([])
   const [myBands, setMyBands]         = useState([])
   const [settings, setSettings]       = useState(() => getLocalSettings())
+  const [customEx, setCustomEx]       = useState(() => getLocalCustomEx())
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
 
@@ -2780,6 +2924,27 @@ export default function App() {
             persistSettings(fsS, null); setSettings(fsS)
           }
         } catch (e) { console.error('Error loading settings:', e) }
+        // Custom exercises: last-write-wins vs cloud (same pattern as settings).
+        try {
+          const localList = getLocalCustomEx()
+          const localTs   = getLocalCustomExTs()
+          const fsDoc     = await loadCustomExFromFirestore(u.uid)
+          if (!fsDoc) {
+            // First sign-in for this account → seed cloud from local.
+            const ts = localTs || Date.now()
+            await saveCustomExToFirestore(u.uid, { list: localList, updatedAt: ts })
+            saveLocalCustomExTs(ts)
+            setCustomEx(localList)
+          } else if (localTs > (fsDoc.updatedAt || 0)) {
+            await saveCustomExToFirestore(u.uid, { list: localList, updatedAt: localTs })
+            setCustomEx(localList)
+          } else {
+            const cloudList = fsDoc.list || []
+            applyCustomExList(localList, cloudList)
+            saveLocalCustomEx(cloudList); saveLocalCustomExTs(fsDoc.updatedAt || 0)
+            setCustomEx(cloudList)
+          }
+        } catch (e) { console.error('Error loading custom exercises:', e) }
         setLogLoading(false)
       } else {
         try {
@@ -2789,6 +2954,7 @@ export default function App() {
         setGear(withGearTypes(getLocalGear()))
         setMyBands(getLocalMyBands())
         setSettings(getLocalSettings())
+        setCustomEx(getLocalCustomEx())
       }
     })
     return unsub
@@ -2807,6 +2973,7 @@ export default function App() {
     setGear(withGearTypes(getLocalGear()))
     setMyBands(getLocalMyBands())
     setSettings(getLocalSettings())
+    setCustomEx(getLocalCustomEx())
   }
 
   const handleSaveEntry = useCallback(async (entry) => {
@@ -2909,6 +3076,50 @@ export default function App() {
     else saveLocalMyBands(next)
   }, [user])
 
+  // Custom exercises: persist a new list locally (+ cloud when signed in),
+  // stamping updatedAt for last-write-wins reconciliation.
+  const persistCustomEx = useCallback((next) => {
+    const ts = Date.now()
+    saveLocalCustomEx(next); saveLocalCustomExTs(ts)
+    if (user) saveCustomExToFirestore(user.uid, { list: next, updatedAt: ts })
+      .catch(e => console.error('Save custom exercises failed:', e))
+  }, [user])
+
+  const handleAddCustomEx = useCallback((ex) => {
+    const item = { ...ex, id: nextCustomExId(customEx), custom: true }
+    const next = [...customEx, item]
+    registerCustomEx(item)
+    persistCustomEx(next)
+    setCustomEx(next)
+    return item
+  }, [customEx, persistCustomEx])
+
+  const handleDeleteCustomEx = useCallback((id) => {
+    const next = customEx.filter(e => Number(e.id) !== Number(id))
+    unregisterCustomEx(id)
+    persistCustomEx(next)
+    setCustomEx(next)
+  }, [customEx, persistCustomEx])
+
+  // Merge-imported definitions (from the HTML app's EXPORT JSON): union by id,
+  // import wins on conflict. Returns how many were new.
+  const handleImportCustomEx = useCallback((incoming) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return 0
+    const prev = getLocalCustomEx()
+    const byId = new Map(prev.map(e => [Number(e.id), e]))
+    let added = 0
+    incoming.forEach(e => {
+      if (!e || e.id == null || !e.name) return
+      if (!byId.has(Number(e.id))) added++
+      byId.set(Number(e.id), { ...e, id: Number(e.id), custom: true })
+    })
+    const next = [...byId.values()].sort((a,b) => a.id - b.id)
+    applyCustomExList(prev, next)
+    persistCustomEx(next)
+    setCustomEx(next)
+    return added
+  }, [persistCustomEx])
+
   // Settings change: merge the patch, stamp updatedAt, persist locally + to cloud.
   const handleChangeSettings = useCallback((patch) => {
     setSettings(prev => {
@@ -2991,10 +3202,10 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
-        {tab==='library'  && <LibraryTab/>}
+        {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
         {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear}/>}
       </div>
     </div>
