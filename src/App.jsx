@@ -946,7 +946,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               const b = BANDS.find(x=>x.id===bid)
               return b ? `${b.brand.split(' ')[0]} ${b.color} ${b.model} (${b.res}lbs)` : '?'
             }).join(' + ')
-            return <span key={i}>{setRepsOf(s)}r{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
+            return <span key={i}>{setRepsOf(s)}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
           })}
         </div>
       )}
@@ -1030,6 +1030,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                     <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
                       {segs.reduce((a,g)=>a+(g.reps||0),0)} total reps · one RIR for the whole set
                     </span>
+                    <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>+P</span>
+                    <input type="number" min="0" max="99" value={s.partials==null?'':s.partials} placeholder="0"
+                      title="Partial reps at the end of the whole set (blank = none)"
+                      onChange={e=>{const v=e.target.value; updateSet(i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                      style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                   </div>
                 </div>
               ) : (
@@ -1046,6 +1051,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                     <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
                       onClick={()=>updateSet(i,'reps',(s.reps||0)+1)}>+</button>
                     <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                    <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:6}}>+P</span>
+                    <input type="number" min="0" max="99" value={s.partials==null?'':s.partials} placeholder="0"
+                      title="Partial reps done after the full-ROM reps (blank = none)"
+                      onChange={e=>{const v=e.target.value; updateSet(i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                      style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                   </div>
                 </div>
               )}
