@@ -2386,6 +2386,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                       <button style={{...btn(false,C.amber),fontSize:10,padding:'5px 10px'}} onClick={()=>addSeg(id,i)}>+ PHASE / DROP</button>
                       <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{segs.reduce((a,g)=>a+(g.reps||0),0)} total reps · one RIR for the whole set</span>
+                      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>+P</span>
+                      <input type="number" min="0" max="99" value={s.partials==null?'':s.partials} placeholder="0"
+                        title="Partial reps at the end of the whole set (blank = none)"
+                        onChange={e=>{const v=e.target.value; updateSet(id,i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                        style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                     </div>
                   </div>
                 ) : (
@@ -2400,6 +2405,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
                         style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:13}}/>
                       <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSet(id,i,'reps',(s.reps||0)+1)}>+</button>
                       <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:2}}>reps</span>
+                      <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginLeft:6}}>+P</span>
+                      <input type="number" min="0" max="99" value={s.partials==null?'':s.partials} placeholder="0"
+                        title="Partial reps done after the full-ROM reps (blank = none)"
+                        onChange={e=>{const v=e.target.value; updateSet(id,i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
+                        style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                     </div>
                   </div>
                 )}
@@ -2583,7 +2593,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                       <div key={i} style={{marginBottom:segs?4:2}}>
                         <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
                           <span style={{color:C.dimGray}}>S{i+1} </span>
-                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{setSide(s)?' '+setSide(s):''}</span>
+                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}</span>
                           {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                           {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
                         </div>
