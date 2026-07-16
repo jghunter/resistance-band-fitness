@@ -2442,7 +2442,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
 
   function exportCSV() {
     const header = ['Date','Day','Program','Week','Session','Workout',
-      'Exercise ID','Exercise Name','Set','Side','Reps',
+      'Exercise ID','Exercise Name','Set','Side','Reps','Partials',
       'Band 1','Band 1 Res','Band 2','Band 2 Res','Band 3','Band 3 Res']
     const rows = [header]
     entries.forEach(e => {
@@ -2456,7 +2456,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           }
           const b1=getBand(0),b2=getBand(1),b3=getBand(2)
           rows.push([e.date,dayName,e.programId||'',e.week||'',e.session,e.workoutNum||'',
-            exId,EXERCISE_NAMES[exId]||exId,si+1,setSide(s)||'',s.reps||0,
+            exId,EXERCISE_NAMES[exId]||exId,si+1,setSide(s)||'',s.reps||0,s.partials||'',
             b1[0],b1[1],b2[0],b2[1],b3[0],b3[1]])
         })
       })
