@@ -217,6 +217,10 @@ const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{
 // side:"L" + segments, so partial/drop reps can differ per side naturally.
 const setSide  = (s) => (s && (s.side === 'L' || s.side === 'R')) ? s.side : null
 const nextSide = (cur) => cur == null ? 'L' : (cur === 'L' ? 'R' : null)
+// Partial reps (SPEC_partial_reps.md): optional set-level count of partial-ROM
+// reps done after the full reps. Display-only — never counted in progression,
+// sseReps, or volume-load.
+const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
 // Unilateral moves pre-tag the Today card's first two sets L/R. Alternating
 // moves (105, 132) intentionally excluded — both sides happen inside one set.
 const EX_UNILATERAL = new Set([
@@ -253,6 +257,7 @@ function cleanExercises(ex) {
       if (s.drop) o.drop = true
       if (s.intensifier && s.intensifier !== 'straight') o.intensifier = s.intensifier
       if (s.rir != null && s.rir !== '') o.rir = s.rir
+      if (s.partials) o.partials = s.partials
       if (Array.isArray(s.segments) && s.segments.length)
         o.segments = s.segments.map(g => ({ bands:(g.bands||[]).slice(), reps:g.reps||0, secs:g.secs }))
       return o
