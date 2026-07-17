@@ -574,7 +574,8 @@ function BandPicker({ selected, onChange }) {
     return BANDS.filter(b => {
       if (bFilter !== 'All' && b.brand !== bFilter) return false
       if (q) return b.brand.toLowerCase().includes(q) || b.color.toLowerCase().includes(q) ||
-                     b.model.toLowerCase().includes(q) || b.res.includes(q)
+                     b.model.toLowerCase().includes(q) || b.res.includes(q) ||
+                     (b.resKg||'').includes(q)
       return true
     })
   }, [search, bFilter])
@@ -675,7 +676,7 @@ function BandPicker({ selected, onChange }) {
                   {b.brand} {b.color} {b.model}
                 </span>
                 <span style={{fontFamily:'monospace',fontSize:10,color:C.readout,flexShrink:0}}>
-                  {b.res} lbs
+                  {b.res} lbs{b.resKg ? <span style={{color:C.dimGray}}> · {b.resKg} kg</span> : null}
                 </span>
                 <span style={{fontFamily:'monospace',fontSize:9,color:lenMismatch?C.amber:C.dimGray,flexShrink:0}}>
                   {b.lengthIn}"{lenMismatch?' ≠':''}
@@ -2719,7 +2720,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
               style={{...inputStyle,minWidth:210}}>
               <option value="">— select band —</option>
               {bfChoices.map(b => (
-                <option key={b.id} value={b.id}>{b.color+' '+b.model+' · '+b.lengthIn+'" · '+b.res+((bandCnt[b.id]||0)>0?' · owned ×'+bandCnt[b.id]:'')}</option>
+                <option key={b.id} value={b.id}>{b.color+' '+b.model+' · '+b.lengthIn+'" · '+b.res+(b.resKg?' lb / '+b.resKg+' kg':'')+((bandCnt[b.id]||0)>0?' · owned ×'+bandCnt[b.id]:'')}</option>
               ))}
             </select>
             <button style={{...btn(true,C.green),fontSize:11}} onClick={addBandSel}>ADD</button>
@@ -2750,7 +2751,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                               border:'1px solid rgba(255,255,255,0.3)',flexShrink:0}}/>
                             {b.color} {b.model}
                             <span style={{color:C.dimGray}}>{b.lengthIn}"</span>
-                            <span style={{color:C.readout+'cc'}}>{b.res}</span>
+                            <span style={{color:C.readout+'cc'}}>{b.res}{b.resKg ? ' / '+b.resKg+'kg' : ''}</span>
                             <span style={{display:'inline-flex',alignItems:'center',gap:2,marginLeft:2}}>
                               <span onClick={() => bumpBand(b.id,-1)}
                                 title="One fewer of this band"
