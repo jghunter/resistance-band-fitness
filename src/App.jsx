@@ -3122,20 +3122,24 @@ export default function App() {
     if (inv.gearPresent) {
       const items = withGearTypes(inv.gear)
       setGear(items)
+      let cloudOk = true
       if (user) {
         try {
           const existing = await loadGearFromFirestore(user.uid)
           await Promise.all(existing.map(g => deleteGearItemFromFirestore(user.uid, g.id)))
           await Promise.all(items.map(g => saveGearItemToFirestore(user.uid, g)))
-        } catch (e) { console.error('Import gear failed:', e) }
+        } catch (e) { cloudOk = false; console.error('Import gear failed:', e) }
       } else saveLocalGear(items)
-      done.push(`gear replaced (${items.length})`)
+      done.push(cloudOk ? `gear replaced (${items.length})`
+                        : `gear cloud sync FAILED — check connection and re-import`)
     }
     if (inv.bandsPresent) {
       setMyBands(inv.myBands)
-      if (user) { try { await saveMyBandsToFirestore(user.uid, inv.myBands) } catch (e) { console.error('Import my bands failed:', e) } }
+      let cloudOk = true
+      if (user) { try { await saveMyBandsToFirestore(user.uid, inv.myBands) } catch (e) { cloudOk = false; console.error('Import my bands failed:', e) } }
       else saveLocalMyBands(inv.myBands)
-      done.push(`MY BANDS replaced (${inv.myBands.length})`)
+      done.push(cloudOk ? `MY BANDS replaced (${inv.myBands.length})`
+                        : `MY BANDS cloud sync FAILED — check connection and re-import`)
     }
     return ` Inventory: ${done.join(', ')}.`
   }, [user, gear, myBands])
