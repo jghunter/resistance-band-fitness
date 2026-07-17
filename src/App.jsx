@@ -20,6 +20,7 @@ import {
   focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
+import { extractInventory } from './backup.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
@@ -2431,7 +2432,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -2498,14 +2499,22 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         // entries referencing ids ≥1000 (or 216/217) resolve to names.
         const customs = Array.isArray(state && state.rbts_customExercises) ? state.rbts_customExercises : []
         const addedEx = customs.length && onImportCustomEx ? onImportCustomEx(customs) : 0
+        // Inventory (gear + MY BANDS) is independent of the log merge.
+        const invMsg = onImportInventory ? await onImportInventory(state) : ''
         if (!incoming) {
-          if (customs.length) { alert(`No rbts_log in file — imported ${customs.length} custom exercise definition(s) (${addedEx} new).`); return }
+          if (customs.length || invMsg) {
+            alert('No rbts_log in file.' +
+              (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
+              invMsg)
+            return
+          }
           alert('Invalid file — expected an rbts_log array.'); return
         }
         const res = await onMergeImport(incoming)
         alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
           (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
-          (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).'))
+          (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
+          invMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }
     }
     reader.readAsText(file); e.target.value = ''
@@ -3099,6 +3108,38 @@ export default function App() {
     else saveLocalGear(items)
   }, [user])
 
+  // Backup-file inventory (gear + MY BANDS): file wins wholesale, behind one
+  // confirm. Returns a fragment for the import alert ('' = no inventory in file).
+  const handleImportInventory = useCallback(async (state) => {
+    const inv = extractInventory(state)
+    if (!inv.gearPresent && !inv.bandsPresent) return ''
+    const parts = [], cur = []
+    if (inv.gearPresent)  { parts.push(`${inv.gear.length} gear item(s)`);    cur.push(`${gear.length} gear item(s)`) }
+    if (inv.bandsPresent) { parts.push(`${inv.myBands.length} band unit(s)`); cur.push(`${myBands.length} band unit(s)`) }
+    if (!window.confirm(`File contains ${parts.join(' and ')}. This will REPLACE this device's current inventory (${cur.join(', ')}). Continue?`))
+      return ' Inventory: skipped.'
+    const done = []
+    if (inv.gearPresent) {
+      const items = withGearTypes(inv.gear)
+      setGear(items)
+      if (user) {
+        try {
+          const existing = await loadGearFromFirestore(user.uid)
+          await Promise.all(existing.map(g => deleteGearItemFromFirestore(user.uid, g.id)))
+          await Promise.all(items.map(g => saveGearItemToFirestore(user.uid, g)))
+        } catch (e) { console.error('Import gear failed:', e) }
+      } else saveLocalGear(items)
+      done.push(`gear replaced (${items.length})`)
+    }
+    if (inv.bandsPresent) {
+      setMyBands(inv.myBands)
+      if (user) { try { await saveMyBandsToFirestore(user.uid, inv.myBands) } catch (e) { console.error('Import my bands failed:', e) } }
+      else saveLocalMyBands(inv.myBands)
+      done.push(`MY BANDS replaced (${inv.myBands.length})`)
+    }
+    return ` Inventory: ${done.join(', ')}.`
+  }, [user, gear, myBands])
+
   const handleSetMyBands = useCallback(async (next) => {
     setMyBands(next)
     if (user) { try { await saveMyBandsToFirestore(user.uid, next) } catch (e) { console.error('Save my bands failed:', e) } }
@@ -3231,7 +3272,7 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
