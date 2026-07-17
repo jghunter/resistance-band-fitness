@@ -2431,7 +2431,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -2476,6 +2476,8 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
       exportedAt: new Date().toISOString(),
       rbts_log: log,
       rbts_customExercises: getLocalCustomEx(),   // definitions travel with the log
+      rbts_gear: gearInv || [],                   // inventory travels too (file wins on import)
+      rbts_myBands: myBands || [],
     }
     const a = document.createElement('a')
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
@@ -3229,7 +3231,7 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
