@@ -745,7 +745,8 @@ function GearPicker({ inv, selected, onChange }) {
   const removeId = (id) => onChange(sel.filter(x => x !== id))
 
   const filtered = all.filter(g => {
-    if (g.status === 'inbound' && sel.indexOf(g.id) < 0) return false
+    // Inbound gear stays listed (with its amber pill) — orders arrive and get
+    // used before anyone remembers to flip the status dot to owned.
     if (tFilter !== 'All' && (g.type || 'other') !== tFilter) return false
     return true
   }).sort((a, b) => {
