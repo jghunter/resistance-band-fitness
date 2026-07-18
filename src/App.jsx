@@ -2432,7 +2432,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -2477,8 +2477,10 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
       exportedAt: new Date().toISOString(),
       rbts_log: log,
       rbts_customExercises: getLocalCustomEx(),   // definitions travel with the log
-      rbts_gear: gearInv || [],                   // inventory travels too (file wins on import)
-      rbts_myBands: myBands || [],
+      // Inventory only once it has actually loaded — an export taken during the
+      // initial cloud sync would otherwise carry empty arrays, which import as
+      // a deliberate inventory wipe on another device.
+      ...(invLoaded ? { rbts_gear: gearInv || [], rbts_myBands: myBands || [] } : {}),
     }
     const a = document.createElement('a')
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
@@ -2899,6 +2901,7 @@ export default function App() {
   const [customEx, setCustomEx]       = useState(() => getLocalCustomEx())
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
+  const [invLoaded, setInvLoaded]     = useState(false)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -2945,6 +2948,7 @@ export default function App() {
           }
           setMyBands(fsBands)
         } catch (e) { console.error('Error loading my bands:', e); setMyBands(getLocalMyBands()) }
+        setInvLoaded(true)
         // Settings (start date / schedule / program): last-write-wins vs cloud.
         try {
           const localS = getLocalSettings()
@@ -2991,6 +2995,7 @@ export default function App() {
         } catch { setLog([]) }
         setGear(withGearTypes(getLocalGear()))
         setMyBands(getLocalMyBands())
+        setInvLoaded(true)
         setSettings(getLocalSettings())
         setCustomEx(getLocalCustomEx())
       }
@@ -3129,7 +3134,8 @@ export default function App() {
           await Promise.all(existing.map(g => deleteGearItemFromFirestore(user.uid, g.id)))
           await Promise.all(items.map(g => saveGearItemToFirestore(user.uid, g)))
         } catch (e) { cloudOk = false; console.error('Import gear failed:', e) }
-      } else saveLocalGear(items)
+      }
+      saveLocalGear(items)
       done.push(cloudOk ? `gear replaced (${items.length})`
                         : `gear cloud sync FAILED — check connection and re-import`)
     }
@@ -3137,7 +3143,7 @@ export default function App() {
       setMyBands(inv.myBands)
       let cloudOk = true
       if (user) { try { await saveMyBandsToFirestore(user.uid, inv.myBands) } catch (e) { cloudOk = false; console.error('Import my bands failed:', e) } }
-      else saveLocalMyBands(inv.myBands)
+      saveLocalMyBands(inv.myBands)
       done.push(cloudOk ? `MY BANDS replaced (${inv.myBands.length})`
                         : `MY BANDS cloud sync FAILED — check connection and re-import`)
     }
@@ -3276,7 +3282,7 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
