@@ -2905,6 +2905,7 @@ export default function App() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
+      setInvLoaded(false)   // re-gate export until this session's inventory loads
       setUser(u)
       setAuthLoading(false)
       if (u) {
