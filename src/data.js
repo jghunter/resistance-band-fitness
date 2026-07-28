@@ -103,6 +103,13 @@ export const EXERCISE_NAMES = {
   // come from EX_GROUP_OVERRIDE / EX_CLASS_OVERRIDE below. User-added custom
   // exercises use IDs ≥1000 and are merged at load via registerCustomEx.
   216:"Pec Crossover", 217:"Split Squat (Belt)",
+  // ── Workbook additions (24-Week Upper/Lower Tracker, 2026-07-28) ──
+  // Group + iso/comp class carried explicitly via EX_GROUP_OVERRIDE /
+  // EX_CLASS_OVERRIDE below, since these IDs sit outside the range table.
+  218:"Band Leg Press (Supine)", 219:"Band Knee Extension (Seated)",
+  220:"Band Side Plank Row", 221:"Band V-Up", 222:"Banded Bird Dog",
+  223:"Band Lying Y-Raise", 224:"Seated Band Trunk Rotation",
+  225:"Close-Grip Band Pulldown",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1112,6 +1119,252 @@ export const PROGRAMS = [
       week5: [ t("F","chestComp","mechanical_drop_set"),t("G","hinge","pre_exhaustion")       ],
     },
   },
+  // ===== BEGIN generated: 24-Week Upper/Lower Tracker programs =====
+  {
+    id: 26,
+    name: "Hypertrophy 4-Day - Foundation (wks 1-4, 9-11)",
+    note: "Workbook P1. 8-12 reps, 3 sets, 90s rest, RPE 7-8, 2s/2s tempo.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:1, backComp:22}, accessories:{shoulderComp:43, biIso:129, triIso:145, shoulderIso:48, backIso:33} },
+      lowerA: { primary:{quadComp:97, hamComp:117}, accessories:{quadComp2:218, gluteComp:78, calfIso:167, coreFront:59, coreSides:66} },
+      upperB: { primary:{chestComp:3, backComp:28}, accessories:{shoulderComp:56, biIso:131, triIso:144, backIso:39, shoulderIso:47} },
+      lowerB: { primary:{quadComp:217, hamComp:127}, accessories:{gluteComp:79, hamIso:121, calfIso:169, coreFront:61, coreComp:63} },
+    },
+    techniques: {
+      week1: [ t("upperA","chestComp","super_slow"), t("lowerA","quadComp","drop_set") ],
+      week2: [ t("upperB","chestComp","rest_pause"), t("lowerB","quadComp","partials") ],
+      week3: [ t("upperA","backComp","mechanical_drop_set"), t("lowerA","hamComp","pre_exhaustion") ],
+      week4: [ t("upperB","backComp","negative_accentuated"), t("lowerB","hamComp","super_slow") ],
+    },
+  },
+  {
+    id: 27,
+    name: "Hypertrophy 4-Day - Variation (wks 5-8)",
+    note: "Workbook P1 Block 2. Same prescription, swapped exercises.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
+      lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
+      lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
+    },
+    techniques: {
+      week1: [ t("lowerB","quadComp","mechanical_drop_set"), t("upperA","chestIso","pre_exhaustion") ],
+      week2: [ t("lowerA","hamComp","negative_accentuated"), t("upperB","backComp","super_slow") ],
+      week3: [ t("lowerB","hamComp","isometric_hold"), t("upperA","shoulderComp","rest_pause") ],
+      week4: [ t("lowerA","gluteComp","forced_reps"), t("upperB","backIso","mechanical_drop_set") ],
+    },
+  },
+  {
+    id: 28,
+    name: "X3 / Harambe VR - Foundation (wks 1-4, 9-11)",
+    note: "Workbook P2. 15-20 reps, 2-3 sets, 2-3 min rest, 4s/4s tempo. Bar + platform.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:1, backComp:23}, accessories:{shoulderComp:43, biIso:129, triIso:145, shoulderIso:48, backIso:33} },
+      lowerA: { primary:{quadComp:97, hinge:185}, accessories:{calfIso:167, gluteComp:79, hamIso:121, coreFront:59, coreSides:73} },
+      upperB: { primary:{chestComp:3, backComp:28}, accessories:{shoulderComp:56, backIso:39, biIso:131, triIso:148, backIso2:40} },
+      lowerB: { primary:{quadComp:217, hamComp:117}, accessories:{calfIso:169, gluteComp:78, hamIso:123, coreComp:63, coreFront:61} },
+    },
+    techniques: {
+      week1: [ t("upperB","backComp","isometric_hold"), t("lowerB","hamComp","rest_pause") ],
+      week2: [ t("upperA","shoulderComp","forced_reps"), t("lowerA","calfIso","mechanical_drop_set") ],
+      week3: [ t("upperB","shoulderComp","1_quarter_reps"), t("lowerB","calfIso","negative_accentuated") ],
+      week4: [ t("upperA","biIso","drop_set"), t("lowerA","gluteComp","isometric_hold") ],
+    },
+  },
+  {
+    id: 29,
+    name: "X3 / Harambe VR - Variation (wks 5-8)",
+    note: "Workbook P2 Block 2. Bar + platform required.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:2, backComp:24}, accessories:{shoulderComp:45, biIso:135, triIso:145, shoulderIso:49, backIso:34} },
+      lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreFront:59, coreSides:66} },
+      upperB: { primary:{chestComp:6, backComp:30}, accessories:{backIso:40, biIso:141, triIso:144, backIso2:39, shoulderComp:56} },
+      lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
+    },
+    techniques: {
+      week1: [ t("lowerA","gluteComp","1_quarter_reps"), t("upperB","backIso","negative_accentuated") ],
+      week2: [ t("lowerB","gluteComp","drop_set"), t("upperA","biIso","isometric_hold") ],
+      week3: [ t("lowerA","calfIso","partials"), t("upperB","biIso","forced_reps") ],
+      week4: [ t("lowerB","hamIso","pre_exhaustion"), t("upperA","triIso","1_quarter_reps") ],
+    },
+  },
+  {
+    id: 30,
+    name: "Joint-Friendly 4-Day - Foundation (wks 1-4, 9-11)",
+    note: "Workbook P3. 10-15 reps, 3 sets, 90s rest, RPE 7. Same selection as Hypertrophy, lighter prescription.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:1, backComp:22}, accessories:{shoulderComp:43, biIso:129, triIso:145, shoulderIso:48, backIso:33} },
+      lowerA: { primary:{quadComp:97, hamComp:117}, accessories:{quadComp2:218, gluteComp:78, calfIso:167, coreFront:59, coreSides:66} },
+      upperB: { primary:{chestComp:3, backComp:28}, accessories:{shoulderComp:56, biIso:131, triIso:144, backIso:39, shoulderIso:47} },
+      lowerB: { primary:{quadComp:217, hamComp:127}, accessories:{gluteComp:79, hamIso:121, calfIso:169, coreFront:61, coreComp:63} },
+    },
+    techniques: {
+      week1: [ t("upperB","chestComp","partials"), t("lowerB","quadComp","forced_reps") ],
+      week2: [ t("upperA","backComp","pre_exhaustion"), t("lowerA","hamComp","1_quarter_reps") ],
+      week3: [ t("upperB","backComp","super_slow"), t("lowerB","hamComp","drop_set") ],
+      week4: [ t("upperA","shoulderComp","rest_pause"), t("lowerA","quadComp2","partials") ],
+    },
+  },
+  {
+    id: 31,
+    name: "Joint-Friendly 4-Day - Variation (wks 5-8)",
+    note: "Workbook P3 Block 2. 10-15 reps, RPE 7.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
+      lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
+      lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
+    },
+    techniques: {
+      week1: [ t("lowerA","hamComp","super_slow"), t("upperB","backComp","drop_set") ],
+      week2: [ t("lowerB","hamComp","rest_pause"), t("upperA","shoulderComp","partials") ],
+      week3: [ t("lowerA","gluteComp","mechanical_drop_set"), t("upperB","backIso","pre_exhaustion") ],
+      week4: [ t("lowerB","gluteComp","negative_accentuated"), t("upperA","biIso","super_slow") ],
+    },
+  },
+  {
+    id: 32,
+    name: "Built With Science - Foundation (wks 1-4, 9-11)",
+    note: "Workbook BWS tab, mapped to loop-band equivalents.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:1, backComp:23}, accessories:{chestComp2:3, backComp2:32, shoulderIso:48, backComp3:25, chestComp3:6} },
+      lowerA: { primary:{quadComp:97, hamComp:117}, accessories:{quadIso:219, calfIso:167, coreComp:63, coreFront:59, coreSides:73} },
+      upperB: { primary:{chestComp:2, backComp:22}, accessories:{chestIso:9, biIso:136, backIso:33, triIso:148, backIso2:40} },
+      lowerB: { primary:{hinge:185, quadComp:103}, accessories:{hamIso:122, calfIso:168, coreComp:222, coreComp2:63, coreFront:61} },
+    },
+    techniques: {
+      week1: [ t("upperA","backComp","1_quarter_reps"), t("lowerA","hamComp","negative_accentuated") ],
+      week2: [ t("upperB","backComp","drop_set"), t("lowerB","quadComp","isometric_hold") ],
+      week3: [ t("upperA","chestComp2","partials"), t("lowerA","quadIso","forced_reps") ],
+      week4: [ t("upperB","chestIso","pre_exhaustion"), t("lowerB","hamIso","1_quarter_reps") ],
+    },
+  },
+  {
+    id: 33,
+    name: "Built With Science - Substitutions (wks 5-8)",
+    note: "BWS 'Exercise Alternatives' swapped in - each substitute replaces the move it stands in for.",
+    splitId: "upper_lower_4", lengthWeeks: 4,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      upperA: { primary:{chestComp:1, backComp:23}, accessories:{chestComp2:4, backComp2:28, shoulderIso:49, backComp3:26, chestComp3:153} },
+      lowerA: { primary:{quadComp:99, hamComp:126}, accessories:{quadComp2:103, calfIso:169, coreComp:69, coreFront:59, coreSides:73} },
+      upperB: { primary:{chestComp:14, backComp:25}, accessories:{chestIso:216, biComp:142, shoulderIso:51, triIso:148, backIso:40} },
+      lowerB: { primary:{hamComp:117, quadComp:108}, accessories:{hamIso:121, calfIso:173, coreIso:72, coreComp:63, coreFront:61} },
+    },
+    techniques: {
+      week1: [ t("lowerB","quadComp","partials"), t("upperA","chestComp2","forced_reps") ],
+      week2: [ t("lowerA","quadComp2","pre_exhaustion"), t("upperB","chestIso","1_quarter_reps") ],
+      week3: [ t("lowerB","hamIso","super_slow"), t("upperA","backComp2","drop_set") ],
+      week4: [ t("lowerA","calfIso","rest_pause"), t("upperB","biComp","partials") ],
+    },
+  },
+  {
+    id: 34,
+    name: "Takeshima Full-Body (12 wk, 3x/wk)",
+    note: "Takeshima et al. 2013 via Li et al. 2024. 13 exercises, 2-3 sets, 10-15 reps, 60-90s rest, OMNI 5-7.",
+    splitId: "full_body", lengthWeeks: 12,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      fb: { primary:{chestComp:1, backComp:22}, accessories:{shoulderComp:43, backComp2:28, biIso:129, triIso:145, quadComp:218, quadIso:219, hamIso:121, gluteIso:91, gluteComp:79, coreSides:224, coreFront:60} },
+    },
+    techniques: {
+      week1: [ t("fb","backComp","isometric_hold"), t("fb","shoulderComp","rest_pause") ],
+      week2: [ t("fb","backComp2","forced_reps"), t("fb","biIso","mechanical_drop_set") ],
+      week3: [ t("fb","triIso","1_quarter_reps"), t("fb","quadComp","negative_accentuated") ],
+      week4: [ t("fb","quadIso","drop_set"), t("fb","hamIso","isometric_hold") ],
+      week5: [ t("fb","gluteIso","partials"), t("fb","gluteComp","forced_reps") ],
+      week6: [ t("fb","coreSides","pre_exhaustion"), t("fb","coreFront","1_quarter_reps") ],
+      week7: [ t("fb","chestComp","super_slow"), t("fb","backComp","drop_set") ],
+      week8: [ t("fb","shoulderComp","rest_pause"), t("fb","backComp2","partials") ],
+      week9: [ t("fb","biIso","mechanical_drop_set"), t("fb","triIso","pre_exhaustion") ],
+      week10: [ t("fb","quadComp","negative_accentuated"), t("fb","quadIso","super_slow") ],
+      week11: [ t("fb","hamIso","isometric_hold"), t("fb","gluteIso","rest_pause") ],
+    },
+  },
+  {
+    id: 35,
+    name: "ACSM Progressive (12 wk, 3x/wk)",
+    note: "ACSM Position Stand 2009, band-adapted. 12 multi-joint moves, novice to intermediate progression.",
+    splitId: "full_body", lengthWeeks: 12,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      fb: { primary:{quadComp:97, chestComp:1}, accessories:{backComp:22, shoulderComp:43, backComp2:28, hinge:185, quadComp2:217, gluteComp:79, biIso:129, triIso:145, shoulderIso:48, calfIso:167} },
+    },
+    techniques: {
+      week1: [ t("fb","biIso","mechanical_drop_set"), t("fb","triIso","pre_exhaustion") ],
+      week2: [ t("fb","shoulderIso","negative_accentuated"), t("fb","calfIso","super_slow") ],
+      week3: [ t("fb","quadComp","isometric_hold"), t("fb","chestComp","rest_pause") ],
+      week4: [ t("fb","backComp","forced_reps"), t("fb","shoulderComp","mechanical_drop_set") ],
+      week5: [ t("fb","backComp2","1_quarter_reps"), t("fb","hinge","negative_accentuated") ],
+      week6: [ t("fb","quadComp2","drop_set"), t("fb","gluteComp","isometric_hold") ],
+      week7: [ t("fb","biIso","partials"), t("fb","triIso","forced_reps") ],
+      week8: [ t("fb","shoulderIso","pre_exhaustion"), t("fb","calfIso","1_quarter_reps") ],
+      week9: [ t("fb","quadComp","super_slow"), t("fb","chestComp","drop_set") ],
+      week10: [ t("fb","backComp","rest_pause"), t("fb","shoulderComp","partials") ],
+      week11: [ t("fb","backComp2","mechanical_drop_set"), t("fb","hinge","pre_exhaustion") ],
+    },
+  },
+  {
+    id: 36,
+    name: "BandCizer Daily A/B (12 wk, 6x/wk)",
+    note: "Rathleff et al. 2017 via Li et al. 2024. 3x10 at 10-12 RM, 8s TUT (4s/4s), 2 min rest.",
+    splitId: "push_pull", lengthWeeks: 12,
+    // every:0 = no deload inside this block; the workbook puts its
+    // deload at week 12 / 24 of the full cycle, between programs.
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    sessions: {
+      push: { primary:{chestComp:1, shoulderComp:43}, accessories:{triIso:145, quadComp:97, quadIso:219} },
+      pull: { primary:{backComp:22, backComp2:28}, accessories:{biIso:129, hinge:185, hamIso:121} },
+    },
+    techniques: {
+      week1: [ t("pull","biIso","super_slow"), t("push","quadComp","drop_set") ],
+      week2: [ t("pull","hinge","rest_pause"), t("push","quadIso","partials") ],
+      week3: [ t("pull","hamIso","mechanical_drop_set"), t("push","chestComp","pre_exhaustion") ],
+      week4: [ t("pull","backComp","negative_accentuated"), t("push","shoulderComp","super_slow") ],
+      week5: [ t("pull","backComp2","isometric_hold"), t("push","triIso","rest_pause") ],
+      week6: [ t("pull","biIso","forced_reps"), t("push","quadComp","mechanical_drop_set") ],
+      week7: [ t("pull","hinge","1_quarter_reps"), t("push","quadIso","negative_accentuated") ],
+      week8: [ t("pull","hamIso","drop_set"), t("push","chestComp","isometric_hold") ],
+      week9: [ t("pull","backComp","partials"), t("push","shoulderComp","forced_reps") ],
+      week10: [ t("pull","backComp2","pre_exhaustion"), t("push","triIso","1_quarter_reps") ],
+      week11: [ t("pull","biIso","super_slow"), t("push","quadComp","drop_set") ],
+    },
+  },
+  // ===== END generated: 24-Week Upper/Lower Tracker programs =====
 ];
 
 // ── Custom programs (user-authored via the program builder) ──────────────────
@@ -1213,8 +1466,13 @@ export const GROUP_META = {
 // Explicit per-ID group/class for exercises outside the 1–215 ID-range table:
 // the two built-in additions (216/217) plus user-added customs (IDs ≥1000),
 // extended at load via registerCustomEx. Consulted FIRST by exGroup/exClass.
-const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS };
-const EX_CLASS_OVERRIDE = { 217: "comp" };   // 216 (fly) defaults to iso
+const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
+  218: GROUP_META.QUADS, 219: GROUP_META.QUADS, 220: GROUP_META.CORE,
+  221: GROUP_META.CORE, 222: GROUP_META.CORE, 223: GROUP_META.SHOULDERS,
+  224: GROUP_META.CORE, 225: GROUP_META.BACK };
+const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
+  218: "comp", 219: "iso", 220: "comp", 221: "comp", 222: "comp",
+  223: "iso", 224: "iso", 225: "comp" };
 
 export const exGroup = (id) => {
   id = Number(id);

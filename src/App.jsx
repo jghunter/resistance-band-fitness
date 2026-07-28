@@ -227,6 +227,7 @@ const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
 const EX_UNILATERAL = new Set([
   5, 12, 24, 27, 29, 44, 49, 80, 91, 92, 93, 102, 103, 104, 106, 107, 108,
   118, 133, 146, 147, 152, 169, 217,
+  220, 222,   // side plank row, bird dog (per-side)
 ])
 const isUnilateral = (id) => EX_UNILATERAL.has(Number(id))
 const initSets = (id) => isUnilateral(id)

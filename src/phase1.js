@@ -151,6 +151,33 @@
         calves: "legs", core: "legs",
       },
     },
+    // 4-day Upper/Lower with DISTINCT A/B days. The 2-day upper_lower split
+    // above repeats the same session twice a week; this one gives Upper A and
+    // Upper B (and Lower A / Lower B) their own exercise sets, which is what
+    // the 24-week workbook programs (Hypertrophy / X3-Harambe / Joint-Friendly
+    // / Built With Science) actually prescribe. muscleDay routing splits the
+    // A/B pair by movement emphasis — A = horizontal push/pull + squat pattern,
+    // B = vertical press/pull + hinge pattern — so the DERIVED path (used only
+    // when the user overrides the split) still fills all four days. Programs
+    // authored against this split carry all four sessions verbatim.
+    upper_lower_4: {
+      label: "Upper / Lower (4-day A/B)", days: ["upperA", "lowerA", "upperB", "lowerB"],
+      validDayCounts: [4],
+      dayLabels: { upperA: "UPPER A", lowerA: "LOWER A",
+                   upperB: "UPPER B", lowerB: "LOWER B" },
+      muscleDay: {
+        chest: "upperA", back: "upperA", biceps: "upperA", forearms: "upperA",
+        shoulders: "upperB", triceps: "upperB", neck: "upperB",
+        quads: "lowerA", glutes: "lowerA", core: "lowerA",
+        hamstrings: "lowerB", calves: "lowerB",
+      },
+      focusCycles: {
+        upperA: ["Chest", "Back", "Arms"],
+        lowerA: ["Quads", "Glutes", "Abs"],
+        upperB: ["Presses", "Rows", "Shoulders"],
+        lowerB: ["Hamstrings", "Calves", "Deadlifts"],
+      },
+    },
     body_part_5: { label: "Body-Part (legacy)", days: ["C", "D", "E", "F", "G"],
                    legacy: true,
                    freeRotation: true,
