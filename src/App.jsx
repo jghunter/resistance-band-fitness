@@ -1109,51 +1109,26 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
       .sort((a,b) => b.date.localeCompare(a.date))
     return found[0] ? found[0].exercises[exerciseId] : null
   }
-  // Progression flag source: skip deload entries (junk data) and drop sets.
-  // Deload is per the entry's program policy, not a hardcoded week 6.
-  const entryIsDeload = (e) => {
-    if (!e) return false
-    const p = PROGRAMS.find(x => x.id === e.programId)
-    return p ? isDeloadSession(p, e.week, e.session) : e.week === 6
-  }
-  function getPrevWorkingSets(exerciseId) {
-    const found = log
-      .filter(e => e.exercises && e.exercises[exerciseId] && e.date < todayDate && !entryIsDeload(e))
-      .sort((a,b) => b.date.localeCompare(a.date))
-    return found[0] ? found[0].exercises[exerciseId] : null
-  }
-
   function renderCard(slot, id, role) {
-    const prev     = getPrevSets(String(id))
-    // Progression flag: ignore week-6 deload entries, and only count plain
-    // (straight) sets — intensifier/drop sets end at low reps by design.
-    const working  = (getPrevWorkingSets(String(id)) || []).filter(isPlainSet)
-    // Phase 3: double-progression, RIR-gated. Need every plain set at/above the
-    // profile rep target AND logged RIR at/under target (actually near failure)
-    // before recommending more load; high RIR ⇒ reps left ⇒ push reps first.
-    // Per-side logging: L and R sets are evaluated INDEPENDENTLY (reps and
-    // partials can differ per side); untagged sets keep the legacy behavior.
-    const sideReady = (list) => {
-      if (!list.length) return false
-      const rh = list.every(s => (s.reps||0) >= PROG_TARGET_REPS)
-      const rv = list.map(s => s.rir).filter(v => v != null)
-      const ro = rv.length === 0 ? true : Math.max(...rv) <= RIR_TARGET
-      return rh && ro
-    }
-    const bySide = {B:[], L:[], R:[]}
-    working.forEach(s => { bySide[setSide(s)||'B'].push(s) })
-    const progSides = (bySide.L.length || bySide.R.length)
-      ? { hasL:bySide.L.length>0, hasR:bySide.R.length>0,
-          L:sideReady(bySide.L), R:sideReady(bySide.R) }
-      : null
-    const progFlag = progSides
-      ? (progSides.L || progSides.R)          // either side ready → show the flag
-      : sideReady(bySide.B)                   // legacy path — identical to before
+    const prev = getPrevSets(String(id))
+    // Progression flag lives in RBTS_REPORTS.progressionState so the in-workout
+    // card, the printed setup sheet and the HTML app all agree. Same rules:
+    // double progression, RIR gate, independent L/R sides, deload entries and
+    // drop sets excluded.
+    // NOTE: this also FIXES a PWA-only bug. The previous inline version applied
+    // PROG_TARGET_REPS to every exercise, so a time-based hold (plank, carry)
+    // flagged READY at 12 seconds; the module applies the 30-second threshold to
+    // those six ids, matching fitness_app.html.
+    const ps = RBTS_REPORTS.progressionState(
+      makeReportCtx({ log, gear: gearInv, myBands: [] }), id, todayDate)
+    const progSides = ps.sides
+    const progFlag  = ps.ready
+    const stalled   = ps.stalled
     return (
       <LoggedExCard key={slot} id={id} role={role}
         techKey={techMap[slot]||null}
         sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
-        prevSets={prev} progFlag={progFlag} progSides={progSides}
+        prevSets={prev} progFlag={progFlag} progSides={progSides} stalled={stalled}
         gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
         onGearChange={ids=>updateExGear(id,ids)}/>
     )
@@ -1271,6 +1246,145 @@ function bandResMid(res) {
   return (parts[0] + parts[1]) / 2
 }
 let _BAND_RES = null
+// ── Reports: ctx seam + print / markdown / clipboard output ───────────────
+// Mirrors fitness_app.html's plumbing. Data arrives as arguments because the
+// PWA holds log / gear / myBands in App state rather than reading localStorage.
+function makeReportCtx({ log, gear, myBands }) {
+  const gearList = gear || []
+  const bands = myBands || []
+  return {
+    log: log || [],
+    programs: PROGRAMS,
+    // Profile-driven progression targets, NOT the module's fallbacks.
+    progressReps: PROG_TARGET_REPS,
+    rirTarget: RIR_TARGET,
+    bandOf: (id) => BANDS.find(b => b.id === id) || null,
+    gearOf: (id) => gearList.find(g => g.id === id) || null,
+    nameOf: (id) => EXERCISE_NAMES[id] || ('#' + id),
+    groupOf: (id) => exGroup(Number(id)),
+    classOf: (id) => exClass(Number(id)),
+    sessionExOf: getSessionEx,
+    techMapOf: getTechMap,
+    // TECHNIQUES maps key -> one long description STRING, not an object with a
+    // .name. Take the part before the em dash as a short label.
+    techLabelOf: (k) => {
+      const d = TECHNIQUES[k]
+      if (typeof d === 'string' && d.length) {
+        const cut = d.split(/\s+[\u2014-]\s+/)[0]
+        if (cut && cut.length < 40) return cut
+      }
+      return String(k).replace(/^\d+_/, '').replace(/_/g, ' ')
+    },
+    intensLabelOf: (k) => (INTENS[k] && INTENS[k].label) || k,
+    orderSlots: (obj, focusLabel) => orderSlotsByFocus(obj, focusMuscleOf(focusLabel)),
+    initSetsOf: (id) => initSets(id).map(x => (x.side ? { side: x.side } : {})),
+    suggestOf: (bandIds) => suggestProgressionPWA(bandIds, bands),
+    // the PWA has no sessionDisplay; dayName is the equivalent and is imported
+    sessionLabelOf: (p, sKey) => dayName(p, sKey),
+    deloadOf: (e) => {
+      const p = PROGRAMS.find(x => x.id === e.programId)
+      return p ? isDeloadSession(p, e.week, e.session) : e.week === 6
+    },
+    splitDaysOf: progSplitDays,
+    blockWorkoutsOf: progBlockWorkouts,
+    progOf: (id) => PROGRAMS.find(p => p.id === id) || null,
+  }
+}
+
+// Smallest concrete next step: stack the lightest owned band, or step up within
+// the same brand+length family. Mirrors fitness_app.html's suggestProgression,
+// which does not exist in the PWA.
+function suggestProgressionPWA(lastBands, myBands) {
+  if (!lastBands || lastBands.length === 0) return null
+  let pool = myBands.length ? BANDS.filter(b => myBands.includes(b.id)) : BANDS
+  if (!pool.length) pool = BANDS
+  const mid = (b) => RBTS_REPORTS.bandMid(b)
+  let add = null
+  pool.forEach(b => { const m = mid(b); if (m > 0 && (!add || m < mid(add))) add = b })
+  const uniq = {}
+  lastBands.forEach(x => { uniq[x] = (uniq[x] || 0) + 1 })
+  const ids = Object.keys(uniq)
+  let swap = null, cur = null, mult = 0
+  if (ids.length === 1) {
+    cur = BANDS.find(b => b.id === ids[0]); mult = uniq[ids[0]]
+    if (cur) {
+      const curM = mid(cur)
+      pool.forEach(b => {
+        if (b.id === cur.id || b.brand !== cur.brand || b.lengthIn !== cur.lengthIn) return
+        const m = mid(b)
+        if (m > curM && (!swap || m < mid(swap))) swap = b
+      })
+    }
+  }
+  if (!add && !swap) return null
+  return {
+    add: add ? `add ${add.brand.split(' ')[0]} ${add.color} ${add.model} (+${add.res})` : null,
+    swap: (swap && cur)
+      ? `swap to ${swap.brand.split(' ')[0]} ${swap.color} ${swap.model}${mult > 1 ? ' x' + mult : ''} (${swap.res})`
+      : null,
+  }
+}
+
+function printDoc(doc) {
+  let el = document.getElementById('rbts-print-root')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'rbts-print-root'
+    document.body.appendChild(el)
+  }
+  el.innerHTML = RBTS_REPORTS.renderPrintHTML(doc)
+  const cleanup = () => { el.innerHTML = ''; window.removeEventListener('afterprint', cleanup) }
+  window.addEventListener('afterprint', cleanup)
+  window.print()
+}
+
+function downloadMD(doc, filename) {
+  const md = RBTS_REPORTS.renderMarkdown(doc)
+  try {
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) { alert('Could not save the file: ' + e.message) }
+}
+
+// The reliable path on an installed iOS PWA, where window.print() is a no-op.
+function copyMD(doc) {
+  const md = RBTS_REPORTS.renderMarkdown(doc)
+  const fallback = () => {
+    const ta = document.createElement('textarea')
+    ta.value = md; document.body.appendChild(ta); ta.select()
+    try { document.execCommand('copy') } catch { /* nothing else to try */ }
+    document.body.removeChild(ta)
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(md).then(
+      () => alert('Markdown copied to the clipboard.'),
+      () => { fallback(); alert('Markdown copied to the clipboard.') })
+  } else { fallback(); alert('Markdown copied to the clipboard.') }
+}
+
+// doc and name are FUNCTIONS, evaluated on click, so nothing is built until the
+// user actually asks for output.
+function ReportButtons({ label = 'PRINT', doc, name }) {
+  const small = { padding: '6px 14px', fontSize: 10 }
+  const build = () => {
+    try { return doc() }
+    catch (e) { alert('Could not build the report: ' + e.message); return null }
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+      <button style={{ ...btn(false, C.accent), ...small }}
+        onClick={() => { const d = build(); if (d) printDoc(d) }}>{label}</button>
+      <button style={{ ...btn(false, C.green), ...small }}
+        onClick={() => { const d = build(); if (d) downloadMD(d, name()) }}>SAVE .md</button>
+      <button style={{ ...btn(false, '#7ecfff'), ...small }}
+        onClick={() => { const d = build(); if (d) copyMD(d) }}>COPY .md</button>
+    </span>
+  )
+}
+
 function bandResById(id) {
   if (!_BAND_RES) { _BAND_RES = {}; BANDS.forEach(b => { _BAND_RES[b.id] = bandResMid(b.res) }) }
   return _BAND_RES[id] || 0
@@ -2124,6 +2238,22 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
         <span style={{...pill(info.isWk ? C.green : C.dimGray),fontSize:12,padding:'4px 14px'}}>
           {info.isWk ? 'WORKOUT DAY' : 'REST DAY'}
         </span>
+        {/* Setup sheet: on a workout day this is today's session; on a rest day
+            it is the NEXT scheduled one with its real date, so the sheet can be
+            printed the night before. */}
+        <ReportButtons label="PRINT SETUP SHEET"
+          doc={() => {
+            const d = info.isWk ? todayISO : localISO(info.nextDate)
+            return RBTS_REPORTS.buildSetupDoc(
+              makeReportCtx({ log, gear: gearInv, myBands: [] }),
+              { date: d, prog: info.prog, sKey: info.session, week: info.week,
+                workoutNum: info.isWk ? info.num : null,
+                focusLabel: info.focus || null, isDeload: !!info.isDeload })
+          }}
+          name={() => {
+            const d = info.isWk ? todayISO : localISO(info.nextDate)
+            return `setup_${d}_P${info.prog.id}_${info.session}.md`
+          }}/>
       </div>
 
       <details style={widget}>
@@ -2538,6 +2668,13 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         <div><span style={lbl}>SESSIONS</span><span style={readoutStyle}>{entries.length}</span></div>
         <button style={{...btn(false,C.green),padding:'6px 18px',fontSize:11}} onClick={exportCSV}>EXPORT CSV</button>
         <button style={{...btn(false,'#7ecfff'),padding:'6px 18px',fontSize:11}} onClick={exportJSON}>EXPORT JSON</button>
+        {/* Prints exactly what the FROM/TO filter shows: `entries` is the same
+            memo the cards below render from. */}
+        <ReportButtons label="PRINT RANGE"
+          doc={() => RBTS_REPORTS.buildHistoryDoc(
+            makeReportCtx({ log, gear: gearInv, myBands }),
+            { entries, fromDate, toDate, single: false })}
+          name={() => `history_${fromDate || 'all'}_to_${toDate || 'all'}.md`}/>
         <label style={{...btn(false,C.green),padding:'6px 18px',fontSize:11,cursor:'pointer'}}
           title="Add or replace sessions by date — syncs to the cloud when signed in">
           MERGE IMPORT
@@ -2580,6 +2717,11 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 onClick={()=>setEditKey(isEditing?null:entKey)}>
                 {isEditing ? '▾ EDITING' : '✎ EDIT'}
               </button>
+              <ReportButtons label="PRINT"
+                doc={() => RBTS_REPORTS.buildHistoryDoc(
+                  makeReportCtx({ log, gear: gearInv, myBands }),
+                  { entries: [e], single: true })}
+                name={() => `session_${e.date}_${e.session}.md`}/>
             </div>
             {isEditing ? (
               <HistoryEntryEditor entry={e} onSave={onSaveEntry} onDelete={onDeleteEntry}

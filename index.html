@@ -19,6 +19,18 @@
       details summary { list-style: none; }
       details summary::-webkit-details-marker { display: none; }
     </style>
+    <style>
+      /* Print / PDF output. One path serves both the printer and Save-as-PDF:
+         the report renders into #rbts-print-root, which @media print swaps in
+         for the whole app. */
+      #rbts-print-root { display: none; }
+      @media print {
+        #root { display: none !important; }
+        #rbts-print-root { display: block !important; }
+        body { background: #fff !important; color: #000 !important; }
+      }
+      @page { margin: 0.5in; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
