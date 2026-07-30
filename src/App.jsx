@@ -20,6 +20,7 @@ import {
   focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
+import RBTS_REPORTS from './reports.js'
 import { extractInventory } from './backup.js'
 
 // ─────────────────────────────────────────────────────────────────────────────

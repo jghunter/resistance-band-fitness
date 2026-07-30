@@ -71,11 +71,19 @@
    *    The kids' profiles can adopt the conventional assignment instead.
    * ==================================================================== */
   /* Flexible-splits rework (SPEC_programs_flexible_splits.md, FINAL 2026-07-04):
-   * validDayCounts = weekday-stable day counts (warn-don't-block, P2);
-   * focusCycles = rotating per-occurrence emphasis labels (P5);
-   * push_pull (Greg): deadlifts = push -> hams+glutes on push; squats kept off
-   * deadlift day -> quads on pull. back_chest_legs (Greg): front-view/rear-view
-   * rule; core rides with legs to balance counts. Mirrors fitness_app.html.
+   *   validDayCounts — schedule day-counts that keep each split day anchored to
+   *     the same weekday (warn-don't-block; splitScheduleCheck arrives in P2).
+   *   focusCycles — per split day, the rotating "lead with" emphasis label shown
+   *     on the Nth occurrence of that day (engine hookup arrives in P5). Labels
+   *     are deliberately independent of muscleDay routing (a focus can be a
+   *     movement pattern, e.g. "Deadlifts", not just a muscle on that day).
+   *   push_pull routing (Greg 2026-07-04): deadlifts feel like a PUSH → hams +
+   *     glutes live on push day; squats are a hinge with no hinge day and must
+   *     not share an emphasis day with deadlifts → quads live on pull day.
+   *   back_chest_legs routing (Greg 2026-07-04): front-view/rear-view rule —
+   *     what you see facing someone = chest day (chest, biceps, neck, forearms);
+   *     what you see from behind = back day (back, triceps, shoulders);
+   *     core rides with legs to balance exercise counts.
    */
   var SPLITS = {
     full_body:   { label: "Full Body", days: ["fb"], freqNote: "2–3×/wk",
@@ -180,6 +188,9 @@
     },
     body_part_5: { label: "Body-Part (legacy)", days: ["C", "D", "E", "F", "G"],
                    legacy: true,
+                   // freeRotation: designed to drift — C–G rotate continuously
+                   // across any schedule (the original app behavior), so the P2
+                   // split↔schedule check never warns for this split.
                    freeRotation: true,
                    validDayCounts: [5],
                    dayLabels: { C: "CHEST", D: "BACK", E: "TRICEPS",
@@ -328,6 +339,7 @@
   var SCOPED_BASES = ["log", "draft", "startDate", "schedule", "progIdx", "gear"];
   // Keys that stay GLOBAL (shared across profiles):
   var GLOBAL_KEYS = ["rbts_customBands", "rbts_hiddenBrands", "rbts_customPrograms",
+                     "rbts_customExercises",
                      "rbts_profiles", "rbts_activeProfile", "rbts_schemaMigrated"];
   var FLAT = {  // legacy flat keys we migrate FROM
     log: "rbts_log", draft: "rbts_draft", startDate: "rbts_startDate",
