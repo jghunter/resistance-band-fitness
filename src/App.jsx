@@ -1404,6 +1404,215 @@ function entryStats(entry) {
 function fmtNum(n) { n = Math.round(n||0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
 function fmtPct(p) { if (p == null || !isFinite(p)) return '—'; return (p>=0?'+':'') + p.toFixed(0) + '%' }
 
+// ── ANALYZE TAB ───────────────────────────────────────────────────────────
+// Narrative progress analysis. STRENGTH stays the raw-numbers dashboard; this
+// is the interpretation layer. Every figure comes from RBTS_REPORTS.analyze, so
+// this view, the printed report, and the HTML app cannot disagree.
+const ANALYZE_WINDOWS = [
+  { key:'block', label:'CURRENT BLOCK' },
+  { key:'30',    label:'30 DAYS' },
+  { key:'90',    label:'90 DAYS' },
+  { key:'365',   label:'1 YEAR' },
+  { key:'all',   label:'ALL TIME' },
+]
+const VERDICT_COLOR = {
+  READY: C.green, GROWING: C.green, STALLED: C.amber,
+  DECLINING: C.red, NEAR: C.readout, HOLDING: C.dimGray,
+  EX_DORMANT: C.deload,
+}
+const BALANCE_COLOR = { UNDER: C.amber, OVER: C.readout, OK: C.green,
+                        EXEMPT: C.dimGray, NONE: C.dimGray }
+const SEVERITY_COLOR = { 1:C.red, 2:C.red, 3:C.amber, 4:C.amber, 5:C.green, 6:C.dimGray }
+
+function AnalyzeTab({ log, gearInv, myBands, settings }) {
+  const [win, setWin] = useState('90')
+  const prog = PROGRAMS[Number(settings?.progIdx) || 0] || PROGRAMS[0]
+
+  const res = useMemo(() => {
+    try {
+      return RBTS_REPORTS.analyze(
+        makeReportCtx({ log, gear: gearInv, myBands }), { window: win, prog })
+    } catch (e) { return { error: e.message } }
+  }, [win, log, gearInv, myBands, settings])
+
+  if (res.error) return (
+    <div style={{...widget, border:'1px solid '+C.red}}>
+      <span style={{fontFamily:'monospace',fontSize:12,color:C.red}}>
+        Could not analyze the log: {res.error}
+      </span>
+    </div>
+  )
+
+  const R2 = RBTS_REPORTS
+  const doc = () => R2.buildAnalysisDoc(res)
+  const docName = () => `analysis_${localISO()}_${win}.md`
+
+  const toolbar = (
+    <div style={{...widget, display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
+      <span style={{...lbl, marginBottom:0, marginRight:6}}>WINDOW</span>
+      {ANALYZE_WINDOWS.map(w => (
+        <button key={w.key} style={{...btn(win===w.key), fontSize:10, padding:'5px 10px'}}
+          onClick={() => setWin(w.key)}>{w.label}</button>
+      ))}
+      <span style={{marginLeft:'auto'}}>
+        <ReportButtons label="PRINT ANALYSIS" doc={doc} name={docName}/>
+      </span>
+    </div>
+  )
+
+  if (!res.totals.sessions) return (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {toolbar}
+      <div style={{...widget, textAlign:'center', padding:40}}>
+        <span style={{fontFamily:'monospace',fontSize:13,color:C.dimGray}}>
+          No sessions logged in this window. Log a workout on the TODAY tab and
+          the analysis will fill in.
+        </span>
+      </div>
+    </div>
+  )
+
+  const statCard = (label, value, sub, color) => (
+    <div style={{...widget, flex:'1 1 150px', minWidth:150}}>
+      <span style={lbl}>{label}</span>
+      <div style={{...readoutStyle, color: color || C.text}}>{value}</div>
+      {sub ? <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>{sub}</span> : null}
+    </div>
+  )
+  const volSub = res.deltas.volume == null ? null
+    : `${R2.fmtDelta(res.deltas.volume)} vs previous period`
+  const volColor = res.deltas.volume == null ? C.text
+    : (res.deltas.volume >= 0 ? C.green : C.amber)
+  const prCount = res.exercises.filter(r => r.isPR).length
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {toolbar}
+
+      <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+        {statCard('SESSIONS', res.totals.sessions, res.window.label)}
+        {statCard('SETS', R2.fmtNum(res.totals.sets))}
+        {statCard('VOLUME', R2.fmtNum(res.totals.volume), volSub, volColor)}
+        {statCard('PRs', prCount, 'this window', prCount ? C.green : C.dimGray)}
+      </div>
+
+      {/* Recommendations lead: the actionable part belongs at the top on screen. */}
+      <div style={widget}>
+        <span style={lbl}>RECOMMENDATIONS</span>
+        {res.recommendations.length === 0 ? (
+          <div style={{fontFamily:'monospace',fontSize:11,color:C.green}}>
+            Nothing needs attention in this window.
+          </div>
+        ) : res.recommendations.map((r,i) => (
+          <div key={i} style={{display:'flex',gap:8,alignItems:'baseline',
+            padding:'5px 0',borderBottom:'1px solid '+C.bgInput}}>
+            <span style={{...pill(SEVERITY_COLOR[r.severity]||C.dimGray), fontSize:9, flexShrink:0}}>
+              {r.code}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:11,color:C.text,lineHeight:1.5}}>
+              {r.text}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={widget}>
+        <span style={lbl}>BY MUSCLE GROUP</span>
+        {res.groups.map(g => (
+          <div key={g.label} style={{display:'flex',gap:8,alignItems:'center',
+            padding:'4px 0',flexWrap:'wrap'}}>
+            <span style={{fontFamily:'monospace',fontSize:11,color:C.text,width:100,flexShrink:0}}>
+              {g.label}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.accent,letterSpacing:'-0.05em'}}>
+              {R2.barText(g.share, 20)}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.readout,width:44,textAlign:'right'}}>
+              {Math.round(g.share)}%
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+              {g.sets} sets · {g.weeklySets.toFixed(1)}/wk{g.landmark != null ? ` of ${g.landmark}` : ''}
+            </span>
+            {g.balance !== 'OK' && g.balance !== 'EXEMPT' && g.balance !== 'NONE' && (
+              <span style={{...pill(BALANCE_COLOR[g.balance]), fontSize:9}}>{g.balance}</span>
+            )}
+            {(g.neglect === 'NEGLECTED' || g.neglect === 'DORMANT') && (
+              <span style={{...pill(C.red), fontSize:9}}>{g.neglect}</span>
+            )}
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginLeft:'auto'}}>
+              {g.daysSince == null ? 'never' : `${g.daysSince}d ago`}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={widget}>
+        <span style={lbl}>BY EXERCISE</span>
+        {res.exercises.map(r => (
+          <div key={r.id} style={{padding:'6px 0',borderBottom:'1px solid '+C.bgInput}}>
+            <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+              <span style={{...pill(exGroup(Number(r.id)).color), fontSize:9}}>{r.group}</span>
+              <span style={{fontFamily:'monospace',fontSize:12,color:C.text}}>{r.name}</span>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+                {r.n}× · {R2.fmtNum(r.firstTop)}→{R2.fmtNum(r.lastTop)} lb · {R2.fmtDelta(r.deltaPct)}
+              </span>
+              {r.isPR && <span style={{...pill(C.green), fontSize:9}}>PR</span>}
+              <span style={{...pill(VERDICT_COLOR[r.verdict.code]||C.dimGray), fontSize:9, marginLeft:'auto'}}>
+                {r.verdict.code}
+              </span>
+            </div>
+            <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,marginTop:3,lineHeight:1.5}}>
+              {r.verdict.text}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {res.blocks.length > 0 && (
+        <div style={widget}>
+          <span style={lbl}>BY PROGRAM BLOCK</span>
+          {res.blocks.map((b,i) => (
+            <div key={i} style={{display:'flex',gap:10,alignItems:'baseline',
+              padding:'5px 0',flexWrap:'wrap',borderBottom:'1px solid '+C.bgInput}}>
+              <span style={{fontFamily:'monospace',fontSize:11,color:C.readout}}>
+                P{b.programId} {b.name}
+              </span>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+                {b.from} → {b.to}
+              </span>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.text}}>
+                {b.logged}/{b.prescribed == null ? '?' : b.prescribed} sessions
+                {b.adherence != null ? ` (${Math.round(b.adherence)}%)` : ''}
+              </span>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+                {R2.fmtNum(b.volPerSession)} vol/session
+              </span>
+              {b.vsPrev && b.vsPrev.volPerSession != null && (
+                <span style={{fontFamily:'monospace',fontSize:10,
+                  color: b.vsPrev.volPerSession >= 0 ? C.green : C.amber}}>
+                  {R2.fmtDelta(b.vsPrev.volPerSession)} vs previous
+                </span>
+              )}
+            </div>
+          ))}
+          <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:8,lineHeight:1.5}}>
+            {res.notes[1]}
+          </div>
+        </div>
+      )}
+
+      {res.unlogged.length > 0 && (
+        <div style={widget}>
+          <span style={lbl}>PRESCRIBED BUT UNLOGGED</span>
+          <div style={{fontFamily:'monospace',fontSize:10,color:C.amber,lineHeight:1.7}}>
+            {res.unlogged.map(u => `${u.name} (${u.group})`).join(' · ')}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StrengthTab({ log }) {
   const [win, setWin] = useState('30')
   const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
@@ -3412,7 +3621,7 @@ export default function App() {
 
       {/* Nav */}
       <div style={{background:C.bgPanel,borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex'}}>
-        {['today','history','strength','programs','library','gear'].map(t => (
+        {['today','history','strength','analyze','programs','library','gear'].map(t => (
           <button key={t} style={tabStyle(tab===t)} onClick={()=>setTab(t)}>
             {t.charAt(0).toUpperCase()+t.slice(1)}
           </button>
@@ -3429,6 +3638,7 @@ export default function App() {
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
         {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
+        {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
         {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear}/>}
