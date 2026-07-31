@@ -7,3 +7,28 @@
 # Pin the generated files to LF so the comparison stays meaningful.
 src/reports.js text eol=lf
 src/phase1.js  text eol=lf
+
+# 2026-07-31: App.jsx and data.js were NOT pinned, and a deploy warned
+# "LF will be replaced by CRLF the next time Git touches it". They are not
+# generated wholesale, but they are machine-edited:
+#   - gen_workbook_programs.py splices programs 26-36 into data.js
+#   - rebalance_legs_p1_p12.py --check reads data.js
+#   - test_workbook_programs_pwa.mjs / test_pwa_parity_engine.mjs compare them
+#     against fitness_app.html
+# Those writers emit LF. If a checkout, merge or clone hands them back as CRLF,
+# the next scripted edit produces a whole-file diff and the parity suites start
+# failing in a way that looks like a real regression. That exact hazard is
+# recorded in CLAUDE.md; this is the other half of the fix.
+#
+# The project convention is LF. Pin every source file, not just the generated
+# two, so no future file inherits the problem.
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.md   text eol=lf
+
+# EXCEPT batch files. cmd.exe can mis-parse an LF-only .bat - `goto` to a label
+# is the classic failure, and deploy.bat uses one. These stay CRLF everywhere.
+*.bat  text eol=crlf
