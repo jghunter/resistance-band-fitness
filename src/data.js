@@ -6,7 +6,13 @@ import RBTS_PHASE1 from './phase1.js'   // Phase-1 config (SPLITS, etc.)
 export const C = {
   bgDeep:"#050810", bgPanel:"#0a0f1e", bgWidget:"#0d1b2a", bgInput:"#111827",
   accent:"#00d4ff", accentDim:"rgba(0,212,255,0.4)", accentGlow:"rgba(0,212,255,0.25)",
-  amber:"#f59e0b", red:"#ef4444", green:"#22c55e", dimGray:"#4b5563",
+  amber:"#f59e0b", red:"#ef4444", green:"#22c55e",
+  /* dimGray carries the prescription line, set numbers, unit labels and the RIR
+     field label. At #4b5563 it measured 2.53:1 against the panel background —
+     WCAG AA needs 4.5:1. #78849a is the dimmest value clearing AA on all four
+     background shades (worst case 4.61:1) while staying visibly dimmer than
+     textSec. Mirrors fitness_app.html. */
+  dimGray:"#78849a",
   text:"#e2e8f0", textSec:"#94a3b8", readout:"#00d4ff", deload:"#a855f7",
 };
 
@@ -373,9 +379,9 @@ export const PROGRAMS = [
   { id:1, name:"Foundation",
     sessions:{
       C:{primary:{chestComp:1,chestIso:9},accessories:{back:34,triceps:147,biceps:131,forearms:157,neck:177,calves:167,coreFront:59, glutes: 78}},
-      D:{primary:{backComp:21,backIso:28},accessories:{chest:6,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreBack:42, hams: 117}},
+      D:{primary:{backComp:21,backIso:28},accessories:{chest:6,triceps:148,biceps:133,calves:168,coreBack:42, hams: 117, quads:107, glutes:87}},
       E:{primary:{triComp:149,triIso:144},accessories:{chest:3,back:33,biceps:130,forearms:163,neck:179,calves:169,coreSides:72}},
-      F:{primary:{biComp:134,biIso:129},accessories:{chest:11,back:25,triceps:152,forearms:164,neck:180,calves:170,core:63, shoulders: 43}},
+      F:{primary:{biComp:134,biIso:129},accessories:{chest:11,back:25,triceps:152,calves:170,core:63, shoulders: 43, quads:102, hams:123}},
       G:{primary:{coreComp:64,coreIso:62},accessories:{chest:2,back:39,triceps:145,biceps:136,forearms:165,neck:181,calves:171, quads: 97}},
     },
     techniques:{
@@ -389,9 +395,9 @@ export const PROGRAMS = [
   { id:2, name:"Low-to-High",
     sessions:{
       C:{primary:{chestComp:2,chestIso:10},accessories:{back:33,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreFront:60, glutes: 79}},
-      D:{primary:{backComp:22,backIso:29},accessories:{chest:7,triceps:151,biceps:130,forearms:159,neck:179,calves:169,coreBack:71, hams: 118}},
+      D:{primary:{backComp:22,backIso:29},accessories:{chest:7,triceps:151,biceps:130,calves:169,coreBack:71, hams: 118, quads:108, glutes:88}},
       E:{primary:{triComp:150,triIso:145},accessories:{chest:4,back:34,biceps:132,forearms:164,neck:180,calves:170,coreSides:66}},
-      F:{primary:{biComp:135,biIso:130},accessories:{chest:12,back:26,triceps:154,forearms:165,neck:181,calves:171,core:65, shoulders: 44}},
+      F:{primary:{biComp:135,biIso:130},accessories:{chest:12,back:26,triceps:154,calves:171,core:65, shoulders: 44, quads:103, hams:124}},
       G:{primary:{coreComp:64,coreIso:61},accessories:{chest:5,back:40,triceps:146,biceps:137,forearms:166,neck:182,calves:172, quads: 98}},
     },
     techniques:{
@@ -405,9 +411,9 @@ export const PROGRAMS = [
   { id:3, name:"High-to-Low",
     sessions:{
       C:{primary:{chestComp:3,chestIso:11},accessories:{back:22,triceps:151,biceps:132,forearms:159,neck:179,calves:169,coreFront:61, glutes: 80}},
-      D:{primary:{backComp:23,backIso:30},accessories:{chest:5,triceps:152,biceps:134,forearms:160,neck:180,calves:170,coreBack:75, hams: 119}},
+      D:{primary:{backComp:23,backIso:30},accessories:{chest:5,triceps:152,biceps:134,calves:170,coreBack:75, hams: 119, quads:109, glutes:89}},
       E:{primary:{triComp:153,triIso:146},accessories:{chest:8,back:35,biceps:129,forearms:161,neck:181,calves:171,coreSides:67}},
-      F:{primary:{biComp:138,biIso:131},accessories:{chest:13,back:27,triceps:155,forearms:162,neck:182,calves:172,core:69, shoulders: 45}},
+      F:{primary:{biComp:138,biIso:131},accessories:{chest:13,back:27,triceps:155,calves:172,core:69, shoulders: 45, quads:104, hams:125}},
       G:{primary:{coreComp:65,coreIso:75},accessories:{chest:6,back:41,triceps:149,biceps:138,forearms:157,neck:183,calves:173, quads: 99}},
     },
     techniques:{
@@ -421,9 +427,9 @@ export const PROGRAMS = [
   { id:4, name:"Single-Arm Focus",
     sessions:{
       C:{primary:{chestComp:4,chestIso:12},accessories:{back:21,triceps:152,biceps:133,forearms:160,neck:180,calves:170,coreFront:62, glutes: 81}},
-      D:{primary:{backComp:24,backIso:33},accessories:{chest:8,triceps:154,biceps:132,forearms:161,neck:181,calves:171,coreBack:69, hams: 120}},
+      D:{primary:{backComp:24,backIso:33},accessories:{chest:8,triceps:154,biceps:132,calves:171,coreBack:69, hams: 120, quads:110, glutes:90}},
       E:{primary:{triComp:149,triIso:147},accessories:{chest:6,back:28,biceps:135,forearms:162,neck:182,calves:172,coreSides:68}},
-      F:{primary:{biComp:139,biIso:132},accessories:{chest:14,back:23,triceps:156,forearms:163,neck:183,calves:173,core:70, shoulders: 46}},
+      F:{primary:{biComp:139,biIso:132},accessories:{chest:14,back:23,triceps:156,calves:173,core:70, shoulders: 46, quads:105, hams:126}},
       G:{primary:{coreComp:66,coreIso:59},accessories:{chest:9,back:29,triceps:150,biceps:140,forearms:164,neck:184,calves:174, quads: 100}},
     },
     techniques:{
@@ -437,9 +443,9 @@ export const PROGRAMS = [
   { id:5, name:"Overhead Emphasis",
     sessions:{
       C:{primary:{chestComp:5,chestIso:13},accessories:{back:39,triceps:154,biceps:131,forearms:161,neck:181,calves:171,coreFront:69, glutes: 82}},
-      D:{primary:{backComp:25,backIso:34},accessories:{chest:14,triceps:155,biceps:131,forearms:162,neck:182,calves:172,coreBack:76, hams: 121}},
+      D:{primary:{backComp:25,backIso:34},accessories:{chest:14,triceps:155,biceps:131,calves:172,coreBack:76, hams: 121, quads:111, glutes:91}},
       E:{primary:{triComp:150,triIso:148},accessories:{chest:1,back:36,biceps:133,forearms:163,neck:183,calves:173,coreSides:74}},
-      F:{primary:{biComp:142,biIso:133},accessories:{chest:15,back:31,triceps:144,forearms:164,neck:184,calves:174,core:73, shoulders: 47}},
+      F:{primary:{biComp:142,biIso:133},accessories:{chest:15,back:31,triceps:144,calves:174,core:73, shoulders: 47, quads:106, hams:127}},
       G:{primary:{coreComp:67,coreIso:71},accessories:{chest:10,back:42,triceps:148,biceps:141,forearms:165,neck:177,calves:175, quads: 101}},
     },
     techniques:{
@@ -453,9 +459,9 @@ export const PROGRAMS = [
   { id:6, name:"Squeeze & Contract",
     sessions:{
       C:{primary:{chestComp:6,chestIso:16},accessories:{back:28,triceps:155,biceps:129,forearms:162,neck:182,calves:172,coreFront:70, glutes: 83}},
-      D:{primary:{backComp:26,backIso:35},accessories:{chest:15,triceps:156,biceps:136,forearms:163,neck:183,calves:173,coreBack:73, hams: 122}},
+      D:{primary:{backComp:26,backIso:35},accessories:{chest:15,triceps:156,biceps:136,calves:173,coreBack:73, hams: 122, quads:112, glutes:92}},
       E:{primary:{triComp:153,triIso:151},accessories:{chest:2,back:37,biceps:134,forearms:164,neck:184,calves:174,coreSides:77}},
-      F:{primary:{biComp:134,biIso:136},accessories:{chest:16,back:32,triceps:147,forearms:165,neck:177,calves:175,core:76, shoulders: 48}},
+      F:{primary:{biComp:134,biIso:136},accessories:{chest:16,back:32,triceps:147,calves:175,core:76, shoulders: 48, quads:107, hams:128}},
       G:{primary:{coreComp:68,coreIso:72},accessories:{chest:11,back:30,triceps:145,biceps:129,forearms:166,neck:178,calves:176, quads: 102}},
     },
     techniques:{
@@ -469,9 +475,9 @@ export const PROGRAMS = [
   { id:7, name:"Unilateral Drive",
     sessions:{
       C:{primary:{chestComp:7,chestIso:18},accessories:{back:25,triceps:156,biceps:130,forearms:163,neck:183,calves:173,coreFront:71, glutes: 84}},
-      D:{primary:{backComp:27,backIso:39},accessories:{chest:17,triceps:144,biceps:137,forearms:164,neck:184,calves:174,coreBack:74, hams: 123}},
+      D:{primary:{backComp:27,backIso:39},accessories:{chest:17,triceps:144,biceps:137,calves:174,coreBack:74, hams: 123, quads:113, glutes:93}},
       E:{primary:{triComp:149,triIso:152},accessories:{chest:9,back:38,biceps:140,forearms:165,neck:177,calves:175,coreSides:63}},
-      F:{primary:{biComp:135,biIso:137},accessories:{chest:17,back:22,triceps:148,forearms:166,neck:178,calves:176,core:77, shoulders: 49}},
+      F:{primary:{biComp:135,biIso:137},accessories:{chest:17,back:22,triceps:148,calves:176,core:77, shoulders: 49, quads:108, hams:117}},
       G:{primary:{coreComp:69,coreIso:62},accessories:{chest:12,back:33,triceps:150,biceps:142,forearms:157,neck:179,calves:167, quads: 103}},
     },
     techniques:{
@@ -485,9 +491,9 @@ export const PROGRAMS = [
   { id:8, name:"Tempo & Control",
     sessions:{
       C:{primary:{chestComp:8,chestIso:9},accessories:{back:35,triceps:144,biceps:131,forearms:164,neck:184,calves:174,coreFront:76, glutes: 85}},
-      D:{primary:{backComp:31,backIso:40},accessories:{chest:19,triceps:147,biceps:131,forearms:165,neck:177,calves:175,coreBack:42, hams: 124}},
+      D:{primary:{backComp:31,backIso:40},accessories:{chest:19,triceps:147,biceps:131,calves:175,coreBack:42, hams: 124, quads:114, glutes:94}},
       E:{primary:{triComp:150,triIso:154},accessories:{chest:10,back:21,biceps:143,forearms:166,neck:178,calves:176,coreSides:64}},
-      F:{primary:{biComp:138,biIso:140},accessories:{chest:18,back:34,triceps:146,forearms:157,neck:179,calves:167,core:59, shoulders: 50}},
+      F:{primary:{biComp:138,biIso:140},accessories:{chest:18,back:34,triceps:146,calves:167,core:59, shoulders: 50, quads:109, hams:118}},
       G:{primary:{coreComp:70,coreIso:60},accessories:{chest:13,back:26,triceps:153,biceps:129,forearms:158,neck:180,calves:168, quads: 104}},
     },
     techniques:{
@@ -501,9 +507,9 @@ export const PROGRAMS = [
   { id:9, name:"Rotation & Reach",
     sessions:{
       C:{primary:{chestComp:14,chestIso:10},accessories:{back:26,triceps:145,biceps:130,forearms:165,neck:177,calves:175,coreFront:60, glutes: 86}},
-      D:{primary:{backComp:32,backIso:41},accessories:{chest:20,triceps:148,biceps:130,forearms:166,neck:178,calves:176,coreBack:69, hams: 125}},
+      D:{primary:{backComp:32,backIso:41},accessories:{chest:20,triceps:148,biceps:130,calves:176,coreBack:69, hams: 125, quads:115, glutes:95}},
       E:{primary:{triComp:153,triIso:155},accessories:{chest:11,back:22,biceps:141,forearms:157,neck:179,calves:167,coreSides:65}},
-      F:{primary:{biComp:139,biIso:141},accessories:{chest:19,back:35,triceps:149,forearms:158,neck:180,calves:168,core:61, shoulders: 52}},
+      F:{primary:{biComp:139,biIso:141},accessories:{chest:19,back:35,triceps:149,calves:168,core:61, shoulders: 52, quads:110, hams:119}},
       G:{primary:{coreComp:73,coreIso:61},accessories:{chest:1,back:27,triceps:155,biceps:135,forearms:159,neck:181,calves:169, quads: 105}},
     },
     techniques:{
@@ -517,9 +523,9 @@ export const PROGRAMS = [
   { id:10, name:"Full-Range Strength",
     sessions:{
       C:{primary:{chestComp:15,chestIso:11},accessories:{back:24,triceps:146,biceps:131,forearms:166,neck:178,calves:176,coreFront:61, glutes: 87}},
-      D:{primary:{backComp:36,backIso:42},accessories:{chest:1,triceps:149,biceps:129,forearms:157,neck:179,calves:167,coreBack:75, hams: 126}},
+      D:{primary:{backComp:36,backIso:42},accessories:{chest:1,triceps:149,biceps:129,calves:167,coreBack:75, hams: 126, quads:116, glutes:96}},
       E:{primary:{triComp:149,triIso:156},accessories:{chest:12,back:23,biceps:142,forearms:158,neck:180,calves:168,coreSides:72}},
-      F:{primary:{biComp:142,biIso:143},accessories:{chest:20,back:36,triceps:151,forearms:159,neck:181,calves:169,core:62, shoulders: 53}},
+      F:{primary:{biComp:142,biIso:143},accessories:{chest:20,back:36,triceps:151,calves:169,core:62, shoulders: 53, quads:111, hams:120}},
       G:{primary:{coreComp:74,coreIso:62},accessories:{chest:2,back:28,triceps:156,biceps:136,forearms:160,neck:182,calves:170, quads: 106}},
     },
     techniques:{
@@ -533,9 +539,9 @@ export const PROGRAMS = [
   { id:11, name:"Stretch & Contract",
     sessions:{
       C:{primary:{chestComp:17,chestIso:12},accessories:{back:27,triceps:147,biceps:130,forearms:157,neck:179,calves:167,coreFront:62, glutes: 88}},
-      D:{primary:{backComp:37,backIso:28},accessories:{chest:2,triceps:150,biceps:141,forearms:158,neck:180,calves:168,coreBack:76, hams: 127}},
+      D:{primary:{backComp:37,backIso:28},accessories:{chest:2,triceps:150,biceps:141,calves:168,coreBack:76, hams: 127, quads:97, glutes:78}},
       E:{primary:{triComp:150,triIso:144},accessories:{chest:13,back:24,biceps:143,forearms:159,neck:181,calves:169,coreSides:73}},
-      F:{primary:{biComp:134,biIso:129},accessories:{chest:3,back:29,triceps:152,forearms:160,neck:182,calves:170,core:71, shoulders: 56}},
+      F:{primary:{biComp:134,biIso:129},accessories:{chest:3,back:29,triceps:152,calves:170,core:71, shoulders: 56, quads:112, hams:121}},
       G:{primary:{coreComp:76,coreIso:59},accessories:{chest:4,back:37,triceps:145,biceps:137,forearms:161,neck:183,calves:171, quads: 107}},
     },
     techniques:{
@@ -549,9 +555,9 @@ export const PROGRAMS = [
   { id:12, name:"Peak Intensity",
     sessions:{
       C:{primary:{chestComp:19,chestIso:13},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:180,calves:168,coreFront:69, glutes: 89}},
-      D:{primary:{backComp:38,backIso:30},accessories:{chest:3,triceps:151,biceps:143,forearms:159,neck:181,calves:169,coreBack:42, hams: 128}},
+      D:{primary:{backComp:38,backIso:30},accessories:{chest:3,triceps:151,biceps:143,calves:169,coreBack:42, hams: 128, quads:98, glutes:79}},
       E:{primary:{triComp:153,triIso:145},accessories:{chest:14,back:40,biceps:139,forearms:160,neck:182,calves:170,coreSides:64}},
-      F:{primary:{biComp:135,biIso:130},accessories:{chest:4,back:41,triceps:154,forearms:161,neck:183,calves:171,core:75, shoulders: 57}},
+      F:{primary:{biComp:135,biIso:130},accessories:{chest:4,back:41,triceps:154,calves:171,core:75, shoulders: 57, quads:113, hams:122}},
       G:{primary:{coreComp:77,coreIso:71},accessories:{chest:15,back:38,triceps:146,biceps:134,forearms:162,neck:184,calves:172, quads: 108}},
     },
     techniques:{
@@ -1458,6 +1464,10 @@ export const GROUP_META = {
   TRICEPS:    {label:"TRICEPS",   color:"#f59e0b"},
   FOREARMS:   {label:"FOREARMS",  color:"#94a3b8"},
   CALVES:     {label:"CALVES",    color:"#38bdf8"},
+  // Tibialis anterior is a DORSIFLEXOR — the calves' antagonist, not part of
+  // them. Credited to CALVES it inflated calf volume against a 4-set landmark
+  // while the muscle that governs toe clearance went unmeasured.
+  TIBIALIS:   {label:"TIBIALIS",  color:"#22d3ee"},
   NECK:       {label:"NECK",      color:"#f87171"},
   "FULL BODY":{label:"FULL BODY", color:"#00d4ff"},
   MOBILITY:   {label:"MOBILITY",  color:"#86efac"},
@@ -1469,7 +1479,15 @@ export const GROUP_META = {
 const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   218: GROUP_META.QUADS, 219: GROUP_META.QUADS, 220: GROUP_META.CORE,
   221: GROUP_META.CORE, 222: GROUP_META.CORE, 223: GROUP_META.SHOULDERS,
-  224: GROUP_META.CORE, 225: GROUP_META.BACK };
+  224: GROUP_META.CORE, 225: GROUP_META.BACK,
+  // Panel recommendation 20 — classification errors, fixed 2026-07-30.
+  // 37/38 are hip hinges: the hamstrings and glutes do the work and the back
+  // holds an isometric position. Sitting in the BACK id range credited their
+  // entire volume to BACK, inflating BACK and hiding a hamstring gap.
+  37: GROUP_META.HAMSTRINGS,   // Band Romanian Deadlift
+  38: GROUP_META.HAMSTRINGS,   // Band Good Morning
+  172: GROUP_META.TIBIALIS,    // Tibialis Raise
+  176: GROUP_META.TIBIALIS };  // Seated Tibialis Raise
 const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   218: "comp", 219: "iso", 220: "comp", 221: "comp", 222: "comp",
   223: "iso", 224: "iso", 225: "comp" };
@@ -1494,13 +1512,16 @@ export const exGroup = (id) => {
 };
 
 export const ALL_GROUPS = ["All","CHEST","BACK","SHOULDERS","CORE","GLUTES","QUADS",
-  "HAMSTRINGS","BICEPS","TRICEPS","FOREARMS","CALVES","NECK","FULL BODY","MOBILITY"];
+  "HAMSTRINGS","BICEPS","TRICEPS","FOREARMS","CALVES","TIBIALIS","NECK","FULL BODY","MOBILITY"];
 
 // Isolation (single-joint) vs compound (multi-joint) vs other (mobility / stretch
 // / carry / static hold). Derived from the exercise library (1–215). Used by the
 // program builder's validator to enforce a focused iso+compound pair/triplet and
 // to order primary lifts isolation-first. Anything not listed below is isolation.
-const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,31,32,36,37,38,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,139,142,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
+// Panel recommendation 20 — 2026-07-30. ADDED 28/29 (pulldowns): multi-joint,
+// and they occupy PRIMARY COMPOUND slots in 9 programs. REMOVED 139/142 (21s,
+// supinated straight-bar curl): a curl is single-joint elbow flexion.
+const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,36,37,38,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
 const EX_OTHER_IDS = new Set([112,166,191,192,193,194,198,199,203,204,205,206,207,208,209,210,211,212,213,214,215]);
 export const exClass = (id) => { id = Number(id); return EX_CLASS_OVERRIDE[id] || (EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"); };
 
@@ -2141,7 +2162,55 @@ export function deloadProtocolText(prog) {
 }
 
 const TECH_SCHEDULES = {};
+/* ── TRAINING STYLE (per-profile) — mirrors fitness_app.html ────────────────
+   defaultSets  null = follow the program's prescription (legacy behavior).
+                a number = seed exactly that many set rows, program ignored.
+   volumeModel  "standard" = the analyzer's absolute weekly set landmarks apply.
+                "hit" = single-set-to-failure; landmarks withheld, balance
+                judged on the program's own prescribed share.
+   Read from the active profile, guarded for the node test harnesses (which
+   import this module with no localStorage). The PWA has no editor for these
+   yet — it reads whatever the HTML app wrote, same as the other profile
+   fields. Defaults reproduce the multi-set behavior exactly. */
+export const TRAINING_STYLE = (() => {
+  try {
+    const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const p = ps.filter(x => x.id === ap)[0]
+    return {
+      defaultSets: (p && typeof p.defaultSets === 'number' && p.defaultSets > 0) ? p.defaultSets : null,
+      volumeModel: (p && p.volumeModel === 'hit') ? 'hit' : 'standard',
+    }
+  } catch (e) { return { defaultSets: null, volumeModel: 'standard' } }
+})()
+
+/* How many sets the program prescribes per exercise.
+   The PROFILE wins over all of it when it sets defaultSets: a HIT trainee has
+   deliberately chosen one set to failure, and a block that prescribes three is
+   the philosophy being opted out of. Otherwise: programs 26-36 carry the real
+   prescription as prose in prog.note ("8-12 reps, 3 sets, 90s rest, RPE 7-8,
+   2s/2s tempo") and NOTHING displayed or consumed it. An explicit
+   prog.defaultSets wins; otherwise the count is read out of the note;
+   otherwise 3. Mirrors fitness_app.html. */
+export function progDefaultSets(prog) {
+  if (typeof TRAINING_STYLE.defaultSets === 'number' && TRAINING_STYLE.defaultSets > 0) {
+    return Math.min(TRAINING_STYLE.defaultSets, 10)
+  }
+  if (prog && typeof prog.defaultSets === 'number' && prog.defaultSets > 0) {
+    return Math.min(prog.defaultSets, 10)
+  }
+  const m = prog && prog.note && String(prog.note).match(/(\d+)(?:\s*-\s*\d+)?\s*sets?\b/i)
+  if (m) { const n = parseInt(m[1], 10); if (n > 0 && n <= 10) return n }
+  return 3
+}
+
 export function buildTechSchedule(prog) {
+  /* CLAUDE.md documents "exactly 2 high-intensity techniques per working week".
+     That was false — the real distribution was 1/2/2/2/3 for 20 of 25 legacy
+     programs. This is the cap that makes the documented rule true. Mirrors
+     fitness_app.html, where it is declared inside the function for the same
+     reason (the workbook test harness extracts from this function onward). */
+  const TECH_PER_WEEK_MAX = 2;
   // Cache key includes WPW: technique layout depends on workouts/week, so a
   // schedule change (3->4 days) must build fresh, not reuse a stale schedule.
   // P3: cache key + targeting include the EFFECTIVE split; under an override
@@ -2158,18 +2227,89 @@ export function buildTechSchedule(prog) {
     ((prog.techniques && prog.techniques[`week${w}`]) || []).forEach(t => {
       const tDay = native ? t.session : (md[slotMuscle(t.slot)] || null);
       if (!tDay) return;                               // unroutable → skip cleanly
+      /* Two passes, so "no week carries three" is a HARD cap rather than a
+         preference — mirrors fitness_app.html. The old single pass only
+         penalised a crowded week, which a constrained session day could always
+         outweigh: 22 weeks across the library ended up with three, 13 of them
+         in WEEK 5, immediately before the deload. */
       let best = -1, bestScore = Infinity;
-      for (let idx = 0; idx < N; idx++) {
-        if (slots[idx]) continue;
-        if (isDeloadWorkout(prog, idx)) continue;        // never schedule onto a deload workout
-        if (days[idx % L] !== tDay) continue;
-        const wk = Math.floor(idx / WPW) + 1;
-        const score = Math.abs(wk - w) * 10 + weekCount(wk) * 30 + wk;
-        if (score < bestScore) { bestScore = score; best = idx; }
+      const dlEvery = deloadPolicy(prog).every;
+      const preDeloadWk = dlEvery ? dlEvery - 1 : 0;
+      for (let pass = 0; pass < 2 && best < 0; pass++) {
+        for (let idx = 0; idx < N; idx++) {
+          if (slots[idx]) continue;
+          if (isDeloadWorkout(prog, idx)) continue;      // never schedule onto a deload workout
+          if (days[idx % L] !== tDay) continue;
+          const wk = Math.floor(idx / WPW) + 1;
+          const wc = weekCount(wk);
+          if (pass === 0 && wc >= TECH_PER_WEEK_MAX) continue;
+          const score = Math.abs(wk - w) * 10 + wc * 30 + wk
+                      + (wk === preDeloadWk ? wc * 40 : 0);
+          if (score < bestScore) { bestScore = score; best = idx; }
+        }
       }
       if (best >= 0) slots[best] = { session:tDay, slot:t.slot, technique:t.technique, prescribedWeek:w };
     });
   }
+
+  /* Repair pass. Capacity is EXACTLY tight — the legacy programs author 2
+     techniques a week across 5 working weeks, 10 techniques into 10 slots — so
+     greedy placement cannot always find a valid assignment even when one
+     exists. Relocate, then fall back to a two-step chain. Mirrors
+     fitness_app.html; keep the two in step. */
+  const weeksOverCap = () => {
+    const out = [];
+    for (let w2 = 1; w2 <= len; w2++) if (weekCount(w2) > TECH_PER_WEEK_MAX) out.push(w2);
+    return out;
+  };
+  let guard = 0;
+  while (weeksOverCap().length && guard++ < 100) {
+    const wkOver = weeksOverCap()[0];
+    let moved = false;
+    for (let i2 = (wkOver - 1) * WPW; i2 < wkOver * WPW && !moved; i2++) {
+      const a2 = slots[i2];
+      if (!a2) continue;
+      for (let j2 = 0; j2 < N; j2++) {
+        if (slots[j2]) continue;
+        if (isDeloadWorkout(prog, j2)) continue;
+        if (days[j2 % L] !== a2.session) continue;
+        const wj = Math.floor(j2 / WPW) + 1;
+        if (weekCount(wj) >= TECH_PER_WEEK_MAX) continue;
+        slots[j2] = a2; slots[i2] = null; moved = true; break;
+      }
+    }
+    if (!moved) {
+      // Two-step chain: evict C from a full week to free the slot A needs.
+      for (let i3 = (wkOver - 1) * WPW; i3 < wkOver * WPW && !moved; i3++) {
+        const a3 = slots[i3];
+        if (!a3) continue;
+        for (let j3 = 0; j3 < N && !moved; j3++) {
+          if (slots[j3]) continue;
+          if (isDeloadWorkout(prog, j3)) continue;
+          if (days[j3 % L] !== a3.session) continue;
+          const wj3 = Math.floor(j3 / WPW) + 1;
+          if (wj3 === wkOver) continue;
+          for (let k3 = (wj3 - 1) * WPW; k3 < wj3 * WPW && !moved; k3++) {
+            const c3 = slots[k3];
+            if (!c3) continue;
+            for (let m3 = 0; m3 < N; m3++) {
+              if (slots[m3]) continue;
+              if (isDeloadWorkout(prog, m3)) continue;
+              if (days[m3 % L] !== c3.session) continue;
+              const wm3 = Math.floor(m3 / WPW) + 1;
+              if (wm3 === wkOver || wm3 === wj3) continue;
+              if (weekCount(wm3) >= TECH_PER_WEEK_MAX) continue;
+              slots[m3] = c3; slots[k3] = null;
+              slots[j3] = a3; slots[i3] = null;
+              moved = true; break;
+            }
+          }
+        }
+      }
+      if (!moved) break;                     // genuinely no room — leave it
+    }
+  }
+
   TECH_SCHEDULES[ck] = slots;
   return slots;
 }

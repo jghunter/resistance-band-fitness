@@ -18,6 +18,10 @@ import {
   getSessionEx, effSplitId, progNativeSplitId, splitsReg,
   splitScheduleCheck, weekdayMapFor,
   focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
+  /* progDefaultSets was USED at getOrInit/addEx but never imported — opening
+     any exercise in the PWA threw ReferenceError. Introduced 2026-07-30 with
+     the 1→3 set seeding change; esbuild does not flag an undeclared global. */
+  progDefaultSets, TRAINING_STYLE,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
@@ -203,10 +207,16 @@ const DEFAULT_RIR = (() => { try {
   return (p && typeof p.rirTarget === 'number') ? p.rirTarget : 1
 } catch { return 1 } })()
 // ── Phase 3: active-profile-driven progression targets (default to legacy globals) ──
+/* Resolved through `population`: PROFILE_DEFAULTS < POPULATION_DEFAULTS <
+   whatever the profile set explicitly. A population default NEVER overrides an
+   explicit field — Greg's rirTarget of 1 stays 1 under older_adult, which
+   would otherwise suggest 2. Mirrors fitness_app.html. */
 const _ACTIVE_PROFILE = (() => { try {
   const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
   const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
-  return ps.find(x => x.id === ap) || null
+  const raw = ps.find(x => x.id === ap) || null
+  if (!raw) return null
+  return (RBTS_PHASE1 && RBTS_PHASE1.resolveProfile) ? RBTS_PHASE1.resolveProfile(raw) : raw
 } catch { return null } })()
 const PROG_TARGET_REPS = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.progressReps === 'number') ? _ACTIVE_PROFILE.progressReps : PROG_REPS
 const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'number') ? _ACTIVE_PROFILE.rirTarget : DEFAULT_RIR
@@ -231,9 +241,25 @@ const EX_UNILATERAL = new Set([
   220, 222,   // side plank row, bird dog (per-side)
 ])
 const isUnilateral = (id) => EX_UNILATERAL.has(Number(id))
-const initSets = (id) => isUnilateral(id)
-  ? [{reps:0,bands:[],side:'L'},{reps:0,bands:[],side:'R'}]
-  : [{reps:0,bands:[]}]
+/* Seed the program's prescribed set count, not one, and a REAL rir value.
+   initSets used to seed exactly ONE set, so the analyzer's 10-sets/week
+   landmarks could never be satisfied and UNDER fired forever. rir was left
+   null with a placeholder, so progressionState skipped the RIR cap entirely
+   and READY was decided purely on rep count. Empty sets are still dropped on
+   save (setHasData), so seeding three costs nothing. */
+const initSets = (id, n) => {
+  const count = Math.max(1, n || 1)
+  const out = []
+  for (let i = 0; i < count; i++) {
+    if (isUnilateral(id)) {
+      out.push({reps:0,bands:[],side:'L',rir:RIR_TARGET})
+      out.push({reps:0,bands:[],side:'R',rir:RIR_TARGET})
+    } else {
+      out.push({reps:0,bands:[],rir:RIR_TARGET})
+    }
+  }
+  return out
+}
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
@@ -378,6 +404,30 @@ function getLocalGear() {
 function saveLocalGear(items) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(items)) } catch {} }
 function getLocalMyBands() { try { return JSON.parse(localStorage.getItem('rbts_myBands') || '[]') } catch { return [] } }
 function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON.stringify(ids)) } catch {} }
+
+/* Band geometry (rest length + Tension Master readings) and bodyweight.
+   Kept in their own keys rather than inside BANDS, which is the synced source
+   of truth for four files. Mirrors fitness_app.html. */
+const BAND_GEOM_KEY = 'rbts_bandGeom'
+/* Profiles travel in the backup file too — see the export builder. Read fresh
+   rather than cached: a profile imported mid-session must be exportable. */
+function getLocalProfiles() {
+  try { const a = JSON.parse(localStorage.getItem('rbts_profiles') || '[]'); return Array.isArray(a) ? a : [] }
+  catch { return [] }
+}
+function getLocalBandGeom() { try { return JSON.parse(localStorage.getItem(BAND_GEOM_KEY) || '{}') || {} } catch { return {} } }
+function saveLocalBandGeom(g) { try { localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(g)); return true } catch { return false } }
+const BW_KEY = 'rbts_bodyweight'
+function getLocalBodyweight() {
+  try {
+    const a = JSON.parse(localStorage.getItem(BW_KEY) || '[]')
+    return Array.isArray(a)
+      ? a.filter(e => e && e.date && isFinite(e.lb))
+         .sort((x, y) => String(x.date).localeCompare(String(y.date)))
+      : []
+  } catch { return [] }
+}
+function saveLocalBodyweight(a) { try { localStorage.setItem(BW_KEY, JSON.stringify(a)); return true } catch { return false } }
 
 // ── Custom exercises (GLOBAL key — shared across profiles, mirrors the HTML
 // app's rbts_customExercises). Each item: {id(≥1000), name, group, cls, url?,
@@ -629,11 +679,27 @@ function BandPicker({ selected, onChange }) {
           )
         })}
         {selected.length > 0 && (
-          <button title="Double the whole stack — every band looped over (≈2× resistance). All bands double together, never one alone."
+          <button title={"Double the whole stack — every band looped over on itself. "
+            + "The ≈2× figure this app shows is the manufacturer's convention, and it is "
+            + "only true at the same PERCENTAGE stretch. At the same absolute length — "
+            + "which is what your actual range of motion is — a doubled band is typically "
+            + "5–8× heavier, not 2×. Treat DOUBLED as a big jump, not a small one. "
+            + "All bands double together, never one alone."}
             style={{...btn(isDoubled,C.amber),fontSize:9,padding:'2px 8px'}}
             onClick={toggleDouble}>
             {isDoubled ? '×2 DOUBLED' : 'DOUBLE ×2'}
           </button>
+        )}
+        {isDoubled && (
+          /* Panel: "the single largest silent error a user can make in the app."
+             The readout goes 30 lb to 60 lb; the true change at a real bar path
+             is most of an order of magnitude larger. */
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.red,
+            padding:'2px 6px',background:'rgba(239,68,68,0.12)',borderRadius:3,
+            border:`1px solid ${C.red}55`,lineHeight:1.4}}>
+            ⚠ ×2 IS THE SPEC-SHEET FIGURE — at your real ROM a doubled band is
+            typically 5–8× heavier. The number below understates it badly.
+          </span>
         )}
         <button style={{...btn(false),fontSize:9,padding:'2px 8px'}}
           onClick={() => setOpen(o=>!o)}>
@@ -927,7 +993,24 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       {tech && (
         <div style={{fontSize:10,fontFamily:'monospace',color:C.amber,
           background:`${C.amber}18`,border:`1px solid ${C.amber}44`,
-          borderRadius:4,padding:'2px 6px'}}>⚡ {tech}</div>
+          borderRadius:4,padding:'2px 6px'}}>
+          ⚡ {tech}
+          {RBTS_REPORTS.techCautionOf(techKey) && (
+            <div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${C.amber}33`,lineHeight:1.5}}>
+              CAUTION — {RBTS_REPORTS.techCautionOf(techKey)}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Exercise-level caution. Always visible, never behind a tap: the point
+          is that it is read before the set, not looked up after. Sourced from
+          the canonical module so both apps carry identical wording. */}
+      {RBTS_REPORTS.exCautionOf(id) && (
+        <div style={{fontFamily:'monospace',fontSize:10,lineHeight:1.5,color:C.red,
+          background:'rgba(239,68,68,0.10)',border:`1px solid ${C.red}55`,
+          borderRadius:4,padding:'5px 8px'}}>
+          CAUTION — {RBTS_REPORTS.exCautionOf(id)}
+        </div>
       )}
       <WatchDemoButton id={id}/>
       {prevSets && prevSets.length > 0 && (
@@ -994,7 +1077,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                   <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>RIR</span>
                   <input type="number" min="0" max="9"
                     value={s.rir==null?'':s.rir} placeholder={String(DEFAULT_RIR)}
-                    title="Reps in reserve for the whole set (blank = your default)"
+                    title="Reps in reserve for the whole set — how many more you could have done. Pre-filled with your profile target; change it if the set actually went differently."
                     onChange={e=>{const v=e.target.value; updateSet(i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                     style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                 </div>
@@ -1084,12 +1167,12 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
 
   const [showAdd, setShowAdd] = useState(false)
   const [addSrch, setAddSrch] = useState('')
-  function getOrInit(id) { return exercises[id] || initSets(id) }
+  function getOrInit(id) { return exercises[id] || initSets(id, progDefaultSets(prog)) }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
   function addEx(id) {
     const key = String(id)
     if (exercises && exercises[key]) { setShowAdd(false); setAddSrch(''); return }
-    onExercisesChange({...exercises, [key]:initSets(id)})
+    onExercisesChange({...exercises, [key]:initSets(id, progDefaultSets(prog))})
     setShowAdd(false); setAddSrch('')
   }
   function removeEx(id) {
@@ -1237,15 +1320,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
 // ─────────────────────────────────────────────────────────────────────────────
 // STRENGTH MONITOR — estimated-load + volume tracking
 // ─────────────────────────────────────────────────────────────────────────────
-function bandResMid(res) {
-  if (res == null) return 0
-  const str = String(res).replace(/\+/g,'').replace(/</g,'').trim()
-  const parts = str.split('-').map(x => parseFloat(x)).filter(n => !isNaN(n))
-  if (parts.length === 0) return 0
-  if (parts.length === 1) return parts[0]
-  return (parts[0] + parts[1]) / 2
-}
-let _BAND_RES = null
+let _BAND_RES = null, _BAND_RES_N = -1
 // ── Reports: ctx seam + print / markdown / clipboard output ───────────────
 // Mirrors fitness_app.html's plumbing. Data arrives as arguments because the
 // PWA holds log / gear / myBands in App state rather than reading localStorage.
@@ -1258,6 +1333,10 @@ function makeReportCtx({ log, gear, myBands }) {
     // Profile-driven progression targets, NOT the module's fallbacks.
     progressReps: PROG_TARGET_REPS,
     rirTarget: RIR_TARGET,
+    /* "standard" (weekly set landmarks apply) | "hit" (one set to failure —
+       landmarks withheld, balance judged on prescribed share). Mirrors
+       fitness_app.html; set there, read here. */
+    volumeModel: TRAINING_STYLE.volumeModel,
     bandOf: (id) => BANDS.find(b => b.id === id) || null,
     gearOf: (id) => gearList.find(g => g.id === id) || null,
     nameOf: (id) => EXERCISE_NAMES[id] || ('#' + id),
@@ -1294,34 +1373,51 @@ function makeReportCtx({ log, gear, myBands }) {
 // Smallest concrete next step: stack the lightest owned band, or step up within
 // the same brand+length family. Mirrors fitness_app.html's suggestProgression,
 // which does not exist in the PWA.
+const bandLabel = (b) => `${b.brand.split(' ')[0]} ${b.color}${b.model ? ' ' + b.model : ''}`
+
+/* Next stack to try, ranked toward a +10% step.
+   Delegates to RBTS_REPORTS.stackSuggestions — the BandStack engine already
+   written for Rails, C and the static /bands page, verified byte-identical to
+   the Rails implementation. The previous logic here ("next band up in the same
+   brand+length family, or add the lightest band you own") was a MEDIAN +43%
+   step across the catalog. Doubling is deliberately not offered: the 2x model
+   holds at matched percentage elongation, not at real ROM. */
 function suggestProgressionPWA(lastBands, myBands) {
   if (!lastBands || lastBands.length === 0) return null
-  let pool = myBands.length ? BANDS.filter(b => myBands.includes(b.id)) : BANDS
-  if (!pool.length) pool = BANDS
-  const mid = (b) => RBTS_REPORTS.bandMid(b)
-  let add = null
-  pool.forEach(b => { const m = mid(b); if (m > 0 && (!add || m < mid(add))) add = b })
-  const uniq = {}
-  lastBands.forEach(x => { uniq[x] = (uniq[x] || 0) + 1 })
-  const ids = Object.keys(uniq)
-  let swap = null, cur = null, mult = 0
-  if (ids.length === 1) {
-    cur = BANDS.find(b => b.id === ids[0]); mult = uniq[ids[0]]
-    if (cur) {
-      const curM = mid(cur)
-      pool.forEach(b => {
-        if (b.id === cur.id || b.brand !== cur.brand || b.lengthIn !== cur.lengthIn) return
-        const m = mid(b)
-        if (m > curM && (!swap || m < mid(swap))) swap = b
-      })
+  const curBands = lastBands.map(id => BANDS.find(b => b.id === id)).filter(Boolean)
+  if (!curBands.length) return null
+
+  let owned = myBands.length ? BANDS.filter(b => myBands.includes(b.id)) : BANDS
+  if (!owned.length) owned = BANDS
+  // Bands only stack when their loop lengths match.
+  const pool = owned.filter(b => b.lengthIn === curBands[0].lengthIn)
+  if (!pool.length) return null
+
+  const picks = RBTS_REPORTS.stackSuggestions(curBands, pool)
+  if (!picks.length) return null
+
+  const curIds = new Set(curBands.map(b => b.id))
+  const describe = (p) => {
+    const added = p.bands.filter(b => !curIds.has(b.id))
+    const kept = p.bands.filter(b => curIds.has(b.id))
+    let txt
+    if (p.bands.length === 1) txt = `swap to ${bandLabel(p.bands[0])}`
+    else if (added.length && kept.length === curBands.length) txt = `add ${added.map(bandLabel).join(' + ')}`
+    else txt = `use ${p.bands.map(bandLabel).join(' + ')}`
+    return {
+      text: `${txt} (${p.min}–${p.max} lbs)`,
+      pct: p.pct == null ? null : Math.round(p.pct),
+      inWindow: p.inWindow,
+      ids: p.bands.map(b => b.id),
     }
   }
-  if (!add && !swap) return null
+  const options = picks.map(describe)
   return {
-    add: add ? `add ${add.brand.split(' ')[0]} ${add.color} ${add.model} (+${add.res})` : null,
-    swap: (swap && cur)
-      ? `swap to ${swap.brand.split(' ')[0]} ${swap.color} ${swap.model}${mult > 1 ? ' x' + mult : ''} (${swap.res})`
-      : null,
+    best: options[0],
+    options,
+    // Back-compat with the previous shape for existing call sites.
+    add: options[0] ? options[0].text : null,
+    swap: options[1] ? options[1].text : null,
   }
 }
 
@@ -1385,8 +1481,20 @@ function ReportButtons({ label = 'PRINT', doc, name }) {
   )
 }
 
+/* Estimated load per band id.
+   Delegates to the canonical RBTS_REPORTS.bandMid instead of re-parsing the
+   range locally. The old private parser stripped "+" and "<" but NOT "~", so a
+   "~5-20" HeavyDutyBar Travel band lost its min to parseFloat NaN and fell
+   through the single-value branch to its MAX - the STRENGTH readout disagreed
+   with ANALYZE by 43-60% on the same workout. Cache keyed on BANDS.length so a
+   catalog that grows at runtime cannot leave entries resolving to 0. */
 function bandResById(id) {
-  if (!_BAND_RES) { _BAND_RES = {}; BANDS.forEach(b => { _BAND_RES[b.id] = bandResMid(b.res) }) }
+  const all = (typeof BANDS !== 'undefined') ? BANDS : []
+  if (!_BAND_RES || _BAND_RES_N !== all.length) {
+    _BAND_RES = {}
+    _BAND_RES_N = all.length
+    all.forEach(b => { _BAND_RES[b.id] = RBTS_REPORTS.bandMid(b) })
+  }
   return _BAND_RES[id] || 0
 }
 function setLoad(set) { return (set.bands || []).reduce((a,id) => a + bandResById(id), 0) }
@@ -2181,6 +2289,31 @@ function ProgramsTab() {
 
       <div style={widget}><SessionView prog={prog} sKey={sKey} week={week}/></div>
 
+      {/* Safety card — content from RBTS_REPORTS.SAFETY_DOC, shared with
+          fitness_app.html so the two cannot drift. */}
+      <details style={{...widget, borderColor:`${C.amber}55`}}>
+        <summary style={{fontFamily:'monospace',fontSize:11,color:C.amber,
+          letterSpacing:'0.1em',textTransform:'uppercase',cursor:'pointer',userSelect:'none'}}>
+          {RBTS_REPORTS.SAFETY_DOC.title}
+        </summary>
+        <div style={{marginTop:10,fontFamily:'monospace',fontSize:11,color:C.textSec,lineHeight:1.8}}>
+          {RBTS_REPORTS.SAFETY_DOC.sections.map((sec, si) => (
+            <div key={si}>
+              <div style={{color:C.text,letterSpacing:'0.08em',marginTop:si?10:4}}>{sec.heading}</div>
+              {sec.items.map((it, ii) => (
+                <div key={ii}>
+                  {it[0] ? <b style={{color:C.text}}>{it[0]}</b> : null}{it[0] ? ' ' : null}{it[1]}
+                </div>
+              ))}
+            </div>
+          ))}
+          <div style={{marginTop:12,paddingTop:8,borderTop:`1px solid ${C.amber}33`,
+            color:C.amber,lineHeight:1.6}}>
+            {RBTS_REPORTS.SAFETY_DOC.disclaimer}
+          </div>
+        </div>
+      </details>
+
       <details style={widget}>
         <summary style={{fontFamily:'monospace',fontSize:11,color:C.textSec,
           letterSpacing:'0.1em',textTransform:'uppercase',cursor:'pointer',userSelect:'none'}}>
@@ -2822,6 +2955,24 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
       // initial cloud sync would otherwise carry empty arrays, which import as
       // a deliberate inventory wipe on another device.
       ...(invLoaded ? { rbts_gear: gearInv || [], rbts_myBands: myBands || [] } : {}),
+      /* Measurements are expensive to produce and exist only where they were
+         entered — the two apps do not share an origin, so without these the
+         gear geometry and band calibration would have to be typed twice.
+         Omitted entirely when empty, so an export from a device that has none
+         cannot read as a deliberate wipe on import. */
+      ...(Object.keys(getLocalBandGeom()).length ? { rbts_bandGeom: getLocalBandGeom() } : {}),
+      ...(getLocalBodyweight().length ? { rbts_bodyweight: getLocalBodyweight() } : {}),
+      /* The PROFILE carries rirTarget, defaultSets, volumeModel and splitId,
+         which live nowhere else. The PWA has no editor for them, so this file
+         is the ONLY way a training-style change made in the HTML app reaches
+         the PWA — and without it the two apps quietly disagree about how many
+         sets to seed and whether volume landmarks apply. Same omit-when-empty
+         rule as above, so an export from a device with no profile cannot read
+         as a deliberate wipe. Mirrors fitness_app.html. */
+      ...(getLocalProfiles().length
+            ? { rbts_profiles: getLocalProfiles(),
+                rbts_activeProfile: localStorage.getItem('rbts_activeProfile') || '' }
+            : {}),
     }
     const a = document.createElement('a')
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
@@ -2844,11 +2995,35 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         const addedEx = customs.length && onImportCustomEx ? onImportCustomEx(customs) : 0
         // Inventory (gear + MY BANDS) is independent of the log merge.
         const invMsg = onImportInventory ? await onImportInventory(state) : ''
+        /* Measurements ride along too — the two apps do not share an origin,
+           so this file is the only way gear geometry and band calibration
+           reach the other one. Only ever applied when the file actually
+           carries them, so an older backup cannot wipe newer measuring. */
+        let measMsg = ''
+        if (state && state.rbts_bandGeom && typeof state.rbts_bandGeom === 'object') {
+          saveLocalBandGeom(state.rbts_bandGeom)
+          measMsg += ` Band calibration for ${Object.keys(state.rbts_bandGeom).length} band(s).`
+        }
+        if (Array.isArray(state && state.rbts_bodyweight) && state.rbts_bodyweight.length) {
+          saveLocalBodyweight(state.rbts_bodyweight)
+          measMsg += ` ${state.rbts_bodyweight.length} bodyweight entries.`
+        }
+        /* Profile: only ever restored from a file that actually carries one, so
+           an older backup cannot wipe it. TRAINING_STYLE is read at module load,
+           so say plainly that a reload is needed rather than leaving the app
+           running on the old profile. Mirrors fitness_app.html. */
+        if (Array.isArray(state && state.rbts_profiles) && state.rbts_profiles.length) {
+          try {
+            localStorage.setItem('rbts_profiles', JSON.stringify(state.rbts_profiles))
+            if (state.rbts_activeProfile) localStorage.setItem('rbts_activeProfile', state.rbts_activeProfile)
+            measMsg += ' Profile restored (RIR, set seeding, volume model, split) — RELOAD for it to take effect.'
+          } catch { /* storage full: the rest of the import still stands */ }
+        }
         if (!incoming) {
-          if (customs.length || invMsg) {
+          if (customs.length || invMsg || measMsg) {
             alert('No rbts_log in file.' +
               (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
-              invMsg)
+              invMsg + measMsg)
             return
           }
           alert('Invalid file — expected an rbts_log array.'); return
@@ -2857,7 +3032,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
           (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
-          invMsg)
+          invMsg + measMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }
     }
     reader.readAsText(file); e.target.value = ''
@@ -3047,7 +3222,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
   allBandBrands.sort()
   const [bf, setBf] = useState({ brand: allBandBrands[0] || '', bandId:'' })
   const bfChoices = BANDS.filter(b => b.brand === bf.brand && (bandCnt[b.id]||0) < BAND_QTY_MAX)
-    .sort((a,b) => a.lengthIn - b.lengthIn || bandResMid(a.res) - bandResMid(b.res))
+    .sort((a,b) => a.lengthIn - b.lengthIn || RBTS_REPORTS.bandMid(a) - RBTS_REPORTS.bandMid(b))
   function addBandSel() {
     if (!bf.bandId) return
     const br = (BANDS.find(b => b.id === bf.bandId) || {}).brand
@@ -3108,7 +3283,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                     return <span style={pill(C.amber)}>{u>list.length ? list.length+' ('+u+')' : list.length}</span> })())}
                   {isOpen(key) && (
                     <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'8px 6px 2px 24px'}}>
-                      {list.slice().sort((a,b) => a.lengthIn-b.lengthIn || bandResMid(a.res)-bandResMid(b.res)).map(b => {
+                      {list.slice().sort((a,b) => a.lengthIn-b.lengthIn || RBTS_REPORTS.bandMid(a)-RBTS_REPORTS.bandMid(b)).map(b => {
                         const hex = COLOR_HEX[b.color] || '#888'
                         return (
                           <span key={b.id} style={{display:'inline-flex',alignItems:'center',gap:6,

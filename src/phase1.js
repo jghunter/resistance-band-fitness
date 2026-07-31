@@ -218,7 +218,78 @@
     allowedIntensifiers: Object.keys(INTENSIFIERS),
     splitId: "body_part_5",    // legacy default so nothing changes until opted in
     ownedBands: [],            // migrates from rbts_myBands
+    /* How many set rows an exercise seeds with in the workout logger.
+       null = follow whatever the PROGRAM prescribes (progDefaultSets), which
+       is the legacy behavior and must stay the default so nothing changes for
+       an existing profile that never set this. A number overrides the program
+       — a HIT trainee seeds 1 regardless of what the block says. */
+    defaultSets: null,
+    /* How VOLUME is judged. "standard" = the analyzer's absolute weekly
+       working-set landmarks (CHEST 10, BICEPS 6, ...) apply as usual.
+       "hit" = single-set-to-failure training (Yates / Mentzer / Jones): those
+       landmarks describe a volume philosophy this trainee has deliberately
+       rejected, so balance is judged against the PROGRAM'S OWN prescribed
+       share only — which is already the analyzer's primary test — and the
+       absolute landmark comparison is suppressed rather than firing UNDER on
+       every group forever. Nothing else about the analyzer changes. */
+    volumeModel: "standard",   // standard | hit
   };
+
+  /* ----------------------------------------------------------------------
+   * POPULATION DEFAULTS
+   * `population` was set correctly on Greg's profile and read by NOTHING —
+   * the string appeared exactly twice in the whole codebase (the default and
+   * the override) and zero times in the analyzer. This is the hook that makes
+   * it live.
+   *
+   *   >>> HARD RULE: a population default NEVER overrides a value the profile
+   *   >>> set explicitly. Greg's rirTarget is 1 and must stay 1 even though
+   *   >>> older_adult would otherwise suggest 2. This is enforced as a
+   *   >>> resolution ORDER (below), not as a special case for one field, so
+   *   >>> no population rule added later can regress it.
+   *
+   * Layering, lowest precedence first:
+   *     PROFILE_DEFAULTS  <  POPULATION_DEFAULTS[population]  <  explicit
+   * -------------------------------------------------------------------- */
+  var POPULATION_DEFAULTS = {
+    general: {},
+    novice: {
+      rirTarget: 3,          // leave more in reserve while technique is forming
+      progressReps: 12,
+    },
+    older_adult: {
+      rirTarget: 2,          // SUGGESTION ONLY — an explicit profile value wins
+      deloadEvery: 5,        // recover a touch more often
+    },
+  };
+
+  /* Which keys the profile set for itself. Recorded at creation; for profiles
+     stored before this existed, fall back to "differs from PROFILE_DEFAULTS",
+     which is conservative in the right direction - an intentionally changed
+     value is treated as explicit and therefore protected. */
+  function explicitKeysOf(p) {
+    if (p && Array.isArray(p.explicitKeys)) return p.explicitKeys;
+    var out = [];
+    Object.keys(PROFILE_DEFAULTS).forEach(function (k) {
+      if (!p || !(k in p)) return;
+      if (JSON.stringify(p[k]) !== JSON.stringify(PROFILE_DEFAULTS[k])) out.push(k);
+    });
+    return out;
+  }
+
+  /* The effective profile: population fills in only what the profile left at
+     the base default. Pure - does not mutate or persist anything. */
+  function resolveProfile(p) {
+    if (!p) return Object.assign({}, PROFILE_DEFAULTS);
+    var pop = POPULATION_DEFAULTS[p.population] || {};
+    var explicit = explicitKeysOf(p);
+    var out = Object.assign({}, p);
+    Object.keys(pop).forEach(function (k) {
+      if (explicit.indexOf(k) >= 0) return;              // profile wins, always
+      out[k] = pop[k];
+    });
+    return out;
+  }
 
   function makeProfile(id, name, overrides) {
     var p = Object.assign({}, PROFILE_DEFAULTS, {
@@ -227,11 +298,18 @@
       repTarget: PROFILE_DEFAULTS.repTarget.slice(),
       ownedBands: [],
     });
-    return Object.assign(p, overrides || {});
+    Object.assign(p, overrides || {});
+    // Remember what was chosen deliberately so resolveProfile can protect it.
+    p.explicitKeys = Object.keys(overrides || {});
+    return p;
   }
 
   // Greg's profile-specific settings (NOT global defaults):
-  //   RIR 0–1 (trains close to failure); Upper/Lower with his balancing convention.
+  //   RIR 0–1 (trains close to failure); Upper/Lower with his balancing convention;
+  //   HIT volume model (Yates / Mentzer / Jones) — one set carried to momentary
+  //   muscular failure, so the logger seeds ONE set and the analyzer stops
+  //   measuring him against multi-set weekly landmarks he does not train to.
+  //   These are HIS choices. The defaults above stay multi-set for everyone else.
   function gregSeedOverrides() {
     return {
       population: "older_adult",
@@ -239,6 +317,8 @@
       rirTarget: 1,                 // 0–1 in practice
       splitId: "upper_lower",       // his balanced upper/lower (neck+forearms upper, core lower)
       deloadEvery: 5,               // older adult → recover a touch more often
+      defaultSets: 1,               // HIT: one set to failure, not the program's 3
+      volumeModel: "hit",
     };
   }
 
@@ -422,7 +502,10 @@
     INTENSIFIERS: INTENSIFIERS,
     SPLITS: SPLITS,
     PROFILE_DEFAULTS: PROFILE_DEFAULTS,
+    POPULATION_DEFAULTS: POPULATION_DEFAULTS,
     makeProfile: makeProfile,
+    resolveProfile: resolveProfile,
+    explicitKeysOf: explicitKeysOf,
     gregSeedOverrides: gregSeedOverrides,
     normalizeSet: normalizeSet,
     sseReps: sseReps,

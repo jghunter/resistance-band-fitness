@@ -38,9 +38,16 @@
     NEAR_REPS:     2,   // "close to threshold" window, in reps
     NEGLECT_DAYS: 10,
     DORMANT_DAYS: 21,
-    UNDER_FACTOR: 0.75, // actual share below this x prescribed share = UNDER
-    OVER_FACTOR:  1.5,  // actual share above this x prescribed share = OVER
+    UNDER_FACTOR: 0.75, // weekly sets below this x the landmark = UNDER
+    OVER_FACTOR:  1.5,  // weekly sets above this x the landmark = OVER
     REC_CAP:      10,   // max recommendations surfaced
+    /* Minimum sessions before a direction is asserted. A 3x/week trainee on the
+       5-session rotation gets n=3 per exercise per 6-week block and n=2 at the
+       30-day window. At n=3 the least-squares slope is exactly
+       (last - first)/2 - the middle point carries zero weight, so [100,300,100]
+       and [100,100,100] both report FLAT. Below this, report the trend as
+       provisional rather than asserting GROWING or DECLINING. */
+    TREND_MIN_N:   4
   };
 
   /* Weekly working-set landmarks per muscle group. Tunable in one place.
@@ -49,6 +56,11 @@
     CHEST: 10, BACK: 10, SHOULDERS: 10, QUADS: 10, HAMSTRINGS: 10, GLUTES: 10,
     BICEPS: 6, TRICEPS: 6, CORE: 6,
     NECK: 4, FOREARMS: 4, CALVES: 4,
+    /* Tibialis anterior split out of CALVES 2026-07-30 (panel rec 20). It is
+       the calves' antagonist, and it is the muscle that governs toe clearance
+       and therefore trip risk - worth measuring separately rather than hiding
+       inside a calf total that was already running at twice its landmark. */
+    TIBIALIS: 4,
   };
 
   /* Groups excluded from balance + neglect flags. MOBILITY is stretch/carry
@@ -57,7 +69,18 @@
   function isExempt(label) { return !!BALANCE_EXEMPT[label]; }
 
   /* ---- time-based exercises (logged in seconds, not reps) --------------- */
-  var TIME_BASED = [71, 72, 166, 181, 182, 184];
+  /* Time-based movements progress on SECONDS (CONST.PROG_SECS), never on the
+     rep threshold, and never earn a "add a heavier band" suggestion from the
+     rep rule.
+     177-180 (dynamic cervical flexion / extension / lateral flexion) were added
+     2026-07-30. They are programmed ~70 times and were progressing on the same
+     12-rep rule as a chest press, so the app proposed a heavier band for
+     dynamic neck loading every time the rule fired. At 66 cervical
+     degenerative change is near-universal even when asymptomatic; sub-maximal
+     and time-based is the correct mode and it already existed here for the
+     isometric holds (181/182/184). Sets still store their number in `reps` -
+     only the unit label and the threshold change - so no stored data moves. */
+  var TIME_BASED = [71, 72, 166, 177, 178, 179, 180, 181, 182, 184];
   function isTimeBased(id) { return TIME_BASED.indexOf(Number(id)) >= 0; }
   /* progressReps is the PROFILE's target (ctx.progressReps). Omit it and the
      CONST fallback applies. Time-based exercises always use PROG_SECS. */
@@ -104,6 +127,444 @@
     return (r.min + r.max) / 2;
   }
 
+
+  /* ---- safety content ---------------------------------------------------
+     Per-exercise and per-technique cautions. These live in the CANONICAL
+     module, not in either app, for two reasons: both apps need them and there
+     is no generator to keep hand-copies in step, and the printed setup sheet
+     is built here -- a caution you only see on screen is not much use on a
+     sheet of paper beside the anchor.
+     The app contained ZERO words about pain, injury or contraindication
+     before 2026-07-30 (panel finding 5). */
+  var TECH_CAUTION = {
+    "forced_reps":         "Training solo: there is no spotter. Get the extra reps from your non-working limb or by shortening the range — not by adding momentum to a loaded spine. Skip the momentum cue entirely on squats, deadlifts, RDLs, good mornings and any overhead press.",
+    "mechanical_drop_set": "Change position before you are unsteady, not after. Set the easier variation up before the set starts so you are not improvising past failure.",
+    "rest_pause":          "Keep the band under control during the pause — a loaded band that slips at rest snaps toward you.",
+    "drop_set":            "Have the lighter band already laid out. Do not unhook a loaded band with one hand mid-set.",
+    "30_10_30":            "Two 30-second eccentrics under band tension is a long time to hold position. Have a way to bail out that does not involve letting the band go.",
+    "negative_accentuated":"Only useful if you can control the whole lowering phase. If the last third gets away from you, the band is too heavy.",
+  };
+  var EX_CAUTION = {
+    // Cervical spine. Programmed ~70 times across the library.
+    177: "Sub-maximal only, and slow. Stop immediately for tingling, numbness, or pain radiating into the shoulder, arm or hand — that is a nerve symptom, not a training symptom.",
+    178: "Sub-maximal only, and slow. Never force end-range extension. Stop for any radiating or electric sensation.",
+    179: "Sub-maximal only. Keep the movement small and controlled; do not let the head drop into the end range.",
+    180: "Sub-maximal only. Keep the movement small and controlled; do not let the head drop into the end range.",
+    181: "Build the hold gradually. Breathe through it — do not brace against a held breath.",
+    182: "Build the hold gradually. Breathe through it — do not brace against a held breath.",
+    183: "This is a low-load positional drill. If it is ever making noise or pinching, reduce the range.",
+    184: "Build the hold gradually. Stop for any radiating symptom.",
+    // Loaded hip hinge / axial spine.
+    37:  "Hinge from the hips with a neutral spine. The band pulls hardest at the top, which is exactly where form breaks — stop the set when the back rounds, not when the reps run out.",
+    38:  "Good mornings load the spine at the longest lever in the library. Stay conservative on band choice and stop the set at the first loss of a neutral back.",
+    185: "Set your back before the band loads. If you cannot start the pull with a neutral spine, the stack is too heavy.",
+    186: "Two movements loaded at once. Finish the hinge before starting the row — do not let the row pull you out of position.",
+    217: "Anchor the belt and test the band tension before loading the split position. Losing balance under a stretched band is the failure mode here.",
+    // Overhead / shoulder.
+    187: "Overhead under band tension. Do not press into a shrug, and stop if the shoulder pinches at the top.",
+    56:  "Upright rows can impinge the shoulder. Keep the pull below chest height and stop for any pinching.",
+  };
+  function exCautionOf(id) { return EX_CAUTION[Number(id)] || null; }
+  function techCautionOf(k) { return TECH_CAUTION[k] || null; }
+
+
+  /* The safety card's content, as a doc model so both apps and the printed
+     sheet render the same words. Prose lives here rather than in either app
+     because there is no generator to keep two hand-copies in step. */
+  var SAFETY_DOC = {
+    title: "SAFETY - WARM-UP, GEAR CHECK, WHEN TO STOP",
+    sections: [
+      { heading: "BEFORE THE FIRST SET", items: [
+        ["Warm up.", "Five minutes of easy movement to raise your temperature, then one set of 12-15 easy reps with a band two steps lighter than your working stack, on the first exercise of the session. Repeat the light set for the first exercise of each new movement pattern. Warm-up sets are not working sets - log them only if you want them counted, because everything you log counts toward progression and volume."],
+        ["Check the band.", "Run the whole loop through your hands, stretched slightly, and look at both faces. Retire it for surface cracks, nicks in the edge, a milky or chalky patch that does not wipe off, or any spot that feels thinner or stickier than the rest. Latex degrades from ozone, UV and oil - a band that has lived in sunlight or near a motor is suspect regardless of how it looks."],
+        ["Check the anchor.", "Inspect the door anchor strap, the stitching, and every carabiner and hook you are about to load. Confirm the door opens AWAY from you and is latched. A band or anchor that fails under load travels back along its own line - toward your face. Never set up so that your head is in that path, and never look directly down the line of a stretched band while hooking or unhooking it."]
+      ] },
+      { heading: "STOP THE SET - AND THE SESSION", items: [
+        ["", "Stop immediately and do not push through: chest pain or pressure, unusual shortness of breath, dizziness or light-headedness, a cold sweat, or an irregular or racing heartbeat. Any of those warrant medical attention, not a rest and a retry."],
+        ["", "Stop the exercise for: sharp or stabbing joint pain, pain that is one-sided, anything that tingles, burns, goes numb or feels electric, or pain that radiates into an arm or leg. Nerve symptoms are never a training effect to work through. Muscular burn and breathlessness are expected; joint and nerve pain are not."],
+        ["", "Losing your neutral spine, your balance, or control of the band on the way down ends the set - that is the rep to stop on, not the one after."]
+      ] },
+      { heading: "BETWEEN SESSIONS", items: [
+        ["", "Muscle soreness peaking a day or two later and easing is normal. Soreness that is sharp, one-sided, joint-centred, or still worsening after 72 hours is not - back off and let it settle."],
+        ["", "Sleep and protein do the actual adapting; training only provides the signal. Persistent poor sleep, unusual resting heart rate, or strength dropping across several sessions means take the deload early rather than late."]
+      ] }
+    ],
+    disclaimer: "This app is a training log, not medical advice. Clear resistance training with your physician before starting, and again after any new symptom, injury, procedure, or change in medication - particularly anything affecting blood pressure, heart rate, bone density, or balance."
+  };
+
+  /* ---- returning from a layoff ------------------------------------------
+     Panel recommendation 28. The program's week is derived from the START
+     DATE, not from what was logged, so two weeks away silently advances it —
+     and can deposit a returning trainee straight into a <=50% deload week, or
+     worse, into week 5 at full intensifier density after a fortnight of
+     complete rest. Neither is a sane place to restart.
+
+     Detraining is not linear: strength holds up far better than work capacity,
+     and connective tissue re-adapts more slowly than muscle. The guidance below
+     scales with the gap and deliberately errs toward too little. */
+  var RETURN_DAYS = 10;
+  function returningState(ctx, asOfISO) {
+    var all = sortedLog(ctx.log);
+    if (!all.length) return null;
+    var last = all[all.length - 1];
+    var asOf = asOfISO || localISO();
+    var days = daysBetween(last.date, asOf);
+    if (days <= RETURN_DAYS) return null;
+
+    var band, headline, advice;
+    if (days <= 20) {
+      band = "SHORT";
+      headline = "You have been away " + days + " days.";
+      advice = "Pick up where you left off, but take the first session at about " +
+               "80% of your usual stack and stop 2-3 reps short on every set. " +
+               "If that feels easy, you are back to normal next session.";
+    } else if (days <= 41) {
+      band = "MEDIUM";
+      headline = "You have been away " + days + " days — about " +
+                 Math.round(days / 7) + " weeks.";
+      advice = "Restart one step lighter than you remember and keep 3-4 reps in " +
+               "reserve for a full week. Expect soreness out of proportion to the " +
+               "effort; that is normal after a break and is not a reason to add load. " +
+               "Skip intensifiers entirely this week.";
+    } else {
+      band = "LONG";
+      headline = "You have been away " + days + " days — about " +
+                 Math.round(days / 7) + " weeks.";
+      advice = "Treat this as a restart, not a resumption. Two weeks at roughly " +
+               "half your previous stacks, every set stopped well short of failure, " +
+               "no intensifiers. Tendons and connective tissue re-adapt more slowly " +
+               "than muscle, and this is the window where people hurt themselves " +
+               "trying to prove they have not lost anything.";
+    }
+    return {
+      days: days, lastDate: last.date, band: band,
+      headline: headline, advice: advice,
+      /* A returning session must never be a deload session: the point of a
+         deload is to recover from accumulated fatigue that no longer exists. */
+      suppressDeload: true
+    };
+  }
+
+  /* ---- effective load model ---------------------------------------------
+     Panel finding 1, found by all five reviewers: the app measures WHICH
+     SPRING and then reports POUNDS. bandMid reduces a band to the midpoint of
+     its rated range and that constant drives volume, top load, PRs, slopePct
+     and every trend verdict - while band force is a function of ELONGATION,
+     which the log never recorded. One identical entry spans a 9:1 force range
+     between a short seated row and a deadlift lockout.
+
+     Three layers, each degrading into the one below:
+
+       RATED    the vendor midpoint. Always available, including for every
+                historical entry logged before geometry existed.
+       MODELED  a force curve fitted from the vendor's rated range using ONE
+                explicit strain assumption (below), evaluated at a stretch
+                derived from the gear actually used.
+       MEASURED the same, but the curve is interpolated through real Tension
+                Master readings instead of assumed. Requires >= 2 points.
+
+     The honest part is Layer 1: a RATIO between two setups needs only that
+     force rises monotonically with elongation, which is true of every band
+     regardless of how badly the curve is fitted. Absolute pounds need the
+     curve to be right; a ratio does not. That is why the gear-change warning
+     is quantitative even while the absolute figure stays an estimate. */
+  var LOAD_MODEL = {
+    /* The single strain assumption this whole model rests on, stated once.
+       Loop bands are conventionally rated with the maximum figure at about
+       2.5x the loop's rest length (strain 1.5) and the minimum at a light
+       working stretch (strain 0.5). Between those two points the fit is
+       LINEAR: real latex stiffens toward the top of its range, so modeled
+       figures understate load at high stretch. Measured points remove the
+       assumption entirely, which is the whole reason for the Tension Master. */
+    STRAIN_AT_RATED_MIN: 0.5,
+    STRAIN_AT_RATED_MAX: 1.5,
+    /* Assumed working strain of a REFERENCE setup - the strain at which a
+       band produces its rated midpoint, i.e. exactly what the app has always
+       implicitly assumed. Gear deltas move away from this point. */
+    REF_STRAIN: 1.0,
+    MIN_MEASURED_POINTS: 2
+  };
+
+  /* Force in lb at a given absolute stretched-past-rest distance.
+     stretchIn is how far BEYOND its rest length the loop has been pulled. */
+  function bandForceAt(band, stretchIn, geom) {
+    if (!band) return 0;
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : (band.lengthIn || 0);
+    if (!rest) return bandMid(band);
+    var pts = (geom && Array.isArray(geom.measured)) ? geom.measured.filter(function (p) {
+      return p && isFinite(p.stretchIn) && isFinite(p.lb);
+    }).sort(function (a, b) { return a.stretchIn - b.stretchIn; }) : [];
+
+    if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) {
+      /* Piecewise-linear through real readings; clamp outside the measured
+         span rather than extrapolating a curve nobody measured. */
+      if (stretchIn <= pts[0].stretchIn) return pts[0].lb;
+      var last = pts[pts.length - 1];
+      if (stretchIn >= last.stretchIn) return last.lb;
+      for (var i = 1; i < pts.length; i++) {
+        if (stretchIn <= pts[i].stretchIn) {
+          var a = pts[i - 1], b2 = pts[i];
+          var span = b2.stretchIn - a.stretchIn;
+          if (span <= 0) return b2.lb;
+          return a.lb + (b2.lb - a.lb) * ((stretchIn - a.stretchIn) / span);
+        }
+      }
+      return last.lb;
+    }
+
+    var r = parseResRange(band.res);
+    var s = stretchIn / rest;                                   // strain
+    var lo = LOAD_MODEL.STRAIN_AT_RATED_MIN, hi = LOAD_MODEL.STRAIN_AT_RATED_MAX;
+    if (hi <= lo) return bandMid(band);
+    var f = r.min + (r.max - r.min) * ((s - lo) / (hi - lo));
+    return f < 0 ? 0 : f;                                       // never negative
+  }
+
+  /* Total inches this gear set adds to (+) or removes from (-) the stretch the
+     band must cover. Mirrors gearPathDeltaIn in fitness_app.html; kept here so
+     the module stays self-contained and testable. */
+  function gearPathDelta(gearIds, gearOf) {
+    if (!gearIds || !gearIds.length || !gearOf) return 0;
+    return gearIds.reduce(function (a, id) {
+      var g = gearOf(id);
+      if (!g) return a;
+      var d = g.dims || {}, t = g.type;
+      if (t === "footplate") return a + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
+      if (t === "bar")       return a - (d.hookOffsetIn || 0);
+      if (t === "handle" || t === "anchor" || t === "belt") return a - (d.seriesIn || 0);
+      return a + 2 * (d.thicknessIn || 0) - (d.seriesIn || 0);
+    }, 0);
+  }
+
+  /* True only when every dimension in play was measured by the user. A vendor
+     spec is not a measurement of THIS unit. */
+  function gearDimsVerified(gearIds, gearOf) {
+    if (!gearIds || !gearIds.length || !gearOf) return false;
+    return gearIds.every(function (id) {
+      var g = gearOf(id);
+      return !!(g && g.dims && g.dims.verified === true);
+    });
+  }
+
+  /* Effective load for one set, with its provenance.
+       bandIds   the stack
+       gearIds   the gear used for this exercise (may be empty)
+       ctx       needs bandOf, and optionally gearOf / bandGeomOf
+     Returns { lb, rated, ratio, provenance, stretchIn, basis }.
+     provenance is MEASURED / MODELED / RATED and callers MUST surface it -
+     the number means something different in each case. */
+  function effectiveLoad(ctx, bandIds, gearIds) {
+    var ids = bandIds || [];
+    var rated = ids.reduce(function (a, id) {
+      var b = ctx.bandOf ? ctx.bandOf(id) : null;
+      return a + (b ? bandMid(b) : 0);
+    }, 0);
+    var out = { lb: rated, rated: rated, ratio: 1, provenance: "RATED",
+                stretchIn: null, basis: "vendor midpoint" };
+    if (!ids.length) return out;
+
+    var delta = gearPathDelta(gearIds, ctx.gearOf);
+    var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0;
+
+    ids.forEach(function (id) {
+      var b = ctx.bandOf ? ctx.bandOf(id) : null;
+      if (!b) return;
+      var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
+      var rest = (isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+        ? geom.restLengthIn : (b.lengthIn || 0);
+      if (!rest) { lb += bandMid(b); refTotal += bandMid(b); return; }
+      if (isFinite(geom.restLengthIn) || delta) anyGeom = true;
+      var pts = Array.isArray(geom.measured) ? geom.measured : [];
+      if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) anyMeasured = true;
+      var refStretch = LOAD_MODEL.REF_STRAIN * rest;
+      refTotal += bandForceAt(b, refStretch, geom);
+      lb += bandForceAt(b, refStretch + delta, geom);
+    });
+
+    if (!anyGeom && !anyMeasured) return out;      // nothing to improve on
+
+    out.lb = lb;
+    out.ratio = refTotal ? (lb / refTotal) : 1;
+    out.stretchIn = delta;
+    /* MEASURED requires BOTH a measured band curve AND (when gear is in play)
+       gear the user measured. Anything less is MODELED - it is still an
+       estimate, and must not be presented as a reading. */
+    var gearOK = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
+    out.provenance = (anyMeasured && gearOK) ? "MEASURED" : "MODELED";
+    out.basis = out.provenance === "MEASURED"
+      ? "interpolated through your Tension Master readings"
+      : "fitted from the vendor's rated range at an assumed strain, adjusted for gear";
+    return out;
+  }
+
+  /* Did the equipment change between two sessions, and by how much?
+     The WARNING is worth more than a correction: an 18-36% shift the model can
+     only estimate is better flagged than silently modelled away. */
+  function gearChange(ctx, prevGearIds, nowGearIds) {
+    var a = (prevGearIds || []).slice().sort().join(",");
+    var b = (nowGearIds || []).slice().sort().join(",");
+    if (a === b) return null;
+    var da = gearPathDelta(prevGearIds, ctx.gearOf);
+    var db = gearPathDelta(nowGearIds, ctx.gearOf);
+    var names = function (list) {
+      return (list || []).map(function (id) {
+        var g = ctx.gearOf ? ctx.gearOf(id) : null;
+        return g ? g.name : id;
+      });
+    };
+    return {
+      changed: true,
+      deltaIn: db - da,
+      prev: names(prevGearIds),
+      now: names(nowGearIds),
+      /* Positive delta = more stretch = heavier at the same body position. */
+      direction: (db - da) > 0 ? "heavier" : ((db - da) < 0 ? "lighter" : "unknown")
+    };
+  }
+
+  /* ---- progressive-resistance stack search ------------------------------
+     A port of the BandStack engine that already exists three times in this
+     project (Rails `BandStack.suggestions`, `resistance_bands.c`, and the
+     generated static /bands page) into the one place the decision is actually
+     made. The app's own suggestProgression offered "next band up in the same
+     brand+length family, or add the lightest band you own"; measured over the
+     128 parseable catalog entries, same brand+length step-ups are a MEDIAN
+     +43%, mean +52%, max +270%, with 76% of all steps over +25%. Serious Steel
+     #0 to #1 is +135%. That turns READY TO PROGRESS into a jump the lifter
+     cannot absorb, and the same engine then flags STALLED three sessions later.
+
+     Ranking, identical to the other three implementations so all four agree:
+       - candidate must be strictly heavier than the current stack
+       - target window is +5%..+15% on SINGLED TOP END, ideal +10%
+       - in-window score is the integer |10*candMax - 11*curMax|; out-of-window
+         candidates rank after all in-window ones, by smallest step up
+       - key = [outOfWindow, score, bandCount, max, min], lexicographic, low wins
+       - dedup on identical (min,max) totals
+     All scoring is integer so there is no float-comparison drift between the
+     four implementations.
+
+     DOUBLING IS DELIBERATELY NOT OFFERED. The app models a doubled band as 2x,
+     which is the manufacturer's convention at matched PERCENTAGE elongation; at
+     the matched ABSOLUTE length a human ROM actually produces, the true ratio
+     is 5.3x-13.1x. Suggesting "double it" as a +10% step would be wrong by
+     most of an order of magnitude. See the doubled-band note in the UI. */
+  var STACK_MAX = 4;            // realistic bar/anchor limit; also caps the search
+  var STACK_SUGGESTIONS = 3;
+
+  /* The search always runs to the full STACK_MAX depth so this implementation
+     stays byte-identical to the Rails / C / static ones - verified against
+     BandStack.suggestions on the real 71-band 41" pool. That worst case
+     (~1.03M combinations, no MY BANDS set) measures ~130ms here, roughly half
+     Ruby's, so it is memoised rather than depth-limited: reducing the depth
+     would have made the four implementations disagree exactly when the pool is
+     widest. With MY BANDS set the pool is a handful of bands and the search is
+     sub-millisecond. */
+  var _STACK_MEMO = {};
+  function stackKey(curBands, poolBands, opts) {
+    return (curBands || []).map(function (b) { return b.id; }).sort().join(",") + "|" +
+           (poolBands || []).map(function (b) { return b.id + ":" + b.res; }).join(",") + "|" +
+           ((opts && opts.count) || "") + ":" + ((opts && opts.maxStack) || "");
+  }
+
+  /* curBands / poolBands are band OBJECTS. poolBands must already be filtered
+     to one loop length (bands only stack when lengths match) and de-duplicated.
+     Returns up to 3 { bands, min, max, pct, inWindow }, best first. */
+  function stackSuggestions(curBands, poolBands, opts) {
+    var memoK = stackKey(curBands, poolBands, opts);
+    if (_STACK_MEMO[memoK]) return _STACK_MEMO[memoK];
+    var result = stackSuggestionsUncached(curBands, poolBands, opts);
+    _STACK_MEMO[memoK] = result;
+    return result;
+  }
+  function stackSuggestionsUncached(curBands, poolBands, opts) {
+    var pool = (poolBands || []).filter(function (b) { return b && parseResRange(b.res).max > 0; });
+    if (!pool.length) return [];
+    var want = (opts && opts.count) || STACK_SUGGESTIONS;
+    var depth = Math.min((opts && opts.maxStack) || STACK_MAX, pool.length);
+
+    var mins = pool.map(function (b) { return parseResRange(b.res).min; });
+    var maxs = pool.map(function (b) { return parseResRange(b.res).max; });
+    var curMax = (curBands || []).reduce(function (a, b) { return a + parseResRange(b.res).max; }, 0);
+
+    /* Positions of the current stack inside the pool, so the identical stack is
+       not offered back. null when it is not wholly inside the pool. */
+    var curPos = null;
+    if (curBands && curBands.length) {
+      var used = {}, pos = [];
+      var okAll = curBands.every(function (cb) {
+        for (var i = 0; i < pool.length; i++) {
+          if (pool[i].id === cb.id && !used[i]) { used[i] = 1; pos.push(i); return true; }
+        }
+        return false;
+      });
+      if (okAll) { pos.sort(function (a, b) { return a - b; }); curPos = pos.join(","); }
+    }
+
+    var winLo = curMax * 105, winHi = curMax * 115;
+    var best = [], worst = null;
+
+    function keyCmp(a, b) {
+      for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; }
+      return 0;
+    }
+    function refreshWorst() {
+      worst = null;
+      if (best.length < want) return;
+      best.forEach(function (c) { if (!worst || keyCmp(c.key, worst.key) > 0) worst = c; });
+    }
+
+    var combo = [];
+    function walk(start, n) {
+      if (combo.length === n) {
+        var maxS = 0, i;
+        for (i = 0; i < n; i++) maxS += maxs[combo[i]];
+        if (maxS <= curMax) return;                       // must be heavier
+        if (curPos !== null && combo.join(",") === curPos) return;
+
+        var m100 = maxS * 100, w, sc;
+        if (m100 >= winLo && m100 <= winHi) { w = 0; sc = Math.abs(maxS * 10 - curMax * 11); }
+        else                                { w = 1; sc = maxS - curMax; }
+        // Cheap reject on the two leading key fields, before any allocation.
+        if (worst && (w > worst.key[0] || (w === worst.key[0] && sc > worst.key[1]))) return;
+
+        var minS = 0;
+        for (i = 0; i < n; i++) minS += mins[combo[i]];
+        var key = [w, sc, n, maxS, minS];
+
+        var dup = null;
+        for (i = 0; i < best.length; i++) {
+          if (best[i].min === minS && best[i].max === maxS) { dup = best[i]; break; }
+        }
+        if (dup) {
+          if (keyCmp(key, dup.key) < 0) {
+            dup.key = key; dup.idx = combo.slice(); dup.inWindow = (w === 0);
+            refreshWorst();
+          }
+          return;
+        }
+        if (worst) {
+          if (keyCmp(key, worst.key) >= 0) return;
+          best.splice(best.indexOf(worst), 1);
+        }
+        best.push({ key: key, idx: combo.slice(), min: minS, max: maxS, inWindow: (w === 0) });
+        refreshWorst();
+        return;
+      }
+      for (var j = start; j < pool.length; j++) { combo.push(j); walk(j + 1, n); combo.pop(); }
+    }
+    for (var n = 1; n <= depth; n++) walk(0, n);
+
+    best.sort(function (a, b) { return keyCmp(a.key, b.key); });
+    return best.map(function (c) {
+      return {
+        bands: c.idx.map(function (j) { return pool[j]; }),
+        min: c.min, max: c.max, inWindow: c.inWindow,
+        pct: curMax ? ((c.max - curMax) / curMax) * 100 : null
+      };
+    });
+  }
+
   /* ---- set shape helpers ------------------------------------------------
      A set is either plain ({reps, bands}) or segmented ({segments:[...]}) for
      drop sets. Every reader goes through setSegments so both shapes work. */
@@ -141,8 +602,14 @@
   }
 
   /* ---- log queries ------------------------------------------------------ */
+  /* Dateless and null entries are dropped rather than sorted. A single null
+     element - which a merge-import can introduce - otherwise dereferences
+     a.date here and takes out buildSetupDoc and buildHistoryDoc, i.e. the whole
+     TODAY tab. entriesFor already guards; this is the matching guard. */
   function sortedLog(log) {
-    return (log || []).slice().sort(function (a, b) {
+    return (log || []).filter(function (e) {
+      return e && e.date != null && e.date !== "";
+    }).sort(function (a, b) {
       return String(a.date).localeCompare(String(b.date));
     });
   }
@@ -198,8 +665,39 @@
      in-workout exercise card and the setup sheet call this. */
   function progressionState(ctx, exId, beforeDate) {
     var deloadOf = ctx.deloadOf;
-    var h = exHistory(ctx.log, exId, beforeDate, 1, deloadOf);
+    /* Two sessions, not one: the readiness rule needs a load reference. */
+    var h = exHistory(ctx.log, exId, beforeDate, 2, deloadOf);
     var working = h.length ? h[0].sets.filter(isPlainSet) : [];
+
+    /* --- load awareness -------------------------------------------------
+       The rep rule alone cannot tell "hit 12 at the same stack" (a genuine
+       progression signal) from "hit 12 because the stack got lighter". Two
+       corrections, both from panel recommendation 18:
+
+       1. BACK-OFF SETS. Sets after the heaviest one, at a lighter stack, are
+          back-off work. Requiring every set to clear the threshold means a
+          deliberate back-off set blocks READY forever. Only sets at the
+          session's top load gate readiness.
+       2. LOAD REGRESSION. If the last session's top load is BELOW the previous
+          working session's, reaching the rep target there is not evidence you
+          can add load - you already removed some. Refuse READY and say so. */
+    function topOf(sets) {
+      return sets.reduce(function (m, s) {
+        var l = setTopLoad(s, ctx.bandOf); return l > m ? l : m;
+      }, 0);
+    }
+    var lastTop = topOf(working);
+    var prevTop = h.length > 1 ? topOf(h[1].sets.filter(isPlainSet)) : 0;
+    var loadDropped = (prevTop > 0 && lastTop > 0 && lastTop < prevTop);
+
+    if (lastTop > 0) {
+      var seenTop = false;
+      working = working.filter(function (s) {
+        var atTop = setTopLoad(s, ctx.bandOf) >= lastTop;
+        if (atTop) { seenTop = true; return true; }
+        return !seenTop;          // lighter sets BEFORE the top set still count
+      });
+    }
     /* Profile-driven, NOT hardcoded: both apps let a profile override the rep
        target and the RIR cap, and Greg's profile sets rirTarget to 1. */
     var thresh = threshOf(exId, ctx.progressReps);
@@ -219,12 +717,22 @@
       ? { hasL: bySide.L.length > 0, hasR: bySide.R.length > 0,
           L: sideReady(bySide.L), R: sideReady(bySide.R) }
       : null;
-    var ready = sides ? (sides.L || sides.R) : sideReady(bySide.B);
+    var repsReady = sides ? (sides.L || sides.R) : sideReady(bySide.B);
+    var ready = repsReady && !loadDropped;
     return {
       ready: ready,
       sides: sides,
+      /* NOT gated on loadDropped: flat reps with FALLING load is a genuine
+         stall. It is RISING load that suppresses STALLED (see exerciseVerdict),
+         because flat reps at a heavier stack is load progression. */
       stalled: !ready && isStalled(ctx.log, exId, beforeDate, deloadOf),
       threshold: thresh,
+      /* Set when the rep target was met but the load had come down, so callers
+         can explain the withheld READY instead of just not showing it. */
+      loadDropped: loadDropped,
+      repsReady: repsReady,
+      lastTop: lastTop,
+      prevTop: prevTop,
     };
   }
 
@@ -829,6 +1337,16 @@
     var m = d.getUTCMonth() + 1, day = d.getUTCDate();
     return d.getUTCFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
   }
+  /* The current date in the RUNNING MACHINE'S timezone. isoOf() reads UTC
+     fields, which is right for the noon-anchored arithmetic above but wrong for
+     "what day is it now": at UTC-10 it returns tomorrow for ten hours a day, so
+     every NEGLECTED (10d) and DORMANT (21d) threshold fires a day early and a
+     session logged this afternoon reports daysSince = 1. */
+  function localISO(d) {
+    var t = d || new Date();
+    var m = t.getMonth() + 1, day = t.getDate();
+    return t.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+  }
   function daysBetween(aISO, bISO) {
     return Math.round((toDate(bISO).getTime() - toDate(aISO).getTime()) / dayMs());
   }
@@ -840,7 +1358,7 @@
   /* The window carries its own entries plus the immediately preceding period of
      equal length for comparison. "all" and "block" have no comparison period. */
   function resolveWindow(ctx, opts) {
-    var asOf = (opts && opts.asOf) || isoOf(new Date());
+    var asOf = (opts && opts.asOf) || localISO();
     var key = String((opts && opts.window) || "30");
     var all = sortedLog(ctx.log);
     var from, to = asOf, spanDays = null, entries, prevEntries = null;
@@ -917,6 +1435,19 @@
       return { code: "STALLED", text: "No improvement in " + CONST.STALL_N +
         " straight working sessions. Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." };
     }
+    /* Direction claims need enough sessions to mean anything. Below
+       TREND_MIN_N the numbers are reported without asserting a direction -
+       the load metric is quantized to the band catalog (consecutive catalog
+       steps are +83%, +91%) against a TREND_BAND of +/-1%, so at n=2-3 "trend"
+       answers only "did you use a different band in the last session than in
+       the first?". */
+    if (row.n < CONST.TREND_MIN_N && (row.trend === "DECLINING" || row.trend === "GROWING")) {
+      return { code: "INSUFFICIENT_N", text: "Top load " +
+        (row.trend === "GROWING" ? "is up " : "is down ") + fmtDelta(row.deltaPct) +
+        " but only " + row.n + " session" + (row.n === 1 ? "" : "s") +
+        " in this window - too few to call a trend (needs " + CONST.TREND_MIN_N +
+        "). Keep logging." };
+    }
     if (row.trend === "DECLINING") {
       return { code: "DECLINING", text: "Top load is falling (" + fmtDelta(row.deltaPct) +
         " across " + row.n + " sessions). Hold the load and rebuild reps, and check recovery." };
@@ -958,16 +1489,33 @@
       });
     });
     /* All-time bests come from the FULL log, not the window, so a PR badge means
-       a genuine personal record rather than a local maximum. */
-    var allBest = {};
+       a genuine personal record rather than a local maximum.
+       allBest is the true all-time top load INCLUDING the latest session - it is
+       a display value. allTops keeps the per-date tops so the PR test can be
+       made against sessions strictly BEFORE the one being judged: testing
+       last.top >= max(..., last.top) is trivially true and made PR LIFTS list
+       nearly every exercise in every window. */
+    var allBest = {}, allTops = {};
     sortedLog(ctx.log).forEach(function (e) {
       Object.keys(e.exercises || {}).forEach(function (exId) {
+        var top = 0;
         (e.exercises[exId] || []).forEach(function (s) {
           var l = setTopLoad(s, ctx.bandOf);
-          if (!allBest[exId] || l > allBest[exId]) allBest[exId] = l;
+          if (l > top) top = l;
         });
+        if (!allBest[exId] || top > allBest[exId]) allBest[exId] = top;
+        if (!allTops[exId]) allTops[exId] = [];
+        allTops[exId].push({ date: e.date, top: top });
       });
     });
+    /* Best top load on any date strictly earlier than beforeDate. */
+    function priorBest(exId, beforeDate) {
+      var best = 0;
+      (allTops[exId] || []).forEach(function (x) {
+        if (String(x.date) < String(beforeDate) && x.top > best) best = x.top;
+      });
+      return best;
+    }
 
     return Object.keys(per).map(function (exId) {
       var arr = per[exId];
@@ -990,7 +1538,7 @@
         unit: repUnit(exId),
         volume: arr.reduce(function (a, x) { return a + x.vol; }, 0),
         allTimeBest: allBest[exId] || 0,
-        isPR: last.top > 0 && last.top >= (allBest[exId] || 0),
+        isPR: last.top > 0 && last.top > priorBest(exId, last.date),
         ready: ps.ready,
         stalled: ps.stalled,
         lastDate: last.date,
@@ -1030,18 +1578,62 @@
     });
     return { shares: shares, counts: counts, total: total };
   }
-  /* UNDER below 0.75x the prescribed share, OVER above 1.5x. A group with no
-     prescribed slots is judged against its weekly-set landmark alone; with
-     neither reference there is nothing to judge, hence NONE. */
-  function balanceOf(actualShare, prescribedShare, weeklySets, landmark) {
-    if (!prescribedShare) {
-      if (landmark == null) return "NONE";
-      return weeklySets < landmark ? "UNDER" : "OK";
+  /* BALANCE: weekly hard sets against the group's landmark. Sets against sets.
+     UNDER below 0.75x the landmark, OVER above 1.5x.
+
+     This used to compare share-of-lb-reps-VOLUME against share-of-exercise-
+     SLOTS - two different units - and returned OVER *before* the landmark
+     check, so a group trained at 1-2 sets/week could be reported
+     over-represented. On a synthetic block where every prescribed exercise was
+     logged in every prescribed session (100% adherence) it flagged three of
+     four groups UNDER and one OVER: identical 3x12 work on a squat and a neck
+     exercise reported the squat "over-represented at 95% of volume against a
+     prescribed 50%" purely because a squat uses a heavier band. The flag
+     therefore pointed away from exactly the work that was missing.
+
+     Volume share is now informational only and produces no flag. Whether you
+     actually logged the mix the program prescribes is a SEPARATE, separately
+     labelled question - see adherenceOf, which compares slots to slots. */
+  function balanceOf(weeklySets, landmark, adherencePct) {
+    if (landmark == null) {
+      /* No landmark for this group (small or unlisted): adherence is the only
+         reference left, and with neither there is nothing to judge. */
+      if (adherencePct == null) return "NONE";
+      return adherencePct < CONST.UNDER_FACTOR * 100 ? "UNDER" : "OK";
     }
-    if (actualShare < prescribedShare * CONST.UNDER_FACTOR) return "UNDER";
-    if (actualShare > prescribedShare * CONST.OVER_FACTOR) return "OVER";
-    if (landmark != null && weeklySets < landmark) return "UNDER";
+    if (weeklySets < landmark * CONST.UNDER_FACTOR) return "UNDER";
+    if (weeklySets > landmark * CONST.OVER_FACTOR) return "OVER";
     return "OK";
+  }
+
+  /* ADHERENCE: did you log the MIX the program prescribes?
+     Compares logged slot share against prescribed slot share - both are shares
+     of exercise slots, so the comparison is unit-consistent. Deliberately
+     separate from balance: a program can be faithfully followed and still be
+     badly balanced, which is the single most important thing this report has
+     to be able to say. Returns a percentage, or null when nothing is
+     prescribed for the group. */
+  function adherenceOf(loggedSlotShare, prescribedShare) {
+    if (!prescribedShare) return null;
+    return (loggedSlotShare / prescribedShare) * 100;
+  }
+  function adherenceCodeOf(pct) {
+    if (pct == null) return "NONE";
+    if (pct < CONST.UNDER_FACTOR * 100) return "UNDER";
+    if (pct > CONST.OVER_FACTOR * 100) return "OVER";
+    return "OK";
+  }
+
+  /* A unilateral exercise logs an L set and an R set for what is one set of
+     work per side. The landmarks are calibrated for one. Counting L+R doubles
+     a group's apparent weekly sets purely because its exercises are one-sided. */
+  function countableSets(sets) {
+    var L = 0, R = 0, B = 0;
+    (sets || []).forEach(function (s) {
+      var sd = setSide(s);
+      if (sd === "L") L++; else if (sd === "R") R++; else B++;
+    });
+    return B + Math.max(L, R);
   }
   function neglectOf(daysSince) {
     if (daysSince == null) return "DORMANT";
@@ -1054,8 +1646,9 @@
     var acc = {};
     function bucket(label) {
       if (!acc[label]) {
-        acc[label] = { label: label, sets: 0, reps: 0, volume: 0, exIds: {},
-                       dates: {}, lastDate: null, perSession: {} };
+        acc[label] = { label: label, sets: 0, rawSets: 0, slots: 0, reps: 0,
+                       volume: 0, exIds: {}, dates: {}, lastDate: null,
+                       perSession: {} };
       }
       return acc[label];
     }
@@ -1066,8 +1659,13 @@
       Object.keys(e.exercises || {}).forEach(function (exId) {
         var label = (ctx.groupOf(exId) || {}).label || "OTHER";
         var b = bucket(label);
-        (e.exercises[exId] || []).forEach(function (s) {
-          b.sets++;
+        var sets = e.exercises[exId] || [];
+        /* Raw set count for display; countable sets (L/R pair = one) for the
+           landmark comparison. */
+        b.rawSets += sets.length;
+        b.sets += countableSets(sets);
+        b.slots++;                       // one exercise slot actually logged
+        sets.forEach(function (s) {
           b.reps += setReps(s);
           var v = setVolume(s, ctx.bandOf);
           b.volume += v;
@@ -1083,19 +1681,51 @@
     Object.keys(pres.counts).forEach(function (label) { bucket(label); });
 
     var totalVol = Object.keys(acc).reduce(function (a, k) { return a + acc[k].volume; }, 0);
+    var totalSlots = Object.keys(acc).reduce(function (a, k) { return a + acc[k].slots; }, 0);
     var weeks = (win.spanDays && win.spanDays > 0) ? (win.spanDays / 7) : 1;
+
+    /* The share of weekly sets each group WOULD get if the landmarks were the
+       plan. Used to tell a program-design gap ("your program prescribes 4% of
+       its slots to QUADS against a 10-set landmark") apart from an adherence
+       gap ("you skipped the quad slot"). Recommendation 14: same data, correct
+       blame. */
+    var landmarkTotal = 0;
+    Object.keys(acc).forEach(function (k) {
+      if (!isExempt(k) && SET_LANDMARKS[k] != null) landmarkTotal += SET_LANDMARKS[k];
+    });
+
+    /* VOLUME MODEL. SET_LANDMARKS encode a multi-set volume philosophy. A
+       trainee following HIT (Yates / Mentzer / Jones) takes ONE set to
+       momentary muscular failure by design, so measuring him against a
+       10-sets/week CHEST landmark reports UNDER on every group, every week,
+       forever - a flag that fires unconditionally carries no information and
+       drowns the ones that do. Under "hit" the landmark is withheld and
+       balance falls through to the program's own prescribed share, which the
+       analyzer already treats as the primary test. Everything else - trends,
+       stalls, neglect, adherence, progression - is unchanged. */
+    var hitModel = (ctx.volumeModel === "hit");
 
     return Object.keys(acc).map(function (label) {
       var b = acc[label];
       var exempt = isExempt(label);
-      var share = totalVol ? (b.volume / totalVol) * 100 : 0;
+      var share = totalVol ? (b.volume / totalVol) * 100 : 0;      // INFORMATIONAL ONLY
+      var slotShare = totalSlots ? (b.slots / totalSlots) * 100 : 0;
       var prescribedShare = pres.shares[label] || 0;
-      var landmark = SET_LANDMARKS[label];
+      var landmark = hitModel ? null : SET_LANDMARKS[label];
       var weeklySets = b.sets / weeks;
       var daysSince = b.lastDate ? daysBetween(b.lastDate, win.asOf) : null;
       var dates = Object.keys(b.perSession).sort();
       var sp = slopePct(dates.map(function (d) { return b.perSession[d]; }));
-      var balance = exempt ? "EXEMPT" : balanceOf(share, prescribedShare, weeklySets, landmark);
+      var adherencePct = adherenceOf(slotShare, prescribedShare);
+      var adherence = exempt ? "EXEMPT" : adherenceCodeOf(adherencePct);
+      var balance = exempt ? "EXEMPT" : balanceOf(weeklySets, landmark, adherencePct);
+      /* Is the shortfall the program's or yours? The program under-prescribes
+         this group if its own prescribed slot share is well below the share the
+         landmarks imply. */
+      var impliedShare = (landmark != null && landmarkTotal)
+        ? (landmark / landmarkTotal) * 100 : null;
+      var programGap = !exempt && balance === "UNDER" && impliedShare != null &&
+        prescribedShare > 0 && prescribedShare < impliedShare * CONST.UNDER_FACTOR;
       var neglect = exempt ? "EXEMPT" : neglectOf(daysSince);
       var flags = [];
       if (!exempt) {
@@ -1106,26 +1736,54 @@
         } else if (neglect === "NEGLECTED") {
           flags.push("Neglected - " + daysSince + " days since last trained");
         }
+        /* Flags cite the test that actually fired, in its own units. With no
+           landmark - an unlisted group, or the HIT volume model - the test that
+           fired was the prescribed-share one, and the flag has to say so; it
+           used to interpolate the missing landmark and print "a landmark of
+           undefined". */
         if (balance === "UNDER") {
-          flags.push("Under-trained - " + Math.round(share) +
-            "% of volume against a prescribed " + Math.round(prescribedShare) + "%" +
-            (landmark != null
-              ? ", " + weeklySets.toFixed(1) + " sets/week against a " + landmark + " landmark"
-              : ""));
+          flags.push(landmark == null
+            ? "Under-trained - logged " + Math.round(slotShare) +
+              "% of slots against a prescribed " + Math.round(prescribedShare) + "%"
+            : "Under-trained - " + weeklySets.toFixed(1) +
+              " sets/week against a landmark of " + landmark +
+              (programGap
+                ? ". Your program only prescribes " + Math.round(prescribedShare) +
+                  "% of its slots to " + label + " against the " +
+                  Math.round(impliedShare) + "% the landmark implies - this is a " +
+                  "program-design gap, not an adherence gap."
+                : ""));
         } else if (balance === "OVER") {
-          flags.push("Over-represented - " + Math.round(share) +
-            "% of volume against a prescribed " + Math.round(prescribedShare) +
-            "% (informational)");
+          flags.push(landmark == null
+            ? "Over-trained - logged " + Math.round(slotShare) +
+              "% of slots against a prescribed " + Math.round(prescribedShare) + "%"
+            : "Over-trained - " + weeklySets.toFixed(1) +
+              " sets/week against a landmark of " + landmark +
+              ". Consider moving a set to an under-trained group.");
+        }
+        /* Adherence is reported separately and labelled as such: it answers a
+           different question from balance and must not be mistaken for it. */
+        if (adherence === "UNDER") {
+          flags.push("Adherence - logged " + Math.round(slotShare) +
+            "% of slots against a prescribed " + Math.round(prescribedShare) +
+            "% (you are skipping this group's slot)");
+        } else if (adherence === "OVER") {
+          flags.push("Adherence - logged " + Math.round(slotShare) +
+            "% of slots against a prescribed " + Math.round(prescribedShare) +
+            "% (you are adding work here beyond the program)");
         }
       }
       return {
-        label: label, sets: b.sets, reps: b.reps, volume: b.volume,
-        share: share, prescribedShare: prescribedShare,
+        label: label, sets: b.sets, rawSets: b.rawSets, reps: b.reps, volume: b.volume,
+        share: share,                     // volume share - INFORMATIONAL ONLY
+        slotShare: slotShare, slots: b.slots,
+        prescribedShare: prescribedShare, impliedShare: impliedShare,
         exercises: Object.keys(b.exIds).length,
         sessions: Object.keys(b.dates).length,
         daysSince: daysSince, slopePct: sp, trend: classifyTrend(sp),
         weeklySets: weeklySets, landmark: landmark == null ? null : landmark,
-        balance: balance, neglect: neglect, flags: flags
+        balance: balance, adherence: adherence, adherencePct: adherencePct,
+        programGap: programGap, neglect: neglect, flags: flags
       };
     }).sort(function (a, b) {
       return b.volume - a.volume || a.label.localeCompare(b.label);
@@ -1227,23 +1885,69 @@
           text: g.label + " has not been trained in " + g.daysSince +
             " days. Work it back into the rotation." });
       }
+      /* Balance recommendations are always stated in sets against the landmark,
+         which is the test that fired. Volume share is never cited here - it is
+         a different unit and citing it read as a contradiction. */
       if (g.balance === "UNDER") {
-        /* Report the reason that actually fired. A group can clear its share
-           test and still be UNDER on the weekly-set landmark; citing the share
-           there reads as a contradiction ("17% vs 14% prescribed" under an
-           under-trained heading). Both the standalone text and the collapsed
-           detail use the same reason. */
-        var byShare = g.share < g.prescribedShare * CONST.UNDER_FACTOR;
-        var reason = byShare
-          ? Math.round(g.share) + "% of volume against a prescribed " +
-            Math.round(g.prescribedShare) + "%"
-          : g.weeklySets.toFixed(1) + " sets/wk against a landmark of " + g.landmark;
-        recs.push({ severity: 4, code: "UNDER", scope: "group", subject: g.label,
-          detail: g.label + " (" + (byShare
-            ? Math.round(g.share) + "% vs " + Math.round(g.prescribedShare) + "% prescribed"
-            : g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark) + ")",
-          text: g.label + " is under-trained: " + reason +
-            ". Add a set or an exercise, or stop skipping its slot." });
+        if (g.programGap) {
+          /* Recommendation 14: name the real cause. Telling someone to "stop
+             skipping the slot" when the program barely prescribes one sends
+             them to fix the wrong thing. */
+          recs.push({ severity: 4, code: "UNDER_PROGRAM", scope: "group", subject: g.label,
+            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark +
+              ", program prescribes " + Math.round(g.prescribedShare) + "%)",
+            text: g.label + " is under-trained at " + g.weeklySets.toFixed(1) +
+              " sets/week against a landmark of " + g.landmark +
+              ", but your program only prescribes " + Math.round(g.prescribedShare) +
+              "% of its slots to " + g.label + " against the " + Math.round(g.impliedShare) +
+              "% the landmark implies. This is a program-design gap, not an adherence gap" +
+              (ctx.betterProgramFor ? ctx.betterProgramFor(g.label) : "") +
+              ". Adding a set to the existing slot will not close it on its own." });
+        } else if (g.landmark == null) {
+          /* No landmark applied (unlisted group, or the HIT volume model): the
+             prescribed-share test is what fired, so state it in those units
+             rather than citing a landmark that was never used. */
+          recs.push({ severity: 4, code: "UNDER", scope: "group", subject: g.label,
+            detail: g.label + " (" + Math.round(g.slotShare) + "% of slots vs " +
+              Math.round(g.prescribedShare) + "% prescribed)",
+            text: g.label + " is under-trained: you logged " + Math.round(g.slotShare) +
+              "% of your slots to it against the " + Math.round(g.prescribedShare) +
+              "% your program prescribes. Stop skipping its slot." });
+        } else {
+          recs.push({ severity: 4, code: "UNDER", scope: "group", subject: g.label,
+            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark + ")",
+            text: g.label + " is under-trained: " + g.weeklySets.toFixed(1) +
+              " sets/week against a landmark of " + g.landmark +
+              ". Add a set or an exercise, or stop skipping its slot." });
+        }
+      } else if (g.balance === "OVER") {
+        /* This used to be computed and thrown away - OVER produced no
+           recommendation at all, so the signal was discarded. */
+        recs.push(g.landmark == null
+          ? { severity: 7, code: "OVER", scope: "group", subject: g.label,
+              detail: g.label + " (" + Math.round(g.slotShare) + "% of slots vs " +
+                Math.round(g.prescribedShare) + "% prescribed)",
+              text: g.label + " is over-trained: you logged " + Math.round(g.slotShare) +
+                "% of your slots to it against the " + Math.round(g.prescribedShare) +
+                "% your program prescribes. Move a slot to an under-trained group " +
+                "rather than adding one." }
+          : { severity: 7, code: "OVER", scope: "group", subject: g.label,
+              detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark + ")",
+              text: g.label + " is over-trained: " + g.weeklySets.toFixed(1) +
+                " sets/week against a landmark of " + g.landmark +
+                ". Recovery is the constraint at this volume - move a set to an " +
+                "under-trained group rather than adding one." });
+      }
+      /* Adherence is its own recommendation, distinctly worded, so it is never
+         mistaken for a balance judgment. */
+      if (g.adherence === "UNDER" && g.balance !== "UNDER") {
+        recs.push({ severity: 8, code: "ADHERENCE", scope: "group", subject: g.label,
+          detail: g.label + " (" + Math.round(g.slotShare) + "% vs " +
+            Math.round(g.prescribedShare) + "% prescribed)",
+          text: g.label + ": you logged " + Math.round(g.slotShare) +
+            "% of your slots here against a prescribed " + Math.round(g.prescribedShare) +
+            "%. Its weekly sets are still adequate, so this is about following " +
+            "the program rather than about volume." });
       }
     });
     (exRows || []).forEach(function (r) {
@@ -1345,6 +2049,34 @@
       "a past session logged out of order can split one.");
     notes.push("Deload sessions count toward volume and adherence but are excluded " +
       "from every trend, stall and progression judgment.");
+    /* Recommendation 21: say what the load axis actually is, on the report
+       itself, every time. Band force is a function of ELONGATION, not of band
+       identity: these figures come from the midpoint of each band's rated
+       range, at a stretch the manufacturer does not state. */
+    notes.push("LOAD IS AN INDEX, NOT POUNDS. Every load and volume figure here " +
+      "comes from the midpoint of each band's manufacturer-rated range, at an " +
+      "unstated stretch. Band force depends on how far the band is stretched, " +
+      "which the log does not record - the median band's own published range " +
+      "spans +/-45% around its midpoint. Use these numbers to compare a lift " +
+      "against itself over time; do not read them as pounds, and do not compare " +
+      "them across brands.");
+    notes.push(ctx.volumeModel === "hit"
+      ? "VOLUME MODEL: HIT. Your profile trains one set to muscular failure, so " +
+        "the weekly working-set landmarks (CHEST 10, BICEPS 6, ...) are NOT " +
+        "applied - they encode a multi-set philosophy you have deliberately " +
+        "rejected, and against them every group would read UNDER forever. " +
+        "Balance is judged against your program's own prescribed slot share " +
+        "instead. The LANDMARK column reads '-' for this reason, not because " +
+        "the group is unlisted. Volume share is shown for information only and " +
+        "raises no flag."
+      : "Balance is judged on weekly hard sets against the group landmark " +
+        "(sets against sets). Volume share is shown for information only and " +
+        "raises no flag. Whether you logged the mix your program prescribes is " +
+        "reported separately as adherence.");
+    notes.push("Direction (GROWING / DECLINING) is only asserted at " +
+      CONST.TREND_MIN_N + " or more sessions in the window. A 3x/week trainee on " +
+      "the 5-session rotation reaches n=3 per exercise per block and n=2 at the " +
+      "30-day window.");
 
     return {
       window: win, totals: totals, prevTotals: prevTotals,
@@ -1557,6 +2289,22 @@
     buildHistoryDoc: buildHistoryDoc,
     daysBetween: daysBetween,
     shiftISO: shiftISO,
+    localISO: localISO,
+    SAFETY_DOC: SAFETY_DOC,
+    RETURN_DAYS: RETURN_DAYS,
+    returningState: returningState,
+    EX_CAUTION: EX_CAUTION,
+    TECH_CAUTION: TECH_CAUTION,
+    exCautionOf: exCautionOf,
+    techCautionOf: techCautionOf,
+    stackSuggestions: stackSuggestions,
+    STACK_MAX: STACK_MAX,
+    LOAD_MODEL: LOAD_MODEL,
+    bandForceAt: bandForceAt,
+    gearPathDelta: gearPathDelta,
+    gearDimsVerified: gearDimsVerified,
+    effectiveLoad: effectiveLoad,
+    gearChange: gearChange,
     resolveWindow: resolveWindow,
     slopePct: slopePct,
     classifyTrend: classifyTrend,
@@ -1564,6 +2312,9 @@
     exerciseVerdict: exerciseVerdict,
     prescribedShares: prescribedShares,
     balanceOf: balanceOf,
+    adherenceOf: adherenceOf,
+    adherenceCodeOf: adherenceCodeOf,
+    countableSets: countableSets,
     neglectOf: neglectOf,
     analyzeGroups: analyzeGroups,
     analyzeBlocks: analyzeBlocks,
