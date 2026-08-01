@@ -329,7 +329,7 @@
     return gearIds.reduce(function (a, id) {
       var g = gearOf(id);
       if (!g) return a;
-      var d = g.dims || {}, t = g.type;
+      var d = resolveGearDims(g) || {}, t = g.type;
       if (t === "footplate") return a + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
       if (t === "bar")       return a - (d.hookOffsetIn || 0);
       if (t === "handle" || t === "anchor" || t === "belt") return a - (d.seriesIn || 0);
@@ -2243,6 +2243,176 @@
              sections: sections, generatedAt: new Date().toISOString() };
   }
 
+
+  /* ---- gear geometry table -------------------------------------------- */
+  /* Moved here from fitness_app.html 2026-07-31 so both apps share one
+     copy -- see resolveGearDims below and gearPathDelta above. */
+  var GEAR_DIMS = {
+    // ---- Harambe ---------------------------------------------------------
+    "Harambe|T Bar":            { lengthIn: 28, hookOffsetIn: 3, hookSide: "opposite",
+                                  attachSpanIn: 26, source: "measured", verified: true },
+    "Harambe|Cyberplate":       { thicknessIn: 2, lengthIn: 22, widthIn: 11.75,
+                                  channelIn: 1, bandSpanIn: 22.25,
+                                  source: "measured", verified: true },
+    /* CORRECTED 2026-07-31, and the correction is large. This read seriesIn 7.75
+       from 2026-07-30 to 2026-07-31 because 7 3/4in is the OVERALL LENGTH OF THE
+       HANDLE, not the load-bearing series length — Greg's own words: "Originally
+       misunderstood. Series length 7 3/4in is the length of the handle itself."
+       The band bears about 1.5in from where the hand does.
+       Consequence: the model was crediting 6.25in of series length per side that
+       does not exist, so it UNDERSTATED stretch and therefore understated load on
+       every handle setup. Entries logged in that window keep their stamped effLb
+       (stampLoad freezes it at save time, deliberately) — they are not silently
+       rewritten, but they are low by that amount. */
+    "Harambe|Handles":          { seriesIn: 1.5, gripDiaIn: 1.25, source: "measured", verified: true,
+                                  note: "1 1/2in series (band bearing point to grip). The 7 3/4in figure carried until 2026-07-31 was the handle's overall length — a different measurement entirely." },
+    /* Rods contribute ZERO to the path on their own, deliberately.
+       A rod and a rope NEST rather than add: Greg measured a standard 6" rod with
+       a 5" black rope and the assembly's series length is 2 3/4", not 11". Summing
+       them would overstate the shortening by roughly 4x and make every load
+       derived from that setup wrong in the confident direction. Until more
+       rod+rope combinations are measured, the ROPE carries the series length and
+       the rod carries none. gearChange still reports that the setup changed, so
+       nothing is silently ignored.
+       ASSERTED in test_gear_geometry.cjs — do not "fix" this by adding 6. */
+    "Harambe|Rods":             { lengthIn: 6, seriesIn: 0, nonAdditive: true,
+                                  source: "measured", verified: true,
+                                  note: "standard rod 6in, travel rod 4in, both stainless. Series length is EMERGENT, not additive: 6in rod + 5in black rope measures 2.75in, not 11in. Contributes 0 until more combinations are measured." },
+    /* Harambe ropes are colour-coded by length (Greg, 2026-07-30):
+       Black 5", Yellow 6", White 12.5", Blue 29". NONE of these is additive with
+       a rod — see the Rods entry. */
+    "Harambe|Black Ropes":      { seriesIn: 5, source: "measured", verified: true,
+                                  note: "set of 4, 5in. Adjusted with stackable 1/2in spacers. NOT additive with a rod." },
+    "Harambe|Yellow Ropes":     { seriesIn: 6, source: "measured", verified: true,
+                                  note: "set of 4, 6in. NOT additive with a rod." },
+    "Harambe|Blue Ropes":       { seriesIn: 29, source: "measured", verified: true,
+                                  note: "29in. NOT OWNED YET — seeded inbound so the figure is ready when it arrives." },
+    "Harambe|White Ropes":      { seriesIn: 12.5, source: "measured", verified: true,
+                                  note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod." },
+    "Harambe|Split Squat Belt": { seriesIn: 40, wornHeightIn: 36, source: "measured", verified: true },
+    "Harambe|Wedges":           { thicknessIn: 1.375, source: "measured", verified: true,
+                                  note: "RAMP, not a slab: 2.5in at the high end, 0.25in at the low end, 8.75in of ramp. 1.375 is the mean; used both directions depending on the lift." },
+    "Harambe|Foam Block":       { thicknessIn: 6, lengthIn: 9, widthIn: 3.5,
+                                  source: "measured", verified: true,
+                                  note: "a place to rest a bar during setup — not in the load path" },
+    // ---- X3 Bar ----------------------------------------------------------
+    "X3 Bar|Steel Ground Plate":{ thicknessIn: 1, lengthIn: 19.25, widthIn: 9.875,
+                                  channelIn: 0.875, bandSpanIn: 19.75,
+                                  source: "measured", verified: true },
+    "X3 Bar|Elite Bar":         { lengthIn: 21.5, hookOffsetIn: 1.875, hookSide: "opposite",
+                                  attachSpanIn: 20.375, source: "measured", verified: true },
+    "X3 Bar|Force Bar":         { lengthIn: 22.375, hookOffsetIn: 1.75, hookSide: "opposite",
+                                  attachSpanIn: 20.375, source: "measured", verified: true },
+    "X3 Bar|Squat Belt (Medium)": { seriesIn: 40, wornHeightIn: 36, source: "measured", verified: true },
+    // ---- Clench ----------------------------------------------------------
+    "Clench|Carbon Pro Bar":    { lengthIn: 26, hookOffsetIn: 3.25, hookSide: "opposite",
+                                  attachSpanIn: 25, source: "measured", verified: true },
+    "Clench|Carbon EZ Bar":     { lengthIn: 34.25, hookOffsetIn: 3, hookSide: "opposite",
+                                  attachSpanIn: 33.25, source: "measured", verified: true },
+    "Clench|Footplate":         { thicknessIn: 1.5, lengthIn: 23.875, widthIn: 14.875,
+                                  channelIn: 0.5, bandSpanIn: 24.25,
+                                  source: "measured", verified: true },
+    "Clench|Handles":           { seriesIn: 1.5, gripDiaIn: 1.25, source: "measured", verified: true,
+                                  note: "measured 2026-07-31. Was an unmeasured 5.5in estimate — the estimate was ~3.7x too long, in the direction that understates load." },
+    "Clench|Heavy Duty Anchors":{ seriesIn: 10, source: "measured", verified: true,
+                                  note: "measured 2026-07-31 at 10in, which is what the estimate happened to say. Mounted at any height; Greg: \"basically the same as the RBT Band Utility Strap — tied to anything as an anchor point\"." },
+    // ---- Serious Steel ---------------------------------------------------
+    /* bandSpanIn REMOVED 2026-07-31. It read 20.5 under source:"measured",
+       verified:true — but the worksheet's span field for this platform is blank,
+       and always has been. 20.5 was interpolated from the other platforms (each
+       spans a little more than its long dimension) and then stamped as Greg's
+       tape. A vendor spec is not a measurement of this unit, and neither is an
+       interpolation. The field is optional and falls back cleanly when absent;
+       re-add it if and when the platform is actually measured. */
+    "Serious Steel|Acacia Training Platform": { thicknessIn: 2.125, lengthIn: 20, widthIn: 11.75,
+                                  channelIn: 1.125,
+                                  source: "measured", verified: true },
+    "Serious Steel|Door Anchor":{ seriesIn: 5.5, doorThicknessIn: 1.5, source: "measured", verified: true,
+                                  note: "measured 2026-07-31 at 5 1/2in — the unmeasured estimate said 10in, nearly double. Mounts on a 1 1/2in door; Greg uses it anywhere from 2in to 80in off the floor." },
+    "Serious Steel|Large Band Guard": { lengthIn: 24, source: "measured", verified: true,
+                                  note: "slides freely, so it does not shorten the stretching section; placed around the band against abrasive surfaces" },
+    // ---- HeavyDutyBar ----------------------------------------------------
+    "HeavyDutyBar|Swift Bar":   { lengthIn: 23.75, hookOffsetIn: 2.375, hookSide: "opposite",
+                                  attachSpanIn: 21.5, source: "measured", verified: true },
+    "HeavyDutyBar|Bantam Bar":  { lengthIn: 27.75, hookOffsetIn: 2.375, hookSide: "opposite",
+                                  attachSpanIn: 26, source: "measured", verified: true },
+    "HeavyDutyBar|Qlaw Handles":{ seriesIn: 1.75, gripDiaIn: 1.125, source: "measured", verified: true,
+                                  note: "measured 2026-07-31. Was an unmeasured 5.5in estimate." },
+    "HeavyDutyBar|Qdeck":       { thicknessIn: 2, lengthIn: 24, widthIn: 12.5,
+                                  channelIn: 0.75, bandSpanIn: 24.125,
+                                  source: "measured", verified: true },
+    "HeavyDutyBar|Travel Platform": { thicknessIn: 1.625, lengthIn: 19.75, widthIn: 11.1875,
+                                  channelIn: 0.875, bandSpanIn: 20,
+                                  source: "measured", verified: true },
+    "HeavyDutyBar|Elevators":   { thicknessIn: 0.4375, source: "measured", verified: true,
+                                  maxStackIn: 4,
+                                  note: "7/16in each, NOT the 2in that was estimated — the panel's '+18% for a 2in elevator' does not apply to these. Used on top of the Qdeck. They stack, but Greg caps a stack at 4in total (that is a limit, not the height of two)." },
+    // ---- RBT -------------------------------------------------------------
+    "RBT|Band Utility Strap":   { seriesIn: 10, source: "measured", verified: true,
+                                  note: "10in fully extended, 5in at the shortest usable setting; all four identical. Functions as an anchor." },
+  };
+
+  var GEAR_DIM_FIELDS = [
+    { k:"thicknessIn",  l:"Thickness",    hint:"floor to standing surface", types:["footplate","other"] },
+    { k:"channelIn",    l:"Channel depth",hint:"if the band runs in a slot", types:["footplate"] },
+    { k:"lengthIn",     l:"Length",       hint:"overall",                   types:["bar","footplate","other"] },
+    { k:"widthIn",      l:"Width",        hint:"",                          types:["footplate","other"] },
+    { k:"hookOffsetIn", l:"Hook offset",  hint:"grip axis to band bearing surface", types:["bar"] },
+    { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
+    { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","belt","other"] },
+  ];
+  var GEAR_DIMS_REV = "2026-07-31-measured-r3";
+
+  /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
+     deliberate -- keep it that way. */
+  function assign(a, b) {
+    var out = {}, k;
+    for (k in a) if (Object.prototype.hasOwnProperty.call(a, k)) out[k] = a[k];
+    for (k in b) if (Object.prototype.hasOwnProperty.call(b, k)) out[k] = b[k];
+    return out;
+  }
+
+  function gearDimFieldsFor(type) {
+    return GEAR_DIM_FIELDS.filter(function (f) {
+      return f.types.indexOf(type || "other") >= 0;
+    });
+  }
+
+  function seedDimsFor(brand, name) {
+    var d = GEAR_DIMS[brand + "|" + name];
+    if (!d) return { source: "estimated", verified: false, seedRev: GEAR_DIMS_REV };
+    var out = assign(d, {});
+    out.verified = (d.source === "measured" && d.verified === true);
+    out.seedRev = GEAR_DIMS_REV;
+    return out;
+  }
+
+  function gearDimSource(it) {
+    var d = it && it.dims;
+    if (!d) return "none";
+    if (d.verified) return "measured";
+    return d.source || "estimated";
+  }
+
+  /* THE resolution order, shared by both apps.
+       1. userEdited      -> always wins; a number the user typed is the
+                             measurement, and no table revision may overwrite it
+       2. current seedRev -> the stored copy is up to date, use it
+       3. table lookup    -> by brand|name. THIS is what makes the PWA work:
+                             it deliberately never seeds gear (multi-user - no
+                             one inherits anyone else's inventory), so its items
+                             arrive from Firestore with no dims at all.
+       4. nothing         -> an unverified estimate; contributes 0 to the path
+                             and leaves the load at RATED. Never throws, never
+                             invents a number. */
+  function resolveGearDims(it) {
+    if (!it) return { source: "estimated", verified: false };
+    var d = it.dims;
+    if (d && d.userEdited) return d;
+    if (d && d.seedRev === GEAR_DIMS_REV) return d;
+    return seedDimsFor(it.brand, it.name);
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -2302,6 +2472,13 @@
     LOAD_MODEL: LOAD_MODEL,
     bandForceAt: bandForceAt,
     gearPathDelta: gearPathDelta,
+    GEAR_DIMS: GEAR_DIMS,
+    GEAR_DIMS_REV: GEAR_DIMS_REV,
+    GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,
+    gearDimFieldsFor: gearDimFieldsFor,
+    seedDimsFor: seedDimsFor,
+    gearDimSource: gearDimSource,
+    resolveGearDims: resolveGearDims,
     gearDimsVerified: gearDimsVerified,
     effectiveLoad: effectiveLoad,
     gearChange: gearChange,
