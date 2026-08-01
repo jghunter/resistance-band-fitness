@@ -3255,6 +3255,121 @@ function GearDims({ it, onChange }) {
   )
 }
 
+/* Band calibration -- rest length and Tension Master readings, the physical
+   measurements the effective-load model needs (see CLAUDE.md "Effective Load
+   Model"). Without a real rest length the model falls back to the catalog's
+   nominal loop length, and every stretch figure is wrong by however much the
+   band actually differs from its advertised size.
+
+   Ported from fitness_app.html's BandCalibration. The parsing/validation --
+   what a typed rest length means, how one Tension Master reading gets added,
+   edited or cleared, and the "fewer than 2 readings never claims MEASURED"
+   floor -- all live once in rbts_reports.js (applyBandRestLengthEdit /
+   applyBandMeasuredPointEdit / bandCalibrationLabel) so both apps share
+   exactly the same behaviour instead of a hand-duplicated inline copy; this
+   component only renders and wires up state.
+
+   rbts_bandGeom is local-only (not Firestore-synced -- see getLocalBandGeom
+   above and CLAUDE.md's localStorage key table), so calibration works the
+   same signed in or signed out, and only round-trips through a backup
+   export/import like the rest of the local-only keys. */
+function BandCalibration({ myBands }) {
+  const [open, setOpen] = useState(false)
+  const [geom, setGeom] = useState(() => getLocalBandGeom())
+  const pool = myBands.length ? BANDS.filter(b => myBands.indexOf(b.id) >= 0) : []
+
+  function setRest(id, raw) {
+    const next = { ...geom, [id]: RBTS_REPORTS.applyBandRestLengthEdit(geom[id], raw) }
+    saveLocalBandGeom(next)
+    setGeom(next)
+  }
+  function setPoint(id, i, field, raw) {
+    const pts = (geom[id] || {}).measured || []
+    const nextPts = RBTS_REPORTS.applyBandMeasuredPointEdit(pts, i, field, raw)
+    const next = { ...geom, [id]: { ...(geom[id] || {}), measured: nextPts } }
+    saveLocalBandGeom(next)
+    setGeom(next)
+  }
+
+  return (
+    <div style={widget}>
+      <div onClick={() => setOpen(!open)}
+        style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
+        <span style={lbl}>BAND CALIBRATION</span>
+        <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+          {open ? '▾' : '▸'} {pool.length ? `${pool.length} bands in MY BANDS` : 'set MY BANDS first'}
+        </span>
+      </div>
+      {open && (
+        <div style={{marginTop:10}}>
+          <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6,marginBottom:10}}>
+            Rest length is the loop laid flat with the slack just taken out, inside tip to
+            tip — a "41 inch" band often is not 41 inches, and every stretch figure
+            depends on it. The three readings are Tension Master measurements: stretch the
+            band so the distance between the bearing points is a length you have measured,
+            read the gauge, record both. Two readings are enough to replace the assumed
+            curve with a real one; three is better. Leave it all blank and the app keeps
+            using the vendor's rated range, reported as MODELED rather than MEASURED.
+          </div>
+          {!pool.length && (
+            <div style={{fontFamily:'monospace',fontSize:11,color:C.amber}}>
+              Nothing to calibrate yet — pick the bands you own in MY BANDS.
+            </div>
+          )}
+          {pool.map(b => {
+            const g = geom[b.id] || {}
+            const pts = g.measured || []
+            const status = RBTS_REPORTS.bandCalibrationLabel(pts)
+            return (
+              <div key={b.id} style={{padding:'8px 0',borderTop:`1px solid ${C.accentDim}`}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:6}}>
+                  <span style={{fontFamily:'monospace',fontSize:11,color:C.text,minWidth:170}}>
+                    {bandLabel(b)} <span style={{color:C.dimGray}}>{b.lengthIn}" · {b.res}</span>
+                  </span>
+                  <span style={{...pill(status === 'MEASURED' ? C.green : C.dimGray),fontSize:9}}>
+                    {status}
+                  </span>
+                </div>
+                <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                    <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>REST LENGTH</span>
+                    <input type="number" step="0.125" min="0"
+                      value={g.restLengthIn == null ? '' : g.restLengthIn}
+                      placeholder={String(b.lengthIn)}
+                      onChange={e => setRest(b.id, e.target.value)}
+                      style={{...inputStyle, width:66, fontSize:12, padding:'4px 6px'}}/>
+                  </div>
+                  {[0,1,2].map(i => {
+                    const p = pts[i] || {}
+                    return (
+                      <div key={i} style={{display:'flex',flexDirection:'column',gap:2}}>
+                        <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+                          READING {i+1} — STRETCH / LB
+                        </span>
+                        <div style={{display:'flex',gap:3,alignItems:'center'}}>
+                          <input type="number" step="0.25" min="0"
+                            value={p.stretchIn == null ? '' : p.stretchIn}
+                            onChange={e => setPoint(b.id, i, 'stretchIn', e.target.value)}
+                            style={{...inputStyle, width:56, fontSize:12, padding:'4px 6px'}}/>
+                          <span style={{color:C.dimGray,fontSize:10}}>/</span>
+                          <input type="number" step="0.5" min="0"
+                            value={p.lb == null ? '' : p.lb}
+                            onChange={e => setPoint(b.id, i, 'lb', e.target.value)}
+                            style={{...inputStyle, width:56, fontSize:12, padding:'4px 6px'}}/>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GEAR TAB
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3414,6 +3529,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
           </div>
         )}
       </div>
+      <BandCalibration myBands={myBands}/>
       <div style={widget}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
           <span style={lbl}>EQUIPMENT{gear.length?' · '+gear.length:''}</span>

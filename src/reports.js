@@ -292,9 +292,7 @@
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
       ? geom.restLengthIn : (band.lengthIn || 0);
     if (!rest) return bandMid(band);
-    var pts = (geom && Array.isArray(geom.measured)) ? geom.measured.filter(function (p) {
-      return p && isFinite(p.stretchIn) && isFinite(p.lb);
-    }).sort(function (a, b) { return a.stretchIn - b.stretchIn; }) : [];
+    var pts = (geom && Array.isArray(geom.measured)) ? sanitizeMeasuredPoints(geom.measured) : [];
 
     if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) {
       /* Piecewise-linear through real readings; clamp outside the measured
@@ -319,6 +317,94 @@
     if (hi <= lo) return bandMid(band);
     var f = r.min + (r.max - r.min) * ((s - lo) / (hi - lo));
     return f < 0 ? 0 : f;                                       // never negative
+  }
+
+  /* ---- band calibration: rest length + Tension Master readings ----------
+     BandCalibration (both apps) is a physical-measurement form, not a
+     report, but the arithmetic under it -- parsing a typed number, rejecting
+     garbage, and keeping the "fewer than 2 points is never MEASURED" floor
+     (LOAD_MODEL.MIN_MEASURED_POINTS) in exactly one place -- is exactly the
+     kind of thing a UI-only implementation would duplicate twice and drift.
+     Storage (rbts_bandGeom, keyed by band id) stays entirely in each app;
+     this module only ever sees one band's { restLengthIn, measured } entry
+     and hands back a new one. Nothing here touches the DOM or localStorage. */
+
+  /* Filter to complete points and sort ascending by stretch -- the same
+     filter+sort bandForceAt above needed for interpolation, now shared so the
+     calibration panel's own MEASURED/RATED badge can never disagree with what
+     the load model actually does with the same points. */
+  function sanitizeMeasuredPoints(points) {
+    /* > 0, not just isFinite: isFinite(null) is true (null coerces to 0), so a
+       plain isFinite check would treat a padded-but-half-filled slot -- one
+       field typed, the other still literally `null` -- as a complete "0 lb"
+       reading and feed a fabricated data point into the interpolation. */
+    return (points || []).filter(function (p) {
+      return p && isFinite(p.stretchIn) && p.stretchIn > 0 &&
+                  isFinite(p.lb) && p.lb > 0;
+    }).slice().sort(function (a, b) { return a.stretchIn - b.stretchIn; });
+  }
+
+  /* MEASURED/RATED for display, routed through the one MIN_MEASURED_POINTS
+     constant so the calibration panel's badge and the load model's
+     provenance can never disagree about where the floor sits. */
+  function bandCalibrationLabel(points) {
+    return sanitizeMeasuredPoints(points).length >= LOAD_MODEL.MIN_MEASURED_POINTS
+      ? "MEASURED" : "RATED";
+  }
+
+  /* A typed rest length. `entry` is the band's current geom entry (or
+     null/undefined for a band with none yet); `raw` is the input's string
+     value. "" clears the field -- a band can go back to "not yet measured".
+     A non-numeric or non-positive value is REJECTED: a 0in or negative rest
+     length is not a usable measurement, so `entry` comes back as an
+     unmodified copy rather than storing a number that would just get
+     silently treated as "no rest length" by bandForceAt's `if (!rest)` guard
+     anyway. Never mutates `entry`; always returns a new object. */
+  function applyBandRestLengthEdit(entry, raw) {
+    var e = assign(entry || {}, {});
+    if (raw === "" || raw === null || raw === undefined) {
+      delete e.restLengthIn;
+      return e;
+    }
+    var v = Number(raw);
+    if (!isFinite(v) || v <= 0) return assign(entry || {}, {});
+    e.restLengthIn = v;
+    return e;
+  }
+
+  /* One Tension Master reading, edited by UI slot index -- the panel shows a
+     fixed set of READING 1/2/3 rows, so `index` addresses a slot rather than
+     an array position. `points` is the band's current measured array (may be
+     short or have incomplete entries); `field` is "stretchIn" or "lb"; `raw`
+     is the input's string value.
+
+     Padding keeps an earlier slot addressable even when a later one is
+     filled first (READING 2 before READING 1 is a normal thing to do while
+     measuring). "" clears that one field, which drops the point back to
+     incomplete. A non-numeric or non-positive raw is REJECTED and the point
+     at that index is left exactly as it was.
+
+     Deliberately does NOT filter or sort -- it returns the slots exactly as
+     the three visible rows would show them, including a row with only one
+     field filled in. Reordering or dropping a half-filled row here would
+     make a value the user just typed vanish or jump to a different visible
+     row the moment they filled the OTHER field of a different reading.
+     sanitizeMeasuredPoints (called by the load model and the calibration
+     badge) is what decides what counts as a real, usable reading; this
+     function only ever decides what one row's edit does to that row.
+     Never mutates `points`; always returns a new array. */
+  function applyBandMeasuredPointEdit(points, index, field, raw) {
+    var pts = (points || []).slice();
+    while (pts.length <= index) pts.push({ stretchIn: null, lb: null });
+    pts[index] = assign(pts[index] || {}, {});
+    if (raw === "" || raw === null || raw === undefined) {
+      pts[index][field] = null;
+      return pts;
+    }
+    var v = Number(raw);
+    if (!isFinite(v) || v <= 0) return pts;               // reject silently
+    pts[index][field] = v;
+    return pts;
   }
 
   /* Total inches this gear set adds to (+) or removes from (-) the stretch the
@@ -2578,6 +2664,10 @@
     STACK_MAX: STACK_MAX,
     LOAD_MODEL: LOAD_MODEL,
     bandForceAt: bandForceAt,
+    sanitizeMeasuredPoints: sanitizeMeasuredPoints,
+    bandCalibrationLabel: bandCalibrationLabel,
+    applyBandRestLengthEdit: applyBandRestLengthEdit,
+    applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
     gearPathDelta: gearPathDelta,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
