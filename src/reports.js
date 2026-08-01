@@ -338,12 +338,16 @@
   }
 
   /* True only when every dimension in play was measured by the user. A vendor
-     spec is not a measurement of THIS unit. */
+     spec is not a measurement of THIS unit. Routes through resolveGearDims
+     so that PWA-shaped gear (no stored dims, resolved from table) is handled
+     identically to HTML-shaped gear (dims stored on item). */
   function gearDimsVerified(gearIds, gearOf) {
     if (!gearIds || !gearIds.length || !gearOf) return false;
     return gearIds.every(function (id) {
       var g = gearOf(id);
-      return !!(g && g.dims && g.dims.verified === true);
+      if (!g) return false;
+      var d = resolveGearDims(g);
+      return !!(d && d.verified === true);
     });
   }
 
