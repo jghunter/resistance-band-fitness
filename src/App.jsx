@@ -3189,6 +3189,74 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
   )
 }
 
+/* Gear dimensions -- the numbers that decide how hard a band actually pulls.
+   Ported from fitness_app.html. A value the user types IS the measurement, so
+   it sets source/verified AND userEdited, which pins it against any future
+   GEAR_DIMS revision. Reads through resolveGearDims so an item that arrived
+   from Firestore with no stored dims still shows the table's figures. */
+function GearDims({ it, onChange }) {
+  const [open, setOpen] = useState(false)
+  const d = RBTS_REPORTS.resolveGearDims(it) || {}
+  const fields = RBTS_REPORTS.gearDimFieldsFor(it.type)
+  const src = RBTS_REPORTS.gearDimSource({ dims: d })
+  const SRC_COLOR = { measured: C.green, vendor: '#7ecfff', estimated: C.amber, none: C.dimGray }
+  const SRC_LABEL = { measured: 'MEASURED', vendor: 'VENDOR', estimated: 'ESTIMATE', none: 'NO DIMS' }
+
+  function setField(k, raw) {
+    const v = raw === '' ? undefined : Number(raw)
+    if (v != null && !isFinite(v)) return
+    const next = { ...d }
+    if (v === undefined) delete next[k]; else next[k] = v
+    /* A value the user typed is measured by definition -- and userEdited pins
+       it, so a later GEAR_DIMS revision can never overwrite their number. */
+    onChange({ ...it, dims: { ...next, source: 'measured', verified: true, userEdited: true } })
+  }
+
+  if (!fields.length) return null
+  return (
+    <div style={{paddingLeft:26}}>
+      <span onClick={() => setOpen(!open)}
+        title="Dimensions that change how hard the band actually pulls"
+        style={{...pill(SRC_COLOR[src]), cursor:'pointer', fontSize:9}}>
+        {open ? '▾' : '▸'} DIMS · {SRC_LABEL[src]}
+      </span>
+      {open && (
+        <div style={{marginTop:6,padding:'8px 10px',background:C.bgInput,borderRadius:4,
+          border:`1px solid ${C.accentDim}55`}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8}}>
+            {fields.map(f => (
+              <div key={f.k} style={{display:'flex',flexDirection:'column',gap:2}}>
+                <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+                  {f.l.toUpperCase()}{f.hint ? ` · ${f.hint}` : ''}
+                </span>
+                <div style={{display:'flex',alignItems:'center',gap:4}}>
+                  <input type="number" step="0.125" min="0"
+                    value={d[f.k] == null ? '' : d[f.k]}
+                    onChange={e => setField(f.k, e.target.value)}
+                    style={{...inputStyle, width:70, fontSize:12, padding:'4px 6px'}}/>
+                  <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>in</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {d.note && (
+            <div style={{marginTop:6,fontFamily:'monospace',fontSize:9,color:C.amber,lineHeight:1.5}}>
+              {d.note}
+            </div>
+          )}
+          <div style={{marginTop:6,fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.5}}>
+            {src === 'measured'
+              ? 'You measured these. The load model may treat them as real.'
+              : src === 'vendor'
+                ? 'Published by the vendor but not confirmed on your unit. Overwrite with a tape measure when you can.'
+                : 'An estimate, not a measurement. Measure it and type the number here.'}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GEAR TAB
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3408,28 +3476,31 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                   {isOpen(key) && (
                     <div style={{display:'flex',flexDirection:'column',gap:4,padding:'8px 6px 2px 24px'}}>
                       {list.map(it => (
-                        <div key={it.id} style={{display:'flex',alignItems:'center',gap:8,
-                          padding:'6px 8px',background:C.bgWidget,borderRadius:4}}>
-                          <span title="Toggle owned / inbound"
-                            onClick={() => onSaveGear({...it, status: it.status==='owned'?'inbound':'owned'})}
-                            style={{width:10,height:10,borderRadius:'50%',background:SC[it.status]||C.dimGray,
-                              flexShrink:0,cursor:'pointer',border:'1px solid rgba(255,255,255,0.25)'}}/>
-                          <span style={{fontFamily:'monospace',fontSize:12,color:C.text,flex:1}}>
-                            {it.qty>1?it.qty+'× ':''}{it.name}
-                            {it.note?<span style={{color:C.dimGray,fontSize:10}}> ({it.note})</span>:null}
-                          </span>
-                          <span title="Equipment type — drives the in-workout GEAR picker's selection caps. Tap to change if the guess is wrong."
-                            onClick={() => {
-                              const i = GEAR_TYPES.indexOf(it.type||'other')
-                              onSaveGear({...it, type: GEAR_TYPES[(i+1)%GEAR_TYPES.length]})
-                            }}
-                            style={{...pill(C.dimGray),cursor:'pointer',userSelect:'none'}}>
-                            {GEAR_TYPE_LABELS[it.type||'other']}
-                          </span>
-                          {it.status==='inbound' && <span style={pill(C.amber)}>inbound</span>}
-                          <span onClick={() => onRemoveGear(it.id)}
-                            title="Remove item"
-                            style={{cursor:'pointer',color:C.red,fontWeight:700}}>✕</span>
+                        <div key={it.id} style={{display:'flex',flexDirection:'column',gap:4}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8,
+                            padding:'6px 8px',background:C.bgWidget,borderRadius:4}}>
+                            <span title="Toggle owned / inbound"
+                              onClick={() => onSaveGear({...it, status: it.status==='owned'?'inbound':'owned'})}
+                              style={{width:10,height:10,borderRadius:'50%',background:SC[it.status]||C.dimGray,
+                                flexShrink:0,cursor:'pointer',border:'1px solid rgba(255,255,255,0.25)'}}/>
+                            <span style={{fontFamily:'monospace',fontSize:12,color:C.text,flex:1}}>
+                              {it.qty>1?it.qty+'× ':''}{it.name}
+                              {it.note?<span style={{color:C.dimGray,fontSize:10}}> ({it.note})</span>:null}
+                            </span>
+                            <span title="Equipment type — drives the in-workout GEAR picker's selection caps. Tap to change if the guess is wrong."
+                              onClick={() => {
+                                const i = GEAR_TYPES.indexOf(it.type||'other')
+                                onSaveGear({...it, type: GEAR_TYPES[(i+1)%GEAR_TYPES.length]})
+                              }}
+                              style={{...pill(C.dimGray),cursor:'pointer',userSelect:'none'}}>
+                              {GEAR_TYPE_LABELS[it.type||'other']}
+                            </span>
+                            {it.status==='inbound' && <span style={pill(C.amber)}>inbound</span>}
+                            <span onClick={() => onRemoveGear(it.id)}
+                              title="Remove item"
+                              style={{cursor:'pointer',color:C.red,fontWeight:700}}>✕</span>
+                          </div>
+                          <GearDims it={it} onChange={onSaveGear}/>
                         </div>
                       ))}
                     </div>
