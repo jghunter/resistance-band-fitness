@@ -447,6 +447,31 @@
     return any ? out : undefined;
   }
 
+  /* Apply a freshly computed stampLoad() result onto a log entry that is
+     about to be re-persisted (a history edit, never the first save -- first
+     saves just set `load` directly). Returns a NEW object; never mutates
+     `entry`.
+
+     WHY the removal branch exists: this is only ever called after the
+     caller has recomputed loadStamp from the sets it is about to save. If
+     that recompute comes back falsy (e.g. every band was removed from the
+     entry), the entry's OLD `load` -- computed from sets that no longer
+     exist -- must not survive the edit. A stamp that contradicts its own
+     entry's sets is worse than no stamp: an absent `load` degrades honestly
+     to RATED everywhere it's read, while a stale one silently corrupts trend
+     analysis with a number that no longer describes what was logged. So a
+     falsy loadStamp deletes `load` from the result entirely, rather than
+     leaving whatever was there before. */
+  function applyLoadStamp(entry, loadStamp) {
+    var out = assign(entry || {}, {});
+    if (loadStamp) {
+      out.load = loadStamp;
+    } else {
+      delete out.load;
+    }
+    return out;
+  }
+
   /* Did the equipment change between two sessions, and by how much?
      The WARNING is worth more than a correction: an 18-36% shift the model can
      only estimate is better flagged than silently modelled away. */
@@ -2531,6 +2556,7 @@
     gearDimsVerified: gearDimsVerified,
     effectiveLoad: effectiveLoad,
     stampLoad: stampLoad,
+    applyLoadStamp: applyLoadStamp,
     gearChange: gearChange,
     resolveWindow: resolveWindow,
     slopePct: slopePct,

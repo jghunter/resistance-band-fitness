@@ -2793,9 +2793,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }))
-    const updated = { ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() }
-    if (loadStamp) updated.load = loadStamp
-    else delete updated.load
+    const updated = RBTS_REPORTS.applyLoadStamp(
+      { ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() },
+      loadStamp)
     onSave(updated)
     onDone(true)
   }
