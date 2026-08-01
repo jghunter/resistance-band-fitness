@@ -488,6 +488,40 @@
     return out;
   }
 
+  /* The heaviest set in a sets list, as an effectiveLoad result -- the same
+     selection stampLoad uses to decide what a whole exercise "means" when the
+     band stack differs set to set (e.g. warm-up sets lighter than working
+     sets). Reads each set's bands the same way stampLoad does: the first
+     segment's bands for a drop/segmented set, else the plain `bands` array.
+     Sets with no bands logged are skipped, not treated as a zero-load set.
+
+     Shared by stampLoad (persisted, at save time) and any in-workout display
+     that wants to show "the load this exercise represents right now" without
+     duplicating the selection rule -- the exercise card must never merge
+     bands ACROSS sets into one artificial stack (a lighter warm-up band plus
+     a heavier working band is not a real combined stack anyone wears).
+
+       sets      [ {reps, bands, segments?, ...}, ... ] -- one exercise's sets
+       gearIds   [gearId, ...] -- gear used for this exercise (same for every
+                 set; gear doesn't change set to set the way band resistance
+                 does)
+       ctx       needs bandOf, and optionally gearOf / bandGeomOf -- exactly
+                 what effectiveLoad needs.
+
+     Returns the effectiveLoad result for the heaviest set, or null when no
+     set in the list logged any bands. */
+  function bestSetLoad(ctx, sets, gearIds) {
+    var best = null;
+    (sets || []).forEach(function (s) {
+      var bands = Array.isArray(s.segments)
+        ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
+      if (!bands.length) return;
+      var e = effectiveLoad(ctx, bands, gearIds);
+      if (!best || e.lb > best.lb) best = e;
+    });
+    return best;
+  }
+
   /* Freeze the computed load onto a workout entry AT SAVE TIME. Re-measuring a
      band or correcting a gear dimension next year must never rewrite what a
      past workout meant -- an entry saved before this existed simply has no
@@ -516,14 +550,7 @@
     Object.keys(exercises || {}).forEach(function (exId) {
       var sets = exercises[exId] || [];
       var gearIds = (gearMap && gearMap[exId]) || [];
-      var best = null;
-      sets.forEach(function (s) {
-        var bands = Array.isArray(s.segments)
-          ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
-        if (!bands.length) return;
-        var e = effectiveLoad(ctx, bands, gearIds);
-        if (!best || e.lb > best.lb) best = e;
-      });
+      var best = bestSetLoad(ctx, sets, gearIds);
       if (!best) return;
       any = true;
       out[exId] = { lb: Math.round(best.lb * 10) / 10, rated: Math.round(best.rated * 10) / 10,
@@ -2679,6 +2706,7 @@
     applyGearDimEdit: applyGearDimEdit,
     gearDimsVerified: gearDimsVerified,
     effectiveLoad: effectiveLoad,
+    bestSetLoad: bestSetLoad,
     stampLoad: stampLoad,
     applyLoadStamp: applyLoadStamp,
     gearChange: gearChange,

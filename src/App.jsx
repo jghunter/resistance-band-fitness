@@ -1152,6 +1152,32 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         })}
         <button style={{...btn(false,C.green),fontSize:11,padding:'6px 12px'}} onClick={addSet}>+ SET</button>
       </div>
+      {(() => {
+        // The card can hold sets on different bands (e.g. a lighter warm-up
+        // set before the working sets). bestSetLoad picks the HEAVIEST set --
+        // the same selection stampLoad uses to decide what this exercise's
+        // load means at save time -- rather than merging bands across sets
+        // into a stack nobody actually wore. Display only: stampLoad (called
+        // at save) is the only thing that persists a `load` value.
+        const e = RBTS_REPORTS.bestSetLoad(
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [])
+        if (!e || e.lb == null) return null
+        // The chip is not decoration: RATED is a vendor midpoint at an
+        // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
+        // stretch, and only MEASURED reflects real gauge readings. Showing a
+        // number without this would invite reading a vendor guess as fact.
+        const PROV_COLOR = { MEASURED: C.green, MODELED: '#7ecfff', RATED: C.dimGray }
+        return (
+          <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4}}>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+              EFFECTIVE {e.lb.toFixed(1)} lb
+            </span>
+            <span style={{...pill(PROV_COLOR[e.provenance] || C.dimGray), fontSize:9}}>
+              {e.provenance}
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }
