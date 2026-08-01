@@ -2487,6 +2487,39 @@
     return seedDimsFor(it.brand, it.name);
   }
 
+  /* A value the user types IS the measurement -- shared by both apps'
+     GearDims.setField so the provenance rule (source/verified/userEdited all
+     set together) is enforced in exactly one place and can be unit-tested
+     without a DOM. Never mutates `dims`; always returns a new object.
+
+       dims -- the current RESOLVED dims object (whatever the caller already
+               computed, e.g. via resolveGearDims).
+       key  -- the field being edited, e.g. "thicknessIn".
+       raw  -- the raw string from the input element.
+
+     raw === "" means the field was cleared: the key is DELETED (never stored
+     as undefined/NaN), and clearing still counts as an edit -- the user
+     telling the app "this number is wrong" is itself information, so the
+     provenance flags are still stamped.
+
+     A non-empty raw that is not a finite number is REJECTED: the edit is
+     not applied, and the input's contents come back unchanged (still a new
+     object, still no mutation, but no provenance flags are stamped either --
+     nothing was actually edited). */
+  function applyGearDimEdit(dims, key, raw) {
+    var d = dims || {};
+    if (raw === "") {
+      var cleared = assign(d, {});
+      delete cleared[key];
+      return assign(cleared, { source: "measured", verified: true, userEdited: true });
+    }
+    var v = Number(raw);
+    if (!isFinite(v)) return assign(d, {});
+    var edited = assign(d, {});
+    edited[key] = v;
+    return assign(edited, { source: "measured", verified: true, userEdited: true });
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -2553,6 +2586,7 @@
     seedDimsFor: seedDimsFor,
     gearDimSource: gearDimSource,
     resolveGearDims: resolveGearDims,
+    applyGearDimEdit: applyGearDimEdit,
     gearDimsVerified: gearDimsVerified,
     effectiveLoad: effectiveLoad,
     stampLoad: stampLoad,

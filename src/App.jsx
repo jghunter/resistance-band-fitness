@@ -3203,13 +3203,11 @@ function GearDims({ it, onChange }) {
   const SRC_LABEL = { measured: 'MEASURED', vendor: 'VENDOR', estimated: 'ESTIMATE', none: 'NO DIMS' }
 
   function setField(k, raw) {
-    const v = raw === '' ? undefined : Number(raw)
-    if (v != null && !isFinite(v)) return
-    const next = { ...d }
-    if (v === undefined) delete next[k]; else next[k] = v
     /* A value the user typed is measured by definition -- and userEdited pins
-       it, so a later GEAR_DIMS revision can never overwrite their number. */
-    onChange({ ...it, dims: { ...next, source: 'measured', verified: true, userEdited: true } })
+       it, so a later GEAR_DIMS revision can never overwrite their number.
+       Shared with fitness_app.html via applyGearDimEdit in rbts_reports.js. */
+    const next = RBTS_REPORTS.applyGearDimEdit(d, k, raw)
+    onChange({ ...it, dims: next })
   }
 
   if (!fields.length) return null
