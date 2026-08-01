@@ -2728,7 +2728,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
 // HISTORY TAB
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Editable past-session card — correct bands/reps/sets logged earlier ──
-function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
+function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   const [ex, setEx] = useState(() => JSON.parse(JSON.stringify(entry.exercises || {})))
   const [gr, setGr] = useState(() => JSON.parse(JSON.stringify(entry.gear || {})))
 
@@ -2784,7 +2784,19 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv }) {
       const g = gr[id]
       if (Array.isArray(g) && g.length) cleanGear[id] = g
     })
-    onSave({ ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() })
+    /* Re-stamp load from the sets actually being saved. The freeze-at-save
+       rule exists so a later band re-measurement can't rewrite what a past
+       workout meant -- it does not apply here, because the user is
+       rewriting this entry right now, so there is no earlier truth being
+       protected, only a stale one that would contradict the new sets. If
+       the new sets can no longer produce a stamp (e.g. every band was
+       removed), drop `load` instead of leaving the old value behind. */
+    const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
+                           makeReportCtx({ log, gear: gearInv, myBands: [] }))
+    const updated = { ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() }
+    if (loadStamp) updated.load = loadStamp
+    else delete updated.load
+    onSave(updated)
     onDone(true)
   }
   function deleteSession() {
@@ -3125,7 +3137,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
             </div>
             {isEditing ? (
               <HistoryEntryEditor entry={e} onSave={onSaveEntry} onDelete={onDeleteEntry}
-                onDone={()=>setEditKey(null)} gearInv={gearInv}/>
+                onDone={()=>setEditKey(null)} gearInv={gearInv} log={log}/>
             ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:6}}>
               {Object.entries(e.exercises||{}).map(([exId,sets]) => (
