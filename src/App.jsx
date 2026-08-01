@@ -2512,38 +2512,10 @@ function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
   )
 }
 
-/* Freeze the computed load onto the entry AT SAVE TIME, exactly as
-   fitness_app.html does. Re-measuring a band next year must never rewrite
-   what a past workout meant -- and an entry saved without this is RATED
-   forever, because the geometry in force at the time is not recoverable.
-   Shape is identical to the HTML app's stampLoad: per exercise, the BEST set. */
-function stampLoad(exercises, gearMap, ctx) {
-  if (!RBTS_REPORTS || !RBTS_REPORTS.effectiveLoad) return undefined
-  const out = {}
-  let any = false
-  Object.keys(exercises || {}).forEach(exId => {
-    const sets = exercises[exId] || []
-    const gearIds = (gearMap && gearMap[exId]) || []
-    let best = null
-    sets.forEach(s => {
-      const bands = Array.isArray(s.segments)
-        ? (((s.segments[0] || {}).bands) || []) : (s.bands || [])
-      if (!bands.length) return
-      const e = RBTS_REPORTS.effectiveLoad(ctx, bands, gearIds)
-      if (!best || e.lb > best.lb) best = e
-    })
-    if (!best) return
-    any = true
-    out[exId] = {
-      lb: Math.round(best.lb * 10) / 10,
-      rated: Math.round(best.rated * 10) / 10,
-      ratio: Math.round(best.ratio * 1000) / 1000,
-      provenance: best.provenance,
-      deltaIn: best.stretchIn,
-    }
-  })
-  return any ? out : undefined
-}
+/* stampLoad now lives in rbts_reports.js, beside effectiveLoad -- one copy
+   shared with fitness_app.html instead of two hand-synced ~25-line copies.
+   Call site below passes ctx explicitly (RBTS_REPORTS.stampLoad(exercises,
+   gearMap, ctx)); the module touches no DOM, no localStorage, no app globals. */
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TODAY TAB
@@ -2599,7 +2571,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
        Pure local computation, so it works offline -- which is the point, since
        training away from home is the whole reason this exists. */
-    const load = stampLoad(cleanEx, cleanGear,
+    const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }))
     if (load) entry.load = load
     onSaveEntry(entry)

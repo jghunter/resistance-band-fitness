@@ -402,6 +402,51 @@
     return out;
   }
 
+  /* Freeze the computed load onto a workout entry AT SAVE TIME. Re-measuring a
+     band or correcting a gear dimension next year must never rewrite what a
+     past workout meant -- an entry saved before this existed simply has no
+     `load` block and falls back to the vendor midpoint, marked RATED. Same
+     discipline as the band-id stability rule, applied to load instead of
+     identity.
+
+       exercises   { exId: [ {reps, bands, segments?, ...}, ... ] } -- the
+                   `exercises` map of a log entry
+       gearMap     { exId: [gearId, ...] } -- the `gear` map of a log entry,
+                   keyed by exercise id (gear doesn't change set to set the
+                   way band resistance does)
+       ctx         needs bandOf, and optionally gearOf / bandGeomOf -- exactly
+                   what effectiveLoad needs. Callers build and inject it
+                   (makeReportCtx() in both apps); this module touches no DOM,
+                   no localStorage and no app globals.
+
+     Returns { exId: { lb, rated, ratio, provenance, deltaIn } }, one entry per
+     exercise that logged at least one band. The band stack can differ set to
+     set, so the stamp uses the HEAVIEST set -- the same set setTopLoad already
+     reports. Returns undefined when there is nothing to stamp (no usable ctx,
+     or no exercise logged any bands). */
+  function stampLoad(exercises, gearMap, ctx) {
+    if (!ctx || typeof ctx.bandOf !== "function") return undefined;
+    var out = {}, any = false;
+    Object.keys(exercises || {}).forEach(function (exId) {
+      var sets = exercises[exId] || [];
+      var gearIds = (gearMap && gearMap[exId]) || [];
+      var best = null;
+      sets.forEach(function (s) {
+        var bands = Array.isArray(s.segments)
+          ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
+        if (!bands.length) return;
+        var e = effectiveLoad(ctx, bands, gearIds);
+        if (!best || e.lb > best.lb) best = e;
+      });
+      if (!best) return;
+      any = true;
+      out[exId] = { lb: Math.round(best.lb * 10) / 10, rated: Math.round(best.rated * 10) / 10,
+                    ratio: Math.round(best.ratio * 1000) / 1000,
+                    provenance: best.provenance, deltaIn: best.stretchIn };
+    });
+    return any ? out : undefined;
+  }
+
   /* Did the equipment change between two sessions, and by how much?
      The WARNING is worth more than a correction: an 18-36% shift the model can
      only estimate is better flagged than silently modelled away. */
@@ -2485,6 +2530,7 @@
     resolveGearDims: resolveGearDims,
     gearDimsVerified: gearDimsVerified,
     effectiveLoad: effectiveLoad,
+    stampLoad: stampLoad,
     gearChange: gearChange,
     resolveWindow: resolveWindow,
     slopePct: slopePct,
