@@ -26,6 +26,7 @@ import {
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
 import { extractInventory } from './backup.js'
+import { unwrapMeta, reconcileMeta } from './metaReconcile.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
@@ -370,6 +371,34 @@ async function saveCustomExToFirestore(uid, payload) {
   await setDoc(doc(db, 'users', uid, 'meta', 'customExercises'), payload)
 }
 
+/* Band calibration and the training profile were localStorage-only, so a
+   measurement typed on the iPad never reached the iPhone. Same
+   users/{uid}/meta/{name} pattern as settings and customExercises above.
+
+   The stored payload is WRAPPED as { data, updatedAt }: neither rbts_bandGeom
+   (a bare {bandId: {...}} map) nor a profile carries a timestamp of its own.
+   unwrapMeta (metaReconcile.js) treats a document with no `updatedAt` --
+   including one written before this wrapper existed -- as updatedAt 0, the
+   oldest possible value, so a legacy document can never look newer than a
+   freshly-stamped one and discard real measurements on first sync. The
+   reconcile decision itself (reconcileMeta) lives in metaReconcile.js so it
+   can be unit-tested directly; this file only wires it to Firestore reads
+   and localStorage writes. */
+async function saveBandGeomToFirestore(uid, payload) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'bandGeom'), payload)
+}
+async function loadBandGeomFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'bandGeom'))
+  return d.exists() ? d.data() : null
+}
+async function saveProfileToFirestore(uid, payload) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'profile'), payload)
+}
+async function loadProfileFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'profile'))
+  return d.exists() ? d.data() : null
+}
+
 // ── Local (signed-out) gear + my-bands storage ──
 // Phase 1 (multi-user): gear no longer auto-seeds from GEAR. New and signed-out
 // users start EMPTY so nobody inherits Greg's personal inventory. Greg's own gear
@@ -407,16 +436,48 @@ function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON
 
 /* Band geometry (rest length + Tension Master readings) and bodyweight.
    Kept in their own keys rather than inside BANDS, which is the synced source
-   of truth for four files. Mirrors fitness_app.html. */
-const BAND_GEOM_KEY = 'rbts_bandGeom'
+   of truth for four files. Mirrors fitness_app.html.
+
+   Both rbts_bandGeom and rbts_profiles are now ALSO synced to Firestore
+   (Task 6) so a measurement or profile change follows the account across
+   devices, same as gear/settings/customExercises. Each carries its own
+   *UpdatedAt key, stamped on every local write, because unlike a workout log
+   entry neither payload has a natural timestamp field of its own — see
+   metaReconcile.js for how a document with no timestamp (a legacy write, or
+   one from before this feature) is treated as the oldest possible value. */
+const BAND_GEOM_KEY    = 'rbts_bandGeom'
+const BAND_GEOM_TS_KEY = 'rbts_bandGeomUpdatedAt'
+const PROFILES_TS_KEY  = 'rbts_profilesUpdatedAt'
 /* Profiles travel in the backup file too — see the export builder. Read fresh
    rather than cached: a profile imported mid-session must be exportable. */
 function getLocalProfiles() {
   try { const a = JSON.parse(localStorage.getItem('rbts_profiles') || '[]'); return Array.isArray(a) ? a : [] }
   catch { return [] }
 }
+function localProfilesUpdatedAt() { try { return Number(localStorage.getItem(PROFILES_TS_KEY) || 0) } catch { return 0 } }
+// Write the profile list locally (stamping updatedAt) and, when signed in,
+// push it to Firestore. localStorage is written first and always succeeds or
+// fails independently of the (best-effort) cloud push — mirrors
+// saveLocalBandGeom below and persistSettings above.
+function saveLocalProfiles(list, uid) {
+  try { localStorage.setItem('rbts_profiles', JSON.stringify(list)) } catch { return false }
+  const ts = Date.now()
+  try { localStorage.setItem(PROFILES_TS_KEY, String(ts)) } catch {}
+  if (uid) saveProfileToFirestore(uid, { data: list, updatedAt: ts }).catch(e => console.error('Save profile failed:', e))
+  return true
+}
 function getLocalBandGeom() { try { return JSON.parse(localStorage.getItem(BAND_GEOM_KEY) || '{}') || {} } catch { return {} } }
-function saveLocalBandGeom(g) { try { localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(g)); return true } catch { return false } }
+function localBandGeomUpdatedAt() { try { return Number(localStorage.getItem(BAND_GEOM_TS_KEY) || 0) } catch { return 0 } }
+// Write band calibration locally (stamping updatedAt) and, when signed in,
+// push it to Firestore. localStorage is written first and always succeeds or
+// fails independently of the (best-effort) cloud push.
+function saveLocalBandGeom(g, uid) {
+  try { localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(g)) } catch { return false }
+  const ts = Date.now()
+  try { localStorage.setItem(BAND_GEOM_TS_KEY, String(ts)) } catch {}
+  if (uid) saveBandGeomToFirestore(uid, { data: g, updatedAt: ts }).catch(e => console.error('Save band calibration failed:', e))
+  return true
+}
 const BW_KEY = 'rbts_bodyweight'
 function getLocalBodyweight() {
   try {
@@ -2960,7 +3021,8 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user }) {
+  const uid = user ? user.uid : null
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
   const [editKey, setEditKey]   = useState(null)
@@ -3052,10 +3114,12 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         /* Measurements ride along too — the two apps do not share an origin,
            so this file is the only way gear geometry and band calibration
            reach the other one. Only ever applied when the file actually
-           carries them, so an older backup cannot wipe newer measuring. */
+           carries them, so an older backup cannot wipe newer measuring.
+           saveLocalBandGeom stamps updatedAt and, when signed in, pushes to
+           Firestore (best-effort) — same as an in-app edit in BandCalibration. */
         let measMsg = ''
         if (state && state.rbts_bandGeom && typeof state.rbts_bandGeom === 'object') {
-          saveLocalBandGeom(state.rbts_bandGeom)
+          saveLocalBandGeom(state.rbts_bandGeom, uid)
           measMsg += ` Band calibration for ${Object.keys(state.rbts_bandGeom).length} band(s).`
         }
         if (Array.isArray(state && state.rbts_bodyweight) && state.rbts_bodyweight.length) {
@@ -3065,10 +3129,13 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         /* Profile: only ever restored from a file that actually carries one, so
            an older backup cannot wipe it. TRAINING_STYLE is read at module load,
            so say plainly that a reload is needed rather than leaving the app
-           running on the old profile. Mirrors fitness_app.html. */
+           running on the old profile. Mirrors fitness_app.html. saveLocalProfiles
+           stamps updatedAt and pushes to Firestore when signed in, same as
+           saveLocalBandGeom above; rbts_activeProfile is a device-local pointer
+           (which profile is active here), not part of the synced document. */
         if (Array.isArray(state && state.rbts_profiles) && state.rbts_profiles.length) {
           try {
-            localStorage.setItem('rbts_profiles', JSON.stringify(state.rbts_profiles))
+            saveLocalProfiles(state.rbts_profiles, uid)
             if (state.rbts_activeProfile) localStorage.setItem('rbts_activeProfile', state.rbts_activeProfile)
             measMsg += ' Profile restored (RIR, set seeding, volume model, split) — RELOAD for it to take effect.'
           } catch { /* storage full: the rest of the import still stands */ }
@@ -3295,25 +3362,30 @@ function GearDims({ it, onChange }) {
    exactly the same behaviour instead of a hand-duplicated inline copy; this
    component only renders and wires up state.
 
-   rbts_bandGeom is local-only (not Firestore-synced -- see getLocalBandGeom
-   above and CLAUDE.md's localStorage key table), so calibration works the
-   same signed in or signed out, and only round-trips through a backup
-   export/import like the rest of the local-only keys. */
-function BandCalibration({ myBands }) {
+   rbts_bandGeom works the same signed in or signed out -- writes always go
+   to localStorage first (saveLocalBandGeom below never touches the network)
+   and, since Task 6, also sync to users/{uid}/meta/bandGeom when signed in
+   (best-effort; a rejected cloud write never blocks or undoes the local
+   save). Before Task 6 this was local-only and round-tripped only through a
+   backup export/import; that path still works unchanged for signed-out use
+   and for carrying calibration between the two apps, which do not share an
+   origin. */
+function BandCalibration({ myBands, user }) {
   const [open, setOpen] = useState(false)
   const [geom, setGeom] = useState(() => getLocalBandGeom())
   const pool = myBands.length ? BANDS.filter(b => myBands.indexOf(b.id) >= 0) : []
+  const uid = user ? user.uid : null
 
   function setRest(id, raw) {
     const next = { ...geom, [id]: RBTS_REPORTS.applyBandRestLengthEdit(geom[id], raw) }
-    saveLocalBandGeom(next)
+    saveLocalBandGeom(next, uid)
     setGeom(next)
   }
   function setPoint(id, i, field, raw) {
     const pts = (geom[id] || {}).measured || []
     const nextPts = RBTS_REPORTS.applyBandMeasuredPointEdit(pts, i, field, raw)
     const next = { ...geom, [id]: { ...(geom[id] || {}), measured: nextPts } }
-    saveLocalBandGeom(next)
+    saveLocalBandGeom(next, uid)
     setGeom(next)
   }
 
@@ -3401,7 +3473,7 @@ function BandCalibration({ myBands }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Editable equipment inventory + MY BANDS. Controlled by App (Firestore-synced
 // when signed in, localStorage when signed out) via props.
-function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRestoreGear }) {
+function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRestoreGear, user }) {
   const [open, setOpen]   = useState({})
   const isOpen   = k => !!open[k]
   const toggle   = k => setOpen(o => ({ ...o, [k]: !o[k] }))
@@ -3555,7 +3627,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
           </div>
         )}
       </div>
-      <BandCalibration myBands={myBands}/>
+      <BandCalibration myBands={myBands} user={user}/>
       <div style={widget}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
           <span style={lbl}>EQUIPMENT{gear.length?' · '+gear.length:''}</span>
@@ -3755,6 +3827,39 @@ export default function App() {
             setCustomEx(cloudList)
           }
         } catch (e) { console.error('Error loading custom exercises:', e) }
+        // Band calibration: whole-document last-write-wins via reconcileMeta
+        // (metaReconcile.js). unwrapMeta reads a legacy (unwrapped) document
+        // as updatedAt 0, so it can never look newer than this device's real
+        // measurements and discard them on first sync — see that module's
+        // header comment for the full reasoning and its test file for the
+        // behavioural proof.
+        try {
+          const remote = unwrapMeta(await loadBandGeomFromFirestore(u.uid))
+          const local  = { data: getLocalBandGeom(), updatedAt: localBandGeomUpdatedAt() }
+          const decision = reconcileMeta(local, remote, d => !d || Object.keys(d).length === 0)
+          if (decision.action === 'adopt-remote') {
+            localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(decision.data))
+            localStorage.setItem(BAND_GEOM_TS_KEY, String(decision.updatedAt))
+          } else if (decision.action === 'push-local') {
+            localStorage.setItem(BAND_GEOM_TS_KEY, String(decision.updatedAt))
+            await saveBandGeomToFirestore(u.uid, { data: decision.data, updatedAt: decision.updatedAt })
+          }
+        } catch (e) { console.error('Band calibration sync failed:', e) }
+        // Profile (RIR target, set seeding, volume model, split): identical
+        // whole-document rule as band calibration, just an array instead of
+        // a map for the "is there anything here" test.
+        try {
+          const remote = unwrapMeta(await loadProfileFromFirestore(u.uid))
+          const local  = { data: getLocalProfiles(), updatedAt: localProfilesUpdatedAt() }
+          const decision = reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0)
+          if (decision.action === 'adopt-remote') {
+            localStorage.setItem('rbts_profiles', JSON.stringify(decision.data))
+            localStorage.setItem(PROFILES_TS_KEY, String(decision.updatedAt))
+          } else if (decision.action === 'push-local') {
+            localStorage.setItem(PROFILES_TS_KEY, String(decision.updatedAt))
+            await saveProfileToFirestore(u.uid, { data: decision.data, updatedAt: decision.updatedAt })
+          }
+        } catch (e) { console.error('Profile sync failed:', e) }
         setLogLoading(false)
       } else {
         try {
@@ -4050,12 +4155,12 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='programs' && <ProgramsTab/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
-        {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear}/>}
+        {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear} user={user}/>}
       </div>
     </div>
   )
