@@ -365,6 +365,27 @@ async function saveEntryToFirestore(uid, entry) {
   await setDoc(doc(db, 'users', uid, 'workouts', docId), stripUndefined(entry))
 }
 
+/* A failed cloud write is INVISIBLE: localStorage already holds the entry, the
+   UI says SAVED, and the only trace is a bare `console.error('Save failed:')`
+   with no indication of WHICH workout or that anything is now single-copy.
+   That swallow is the actual reason the undefined-field rejection survived the
+   whole life of the load model -- stripUndefined fixes today's shape, but the
+   next undefined-valued field would regress exactly as quietly.
+
+   Deliberately NOT a retry, a UI banner or a sync-status indicator (out of
+   scope). Just enough for a silent failure to be legible in the console: which
+   path, which dates, and that this device is now the only copy. */
+function logCloudWriteFailure(where, dates, err) {
+  const list = (Array.isArray(dates) ? dates : [dates]).filter(Boolean)
+  console.error(
+    '[rbts] CLOUD WRITE FAILED (' + where + ') — ' +
+    (list.length ? list.length : 'an unknown number of') +
+    ' entr' + (list.length === 1 ? 'y' : 'ies') +
+    ' saved locally but NOT synced: ' + (list.join(', ') || '(date unknown)') +
+    '. This device is now the only copy.',
+    err)
+}
+
 // Last-write-wins timestamp (ms) for a log entry. Prefers explicit updatedAt
 // (stamped on every save / merge-import / edit), falls back to completedAt,
 // else 0 (treated as oldest). Used to reconcile localStorage ↔ Firestore so a
@@ -4044,7 +4065,15 @@ export default function App() {
               const fs = fsByKey.get(`${e.date}_${e.session}`)
               return !fs || entryTs(e) > entryTs(fs)
             })
-            await Promise.all(toSync.map(e => saveEntryToFirestore(u.uid, e)))
+            try {
+              await Promise.all(toSync.map(e => saveEntryToFirestore(u.uid, e)))
+            } catch (e) {
+              logCloudWriteFailure('sign-in push', toSync.map(x => x.date), e)
+              /* Rethrow so control flow is UNCHANGED: the outer catch still
+                 skips the cloud load below, and a local entry that failed to
+                 push is not displaced by an older cloud copy. */
+              throw e
+            }
           }
           const entries = await loadLogFromFirestore(u.uid)
           setLog(entries)
@@ -4191,7 +4220,7 @@ export default function App() {
     } catch {}
     if (user) {
       try { await saveEntryToFirestore(user.uid, entry) }
-      catch (e) { console.error('Save failed:', e) }
+      catch (e) { logCloudWriteFailure('save', entry.date, e) }
     }
   }, [user])
 
@@ -4222,7 +4251,7 @@ export default function App() {
         await Promise.all(toDelete.map(e => deleteDoc(doc(db,'users',user.uid,'workouts',`${e.date}_${e.session}`))))
         await Promise.all(incoming.map(e => saveEntryToFirestore(user.uid, e)))
         synced = true
-      } catch (err) { console.error('Merge import failed:', err) }
+      } catch (err) { logCloudWriteFailure('merge import', incoming.map(e => e.date), err) }
     }
     return { added: incoming.length, dates: dropDates.size, synced }
   }, [user])

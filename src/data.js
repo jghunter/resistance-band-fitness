@@ -2199,6 +2199,18 @@ export const TRAINING_STYLE = (() => {
    arrive here through the profile sync (meta/profile → rbts_profiles). Read
    from the active profile, guarded for the node harnesses that import this
    module with no localStorage. */
+/* The one guard, named so BOTH apps can be tested against the SAME inputs.
+   fitness_app.html used to write `(_ACTIVE_PROFILE && _ACTIVE_PROFILE.hipHeightIn) || null`,
+   which accepts the STRING "36.5" — so a profile hand-edited or round-tripped
+   through an import computed a belt load in the HTML app and degraded to RATED
+   here, from the same synced profile. Cross-app drift in the one direction the
+   suite cannot see, because each app was individually self-consistent.
+   fitness_app.html now carries a byte-identical `bodyMeasureNum`, and
+   test_pwa_parity_engine.mjs runs both over the same hostile inputs. */
+export function bodyMeasureNum(v) {
+  return (typeof v === 'number' && isFinite(v) && v > 0) ? v : null
+}
+
 export const BODY_MEASURE = (() => {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null, bodyWidthIn: null }
   try {
@@ -2206,7 +2218,7 @@ export const BODY_MEASURE = (() => {
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
     const p = ps.filter(x => x.id === ap)[0]
     if (!p) return empty
-    const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : null
+    const num = bodyMeasureNum
     return {
       kneeHeightIn:     num(p.kneeHeightIn),
       midThighHeightIn: num(p.midThighHeightIn),
