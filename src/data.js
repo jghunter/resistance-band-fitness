@@ -2184,6 +2184,44 @@ export const TRAINING_STYLE = (() => {
   } catch (e) { return { defaultSets: null, volumeModel: 'standard' } }
 })()
 
+/* ── BODY MEASUREMENTS (per-profile) — mirrors fitness_app.html ─────────────
+   Inputs to the belt/footplate band path, and to nothing else. Each is a plain
+   floor-to-landmark measurement in inches; bodyWidthIn is the across-the-body
+   span a singled loop has to cross above the plate.
+
+   null means "not measured". Absent measurements make the belt path degrade to
+   RATED with a stated reason — they are never guessed from a ratio, because a
+   guessed hip height produces a confident wrong load, which is the failure this
+   whole model replaces.
+
+   The PWA has NO EDITOR for these, exactly like defaultSets / volumeModel.
+   They are set in fitness_app.html (TODAY → SETTINGS → TRAINING STYLE) and
+   arrive here through the profile sync (meta/profile → rbts_profiles). Read
+   from the active profile, guarded for the node harnesses that import this
+   module with no localStorage. */
+export const BODY_MEASURE = (() => {
+  const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null, bodyWidthIn: null }
+  try {
+    const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const p = ps.filter(x => x.id === ap)[0]
+    if (!p) return empty
+    const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : null
+    return {
+      kneeHeightIn:     num(p.kneeHeightIn),
+      midThighHeightIn: num(p.midThighHeightIn),
+      hipHeightIn:      num(p.hipHeightIn),
+      bodyWidthIn:      num(p.bodyWidthIn),
+    }
+  } catch (e) { return empty }
+})()
+
+/* The two the model cannot run without: the highest landmark and the width a
+   singled loop has to span. Mirrors fitness_app.html's bodyMeasureComplete. */
+export function bodyMeasureComplete() {
+  return BODY_MEASURE.hipHeightIn > 0 && BODY_MEASURE.bodyWidthIn > 0
+}
+
 /* How many sets the program prescribes per exercise.
    The PROFILE wins over all of it when it sets defaultSets: a HIT trainee has
    deliberately chosen one set to failure, and a block that prescribes three is

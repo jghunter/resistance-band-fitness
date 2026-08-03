@@ -22,6 +22,9 @@ import {
      any exercise in the PWA threw ReferenceError. Introduced 2026-07-30 with
      the 1→3 set seeding change; esbuild does not flag an undeclared global. */
   progDefaultSets, TRAINING_STYLE,
+  /* Belt band path inputs. Mirrored from the profile; no editor here (the HTML
+     app owns it), same as defaultSets / volumeModel. */
+  BODY_MEASURE, bodyMeasureComplete,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
@@ -288,6 +291,19 @@ function cleanExercises(ex) {
       if (s.intensifier && s.intensifier !== 'straight') o.intensifier = s.intensifier
       if (s.rir != null && s.rir !== '') o.rir = s.rir
       if (s.partials) o.partials = s.partials
+      /* This function REBUILDS each set field by field, so anything not named
+         here is silently discarded at save time -- the user sees the value on
+         screen and it is gone from the entry. Two were:
+           doubled -- the belt fold. A doubled band stamps a multiple of the
+                      singled load; dropping the flag saves a doubled set as
+                      singled, quietly.
+           side    -- L/R. addSet auto-alternates it and progressionState
+                      evaluates the two sides independently, so losing it
+                      collapsed unilateral work into bilateral on every save.
+         fitness_app.html keeps whole set objects (it only filters), which is
+         why neither showed up there. */
+      if (s.doubled) o.doubled = true
+      if (s.side === 'L' || s.side === 'R') o.side = s.side
       if (Array.isArray(s.segments) && s.segments.length)
         o.segments = s.segments.map(g => ({ bands:(g.bands||[]).slice(), reps:g.reps||0, secs:g.secs }))
       return o
@@ -318,9 +334,35 @@ async function loadLogFromFirestore(uid) {
   return snap.docs.map(d => d.data())
 }
 
+/* Firestore REJECTS undefined field values outright -- setDoc throws
+   "Unsupported field value: undefined (found in field load.9.stretchIn)"
+   unless the app is initialised with ignoreUndefinedProperties.
+
+   stampLoad deliberately builds a fixed-shape object and leaves the
+   inapplicable keys undefined (`deltaIn` XOR `stretchIn`, plus `doubled` /
+   `attachIn` / `belowRated` on non-belt sets), so EVERY entry that logged a
+   band carries them. localStorage never noticed -- JSON.stringify drops
+   undefined -- so the PWA appeared to save while the cloud write threw and was
+   swallowed by the caller's catch. The workout survived on that one device and
+   silently never synced.
+
+   Stripping here rather than at the call sites because all three entry writes
+   (save, merge-import, sign-in push) funnel through this function, and rather
+   than in stampLoad because the undefined keys are correct in-memory: they mean
+   "not applicable", and JSON already erases them everywhere else. */
+function stripUndefined(v) {
+  if (Array.isArray(v)) return v.map(stripUndefined)
+  if (v && typeof v === 'object') {
+    const out = {}
+    Object.keys(v).forEach(k => { if (v[k] !== undefined) out[k] = stripUndefined(v[k]) })
+    return out
+  }
+  return v
+}
+
 async function saveEntryToFirestore(uid, entry) {
   const docId = `${entry.date}_${entry.session}`
-  await setDoc(doc(db, 'users', uid, 'workouts', docId), entry)
+  await setDoc(doc(db, 'users', uid, 'workouts', docId), stripUndefined(entry))
 }
 
 // Last-write-wins timestamp (ms) for a log entry. Prefers explicit updatedAt
@@ -835,7 +877,7 @@ function BandPicker({ selected, onChange }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -912,6 +954,82 @@ function GearPicker({ inv, selected, onChange }) {
           {sel.length ? '+ MORE GEAR' : '+ GEAR'}
         </button>
       </div>
+      {/* ── ATTACH AT ───────────────────────────────────────────────────────
+          Only a footplate AND a belt together make this a belt setup, and only
+          then is there an attachment height to record. A bar may also be on
+          the list — that IS the normal rig (the X3 belt hangs a strap and hook
+          below the bar), so it is deliberately not excluded.
+
+          The height is per EXERCISE, not per set: the band and the doubling
+          change between sets, where the belt hooks does not.
+
+          Sub-rated options are MARKED, not hidden. A singled 41in band on a
+          footplate sits below the vendor's rated span at every landmark up to
+          hip height, so hiding them would leave the picker empty and the
+          exercise unloggable. */}
+      {(() => {
+        const gearOf = (id) => byId[id]
+        const plate = RBTS_REPORTS.beltPlateOf(sel, gearOf)
+        if (!plate || !RBTS_REPORTS.beltBeltPresent(sel, gearOf)) return null
+        /* No guess when a measurement is missing: the belt path degrades to
+           RATED and says so, rather than inventing a hip height. */
+        if (!bodyMeasureComplete()) return (
+          <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
+            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → SETTINGS) TO COMPUTE BELT LOAD
+          </div>
+        )
+        const bandId = (bands || [])[0]
+        const band = bandId ? BANDS.find(b => b.id === bandId) : null
+        if (!band) return (
+          <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:6}}>
+            PICK A BAND TO CHOOSE AN ATTACHMENT HEIGHT
+          </div>
+        )
+        /* beltAttachOptions wants a RESOLVED dims object, not the gear item —
+           resolveGearDims is what turns a PWA-shaped item with no stored dims
+           into the table lookup. Passing the raw item fabricates a reach. */
+        const opts = RBTS_REPORTS.beltAttachOptions(
+          band, getLocalBandGeom()[band.id] || null,
+          RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE)
+        if (!opts.length) return (
+          <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
+            THIS BAND CANNOT BE RIGGED ON THIS PLATE — NO LANDMARK SITS ABOVE ITS REACH
+          </div>
+        )
+        const setAttach = onAttachChange || (()=>{})
+        return (
+          <div style={{marginTop:6}}>
+            <div style={lbl}>ATTACH AT</div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {opts.map(o => (
+                <button key={o.k}
+                  title={`Belt hooks at ${o.heightIn} in off the floor — the band stretches `
+                        + `${Math.round(o.stretchIn*10)/10} in (strain ${Math.round(o.strain*100)/100})`}
+                  onClick={()=>setAttach(o.heightIn)}
+                  style={{...btn(attachHeightIn === o.heightIn),fontSize:9,padding:'4px 8px'}}>
+                  {o.label} {o.heightIn}&quot; · {Math.round(o.stretchIn*10)/10}&quot;
+                  {o.belowRated ? ' !' : ''}{o.aboveRated ? ' ^' : ''}
+                </button>
+              ))}
+              {attachHeightIn != null && (
+                <button title="Clear the attachment height — the load falls back to the vendor midpoint"
+                  onClick={()=>setAttach(undefined)}
+                  style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
+              )}
+            </div>
+            {opts.some(o => o.belowRated) && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
+                ! below the vendor&apos;s rated span — estimate only
+              </div>
+            )}
+            {opts.some(o => o.aboveRated) && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
+                ^ above the vendor&apos;s rated span — the linear fit understates real latex here
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {open && (
         <div style={{
           position:'absolute',zIndex:300,top:'100%',left:0,marginTop:4,
@@ -975,7 +1093,7 @@ function GearPicker({ inv, selected, onChange }) {
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -985,6 +1103,10 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
     const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
     const n = {reps: lr, bands: [...lb]}
+    /* Carry the fold with the stack it belongs to: a new set seeded from a
+       doubled band that arrives marked SINGLED stamps a fraction of the real
+       load, silently. */
+    if (last && last.doubled) n.doubled = true
     // Auto-alternate sides: after a Left set the next defaults to Right.
     const ls = last ? setSide(last) : null
     if (ls === 'L') n.side = 'R'; else if (ls === 'R') n.side = 'L'
@@ -1038,6 +1160,26 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       n.segments=segs; delete n.bands; delete n.reps; return n
     }))
   }
+  /* The set the ATTACH AT picker describes: the first one that actually names
+     a band. The saved stamp uses the HEAVIEST set (bestSetLoad) — the same set
+     whenever the stack doesn't change mid-exercise, which is the normal case.
+     Returns {} rather than null so callers need no second guard. */
+  function refSet() {
+    for (let i=0;i<sets.length;i++) { if (setBandsOf(sets[i]).length) return sets[i] }
+    return {}
+  }
+  /* Folding the band in half is only a modelled quantity on a belt rig (it
+     halves the loop's rest length and doubles the layers), so the per-set
+     SINGLED/DOUBLED toggle appears only there instead of on every set of every
+     exercise. NOT the same thing as listing a band id twice — that still means
+     two physical bands. */
+  const beltRig = (() => {
+    const g = gear || []
+    if (!g.length) return false
+    const inv = {}; (gearInv || []).forEach(x => { inv[x.id] = x })
+    const gearOf = (gid) => inv[gid]
+    return !!RBTS_REPORTS.beltPlateOf(g, gearOf) && RBTS_REPORTS.beltBeltPresent(g, gearOf)
+  })()
 
   return (
     <div style={{
@@ -1106,7 +1248,9 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
-          <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})}/>
+          <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})}
+            bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
+            attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -1142,6 +1286,23 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                     onChange={e=>{const v=e.target.value; updateSet(i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                     style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                 </div>
+                {/* Rendered when this is a belt rig OR the set is already
+                    marked doubled. The second case matters: strip the
+                    footplate off an exercise whose set is DOUBLED and the flag
+                    would otherwise keep being read by bestSetLoad/stampLoad
+                    with no control left on screen to see or clear it. Never
+                    auto-cleared — silently mutating a logged set in response
+                    to an unrelated gear edit is its own hazard. */}
+                {(beltRig || !!s.doubled) && (
+                  <button
+                    onClick={()=>updateSet(i,'doubled', s.doubled ? undefined : true)}
+                    title={beltRig
+                      ? 'Doubled under the footplate: half the rest length, twice the layers. Not the same as logging the same band twice — that is two physical bands.'
+                      : 'This set is still counted as DOUBLED even though its gear is no longer a footplate + belt rig. Tap to clear it.'}
+                    style={{...btn(!!s.doubled, beltRig ? undefined : C.amber),fontSize:9,padding:'5px 7px',flexShrink:0}}>
+                    {s.doubled ? 'DOUBLED' : 'SINGLED'}
+                  </button>
+                )}
                 <span style={{flex:1}}></span>
                 {sets.length > 1 && (
                   <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
@@ -1220,8 +1381,13 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // load means at save time -- rather than merging bands across sets
         // into a stack nobody actually wore. Display only: stampLoad (called
         // at save) is the only thing that persists a `load` value.
+        //
+        // The attach height goes in as the fourth argument (a BARE NUMBER —
+        // stampLoad's fourth is a MAP, effectiveLoad's is an options object)
+        // or the card would show a RATED figure while the save stamped a
+        // belt-path one, and the two would silently disagree.
         const e = RBTS_REPORTS.bestSetLoad(
-          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [])
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn)
         if (!e || e.lb == null) return null
         // The chip is not decoration: RATED is a vendor midpoint at an
         // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
@@ -1229,13 +1395,24 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // number without this would invite reading a vendor guess as fact.
         const PROV_COLOR = { MEASURED: C.green, MODELED: '#7ecfff', RATED: C.dimGray }
         return (
-          <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4,flexWrap:'wrap'}}>
             <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
               EFFECTIVE {e.lb.toFixed(1)} lb
             </span>
-            <span style={{...pill(PROV_COLOR[e.provenance] || C.dimGray), fontSize:9}}>
+            <span style={{...pill(PROV_COLOR[e.provenance] || C.dimGray), fontSize:9}}
+              title={e.basis || ''}>
               {e.provenance}
             </span>
+            {/* The stretch is shown beside the number on purpose: an
+                unauditable load is how `seriesIn: 40` survived for months. */}
+            {e.attachHeightIn != null && (
+              <span style={{fontFamily:'monospace',fontSize:9,color:C.textSec}}>
+                {' · '}{Math.round(e.stretchIn*10)/10}&quot; stretch
+                {e.doubled ? ' · doubled' : ''}
+                {e.belowRated ? ' · below rated span' : ''}
+                {e.aboveRated ? ' · above rated span' : ''}
+              </span>
+            )}
           </div>
         )
       })()}
@@ -1246,7 +1423,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange }) {
   const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
@@ -1268,9 +1445,22 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     if (gear && gear[String(id)] && onGearChange) {
       const g = {...gear}; delete g[String(id)]; onGearChange(g)
     }
+    // Same for the belt attachment height — same shape, same lifecycle.
+    if (attach && attach[String(id)] != null && onAttachChange) {
+      const a = {...attach}; delete a[String(id)]; onAttachChange(a)
+    }
   }
   function updateExGear(id, ids) {
     if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
+  }
+  /* Belt attachment height per exercise id — one value per exercise, not per
+     set (the band and the doubling change set to set; where the belt hooks
+     does not). undefined removes the key rather than storing a hole. */
+  function updateAttach(id, h) {
+    if (!onAttachChange) return
+    const next = {...(attach||{})}
+    if (h == null) delete next[String(id)]; else next[String(id)] = h
+    onAttachChange(next)
   }
 
   function getPrevSets(exerciseId) {
@@ -1300,7 +1490,9 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
         prevSets={prev} progFlag={progFlag} progSides={progSides} stalled={stalled}
         gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
-        onGearChange={ids=>updateExGear(id,ids)}/>
+        onGearChange={ids=>updateExGear(id,ids)}
+        attachHeightIn={(attach||{})[String(id)]}
+        onAttachChange={h=>updateAttach(id,h)}/>
     )
   }
 
@@ -1327,7 +1519,9 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
           prevSets={prev} progFlag={false}
           gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
-          onGearChange={ids=>updateExGear(id,ids)}/>
+          onGearChange={ids=>updateExGear(id,ids)}
+          attachHeightIn={(attach||{})[String(id)]}
+          onAttachChange={h=>updateAttach(id,h)}/>
       </div>
     )
   }
@@ -1431,6 +1625,11 @@ function makeReportCtx({ log, gear, myBands }) {
        length, so every stretch figure is wrong by however much the band
        differs from its advertised size. Mirrors fitness_app.html. */
     bandGeomOf: (id) => getLocalBandGeom()[id] || null,
+    /* Body landmarks for the belt/footplate band path. Without these,
+       effectiveLoad degrades every belt exercise to RATED and says why --
+       it never guesses a hip height. Mirrors fitness_app.html; set there,
+       read here. */
+    body: BODY_MEASURE,
     nameOf: (id) => EXERCISE_NAMES[id] || ('#' + id),
     groupOf: (id) => exGroup(Number(id)),
     classOf: (id) => exClass(Number(id)),
@@ -2618,6 +2817,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const setSplitSel  = v => onChangeSettings({ splitId: v })
   const [exLogs, setExLogs]       = useState({})
   const [gearLogs, setGearLogs]   = useState({})   // per-exercise equipment {exId: [gearItemId,...]}
+  const [attachLogs, setAttachLogs] = useState({}) // per-exercise belt attach height {exId: heightIn}
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
@@ -2631,6 +2831,10 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const existing = log.find(e => e.date === todayISO && e.session === info.session)
       setExLogs(existing?.exercises ?? {})
       setGearLogs(existing?.gear ?? {})
+      /* Restore the belt attachment heights too, or reopening today's saved
+         workout comes back with the picker blank and the next save stamps
+         RATED over a belt-path figure. */
+      setAttachLogs(existing?.attach ?? {})
       setSaved(!!(existing?.completedAt))
     }
   }, [info.session, todayISO, log])
@@ -2648,18 +2852,31 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const g = (gearLogs||{})[id]
       if (Array.isArray(g) && g.length) cleanGear[id] = g
     })
+    /* The belt attachment height, scoped the same way: an exercise with no
+       logged sets carries no height, and a non-finite value is dropped rather
+       than persisted. BOTH guards -- isFinite(null) === true is exactly the
+       trap that once stored a half-entered reading as a fake 0-lb point. */
+    const cleanAttach = {}
+    Object.keys(cleanEx).forEach(id => {
+      const h = (attachLogs||{})[id]
+      if (h != null && isFinite(h)) cleanAttach[id] = h
+    })
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
       splitId:effSplitId(info.prog),          // P4: which split produced this key
       schemaVersion:2,
-      exercises:cleanEx, gear:cleanGear, completedAt:new Date().toISOString(),
+      exercises:cleanEx, gear:cleanGear, attach: cleanAttach,
+      completedAt:new Date().toISOString(),
     }
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
        Pure local computation, so it works offline -- which is the point, since
-       training away from home is the whole reason this exists. */
+       training away from home is the whole reason this exists.
+       Fourth argument is a MAP keyed by exercise id (bestSetLoad's fourth is a
+       bare number, effectiveLoad's is an options object -- three deliberately
+       different shapes). */
     const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
-                           makeReportCtx({ log, gear: gearInv, myBands: [] }))
+                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach)
     if (load) entry.load = load
     onSaveEntry(entry)
     setSaved(true)
@@ -2765,6 +2982,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               onExercisesChange={ex=>{setExLogs(ex);setSaved(false);}}
               gearInv={gearInv} gear={gearLogs}
               onGearChange={g=>{setGearLogs(g);setSaved(false);}}
+              attach={attachLogs}
+              onAttachChange={a=>{setAttachLogs(a);setSaved(false);}}
               todayDate={todayISO} log={log}/>
           </div>
           <div style={{...widget,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
@@ -2818,18 +3037,34 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
 function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   const [ex, setEx] = useState(() => JSON.parse(JSON.stringify(entry.exercises || {})))
   const [gr, setGr] = useState(() => JSON.parse(JSON.stringify(entry.gear || {})))
+  /* Belt attachment heights, seeded from the entry. Without its own state the
+     editor would re-stamp every belt exercise as RATED on any edit — the
+     heights would still sit in the entry (they ride in via the spread below)
+     while the load beside them said something else. */
+  const [at, setAt] = useState(() => JSON.parse(JSON.stringify(entry.attach || {})))
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
     n[id] = (n[id] || []).map((s, idx) => idx === i ? fn({ ...s }) : s)
     return n
   })
-  const updateSet = (id, i, field, val) => mapSet(id, i, c => { c[field] = val; return c })
+  /* DELETE on undefined rather than assigning it. Clearing RIR, cycling side
+     back to bilateral, or untoggling DOUBLED all pass undefined, and unlike
+     TodayTab this editor hands `ex` straight to the entry without going
+     through cleanExercises -- so an assigned undefined would ride into the
+     Firestore write, which rejects it. (stripUndefined on the write path is
+     the backstop; this keeps the in-memory entry honest too.) */
+  const updateSet = (id, i, field, val) => mapSet(id, i, c => {
+    if (val === undefined) delete c[field]; else c[field] = val
+    return c
+  })
   const addSet = (id) => setEx(prev => {
     const n = { ...prev }; const arr = (n[id] || []).slice(); const last = arr[arr.length - 1]
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
     const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
     const ns = { reps: lr, bands: lb.slice() }
+    // The fold belongs to the stack being copied — see LoggedExCard.addSet.
+    if (last && last.doubled) ns.doubled = true
     const lside = last ? setSide(last) : null
     if (lside === 'L') ns.side = 'R'; else if (lside === 'R') ns.side = 'L'
     arr.push(ns); n[id] = arr; return n
@@ -2838,6 +3073,27 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   const removeEx = (id) => {
     setEx(prev => { const n = { ...prev }; delete n[id]; return n })
     setGr(prev => { const n = { ...prev }; delete n[id]; return n })
+    setAt(prev => { const n = { ...prev }; delete n[id]; return n })
+  }
+  const updateAttach = (id, h) => setAt(prev => {
+    const n = { ...prev }
+    if (h == null) delete n[id]; else n[id] = h
+    return n
+  })
+  /* Same two helpers LoggedExCard uses, per exercise: the first set naming a
+     band drives the ATTACH AT preview, and footplate + belt gates the per-set
+     SINGLED/DOUBLED toggle. */
+  const refSetOf = (id) => {
+    const arr = ex[id] || []
+    for (let i = 0; i < arr.length; i++) { if (setBandsOf(arr[i]).length) return arr[i] }
+    return {}
+  }
+  const beltRigOf = (id) => {
+    const g = gr[id] || []
+    if (!g.length) return false
+    const inv = {}; (gearInv || []).forEach(x => { inv[x.id] = x })
+    const gearOf = (gid) => inv[gid]
+    return !!RBTS_REPORTS.beltPlateOf(g, gearOf) && RBTS_REPORTS.beltBeltPresent(g, gearOf)
   }
   // ── Phase-aware editing (mirrors LoggedExCard so ✎ EDIT handles segmented/intensifier/RIR sets) ──
   const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
@@ -2871,6 +3127,14 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       const g = gr[id]
       if (Array.isArray(g) && g.length) cleanGear[id] = g
     })
+    /* Attachment heights, scoped the same way and guarded the same way. An
+       exercise removed in this edit must not keep its height alive in the
+       saved entry. */
+    const cleanAttach = {}
+    Object.keys(ex).forEach(id => {
+      const h = at[id]
+      if (h != null && isFinite(h)) cleanAttach[id] = h
+    })
     /* Re-stamp load from the sets actually being saved. The freeze-at-save
        rule exists so a later band re-measurement can't rewrite what a past
        workout meant -- it does not apply here, because the user is
@@ -2879,9 +3143,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        the new sets can no longer produce a stamp (e.g. every band was
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
-                           makeReportCtx({ log, gear: gearInv, myBands: [] }))
+                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach)
     const updated = RBTS_REPORTS.applyLoadStamp(
-      { ...entry, exercises: ex, gear: cleanGear, editedAt: new Date().toISOString() },
+      { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
+        editedAt: new Date().toISOString() },
       loadStamp)
     onSave(updated)
     onDone(true)
@@ -2914,7 +3179,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:6}}>
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
             <GearPicker inv={gearInv} selected={gr[id]||[]}
-              onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}/>
+              onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}
+              bands={setBandsOf(refSetOf(id))} doubled={!!refSetOf(id).doubled}
+              attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}/>
           </div>
           {(sets||[]).map((s,i) => {
             const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
@@ -2948,6 +3215,20 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                       onChange={e=>{const v=e.target.value; updateSet(id,i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                       style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                   </div>
+                  {/* Same rule as the in-workout card: visible on a belt rig,
+                      and visible anyway on an already-doubled set so the flag
+                      can never keep influencing the load with no control on
+                      screen. Never auto-cleared. */}
+                  {(beltRigOf(id) || !!s.doubled) && (
+                    <button
+                      onClick={()=>updateSet(id,i,'doubled', s.doubled ? undefined : true)}
+                      title={beltRigOf(id)
+                        ? 'Doubled under the footplate: half the rest length, twice the layers. Not the same as logging the same band twice — that is two physical bands.'
+                        : 'This set is still counted as DOUBLED even though its gear is no longer a footplate + belt rig. Tap to clear it.'}
+                      style={{...btn(!!s.doubled, beltRigOf(id) ? undefined : C.amber),fontSize:9,padding:'5px 7px',flexShrink:0}}>
+                      {s.doubled ? 'DOUBLED' : 'SINGLED'}
+                    </button>
+                  )}
                   <span style={{flex:1}}></span>
                   {sets.length>1 && (
                     <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
