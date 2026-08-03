@@ -616,7 +616,14 @@
          a belt's whole waist circumference as inline series length and
          reports a confident 0 lb, which is the defect this path replaces.
        - REFERENCE-STRAIN (every other exercise): unchanged from before this
-         path existed. */
+         path existed, with one addition (2026-08-02): if series gear (a rope,
+         handle, or anchor pair) is long enough to push any one band's
+         modelled stretch to zero or below, that is the SAME confident-zero
+         failure mode as the belt bug, arriving by a different route -- the
+         model's path-length assumption has broken down for this setup, not
+         the band. It degrades the WHOLE stack to RATED with a `basis`
+         naming the reason, rather than let bandForceAt's correct 0-at-slack
+         floor read as a real answer. */
   function effectiveLoad(ctx, bandIds, gearIds, opts) {
     var ids = bandIds || [];
     var o = opts || {};
@@ -716,7 +723,7 @@
 
     /* ---- reference-strain path: unchanged for every other exercise ------ */
     var delta = gearPathDelta(gearIds, ctx.gearOf);
-    var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0;
+    var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0, slack = false;
 
     ids.forEach(function (id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
@@ -729,9 +736,28 @@
       var pts = Array.isArray(geom.measured) ? geom.measured : [];
       if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) anyMeasured = true;
       var refStretch = LOAD_MODEL.REF_STRAIN * rest;
+      /* Series gear (ropes, anchors, handles) longer than the reference path
+         drives this band's modelled stretch to zero or below. bandForceAt
+         would floor that at a correct 0, but a confident 0 is exactly the
+         belt bug in a different coat: the model's assumption (path length
+         fixed at 2x rest length) has broken down for this setup, not the
+         band's force curve. Flag it and stop touching lb/refTotal -- a
+         partial sum from the OTHER bands in the stack would still stamp a
+         provenance on a geometry this model cannot describe. */
+      if (refStretch + delta <= 0) { slack = true; return; }
       refTotal += bandForceAt(b, refStretch, geom);
       lb += bandForceAt(b, refStretch + delta, geom);
     });
+
+    /* Whole-set, not per-band: if one band in a stack is slack and another
+       is not, the setup's geometry is not describable and a partial number
+       would mislead. Degrade the WHOLE result to RATED and say why -- the
+       same rule the absolute-stretch (belt) path above already applies to
+       its four degradation modes, so both paths obey one rule. */
+    if (slack) {
+      out.basis = "gear is longer than the reference path allows; geometry not modelled";
+      return out;
+    }
 
     if (!anyGeom && !anyMeasured) return out;      // nothing to improve on
 
