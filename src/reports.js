@@ -594,6 +594,22 @@
     });
   }
 
+  /* A REAL, USABLE number -- the guard CLAUDE.md's "isFinite(null) === true"
+     hazard exists for. isFinite coerces before testing, so isFinite(null),
+     isFinite("") and isFinite("36.5") are ALL true; a bare isFinite check
+     therefore accepts a missing measurement (null), an empty input box ("")
+     and a string that came back from an import as though the user had typed a
+     number. 0 is rejected too: a floor-level attachment or a zero body width
+     is not a measurement, it is an unset field wearing one's clothes.
+
+     Byte-identical in semantics to bodyMeasureNum in both apps, deliberately
+     -- a value that one of them refuses must not be computed on by the other.
+     Used wherever a wrong answer here would show up as a confident number with
+     a `basis` blaming the wrong thing. */
+  function finitePos(v) {
+    return typeof v === "number" && isFinite(v) && v > 0;
+  }
+
   /* Effective load for one set, with its provenance.
        bandIds   the stack
        gearIds   the gear used for this exercise (may be empty)
@@ -610,7 +626,9 @@
          attachment height fixes the gap. REF_STRAIN is never consulted here
          and gearPathDelta is never called - this stretch is real, not a nudge
          off an assumption. Missing ctx.body, a missing/non-finite
-         opts.attachHeightIn, or a footplate whose dimensions cannot be
+         opts.attachHeightIn, a missing ctx.body.bodyWidthIn on a SINGLED set
+         (where the loop must span the lifter, so a missing width silently
+         halves the stretch), or a footplate whose dimensions cannot be
          resolved all degrade to RATED with a `basis` naming the reason. They
          do NOT fall through to the reference-strain path: that path subtracts
          a belt's whole waist circumference as inline series length and
@@ -660,8 +678,27 @@
         out.basis = "belt setup: body measurements not set";
         return out;
       }
-      if (!isFinite(o.attachHeightIn)) {
+      /* finitePos, NOT isFinite: isFinite(null) and isFinite("") are both
+         true, so the bare check let a missing or half-entered height through
+         to beltStretch, which refused it further down and returned RATED with
+         a `basis` blaming the BAND ("no band in this stack can be rigged on
+         this footplate") for a field the user simply never filled in. The
+         number was never wrong; the stated reason was, which is the same
+         failure in a smaller coat. */
+      if (!finitePos(o.attachHeightIn)) {
         out.basis = "belt setup: no attachment height recorded";
+        return out;
+      }
+      /* SINGLED ONLY, because beltReach genuinely does not use the width when
+         the band is doubled. Singled it is load-bearing: `body.bodyWidthIn ||
+         0` turned an unmeasured width into a real 0, which SHORTENS `consumed`
+         and so LENGTHENS `reach` -- the same 41in band at the same hip
+         landmark reports 16.44in / 8.02 lb with the width set and 7.56in /
+         3.69 lb without it, 54% light, provenance still MODELED and nothing on
+         screen saying so. bodyMeasureComplete() gates the PICKER, not the
+         engine, so a history re-edit on a half-filled profile reached here. */
+      if (!o.doubled && !finitePos(ctx.body.bodyWidthIn)) {
+        out.basis = "belt setup: body width not measured (a singled band spans it)";
         return out;
       }
       /* resolveGearDims never returns falsy for a real item -- an unknown
@@ -677,7 +714,7 @@
         return out;
       }
       var lbB = 0, refB = 0, anyB = false, allMeasured = true, minStrain = Infinity,
-          maxStrain = 0, firstStretch = null;
+          maxStrain = 0, firstStretch = null, anyClamped = false;
       ids.forEach(function (id) {
         var b = ctx.bandOf ? ctx.bandOf(id) : null;
         if (!b) return;
@@ -695,9 +732,16 @@
         var pts = sanitizeMeasuredPoints(geom.measured);
         /* Readings must BRACKET the stretch. Extrapolating past the ends of
            the measured span is not a measurement. */
-        if (!(pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS &&
-              pts[0].stretchIn <= d * s &&
-              pts[pts.length - 1].stretchIn >= d * s)) allMeasured = false;
+        var enough = pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
+        var brackets = enough && pts[0].stretchIn <= d * s &&
+                       pts[pts.length - 1].stretchIn >= d * s;
+        if (!brackets) allMeasured = false;
+        /* Enough readings to be interpolated, but they do not reach this
+           stretch: bandForceAt CLAMPS to the nearest reading, so the number
+           did not come off the fitted curve either. Recorded so `basis` can
+           say what actually happened instead of naming a curve that was never
+           evaluated. */
+        if (enough && !brackets) anyClamped = true;
         lbB  += d * bandForceAt(b, d * s, geom);
         refB += d * bandMid(b);
       });
@@ -710,10 +754,32 @@
         out.belowRated = minStrain < LOAD_MODEL.STRAIN_AT_RATED_MIN;
         out.aboveRated = maxStrain > LOAD_MODEL.STRAIN_AT_RATED_MAX;
         var gearOK = gearDimsVerified(gearIds, ctx.gearOf);
-        out.provenance = (allMeasured && gearOK) ? "MEASURED" : "MODELED";
-        out.basis = out.provenance === "MEASURED"
-          ? "interpolated through your Tension Master readings at a measured band path"
-          : "band path from the footplate and your attachment height, on the fitted curve";
+        /* A plate with no bandSpanIn of its own falls back to `lengthIn` in
+           beltReach -- the plate's overall length standing in for the distance
+           the band actually runs under it. That is a GUESS, and the spec says
+           so: "that fallback forces MODELED and can never reach MEASURED, the
+           same refusal that removed the interpolated bandSpanIn: 20.5 on
+           2026-07-31". No check enforced it, so Serious Steel|Acacia Training
+           Platform -- verified:true, no bandSpanIn -- reached MEASURED on a
+           substituted number. A vendor spec is not a measurement of THIS unit,
+           and neither is a dimension nobody took. */
+        var plateSpanMeasured = finitePos(plate.bandSpanIn);
+        out.provenance = (allMeasured && gearOK && plateSpanMeasured)
+          ? "MEASURED" : "MODELED";
+        if (out.provenance === "MEASURED") {
+          out.basis = "interpolated through your Tension Master readings at a measured band path";
+        } else if (anyClamped) {
+          out.basis = "band path from the footplate and your attachment height, " +
+                      "clamped to your nearest Tension Master reading (your readings " +
+                      "do not reach this stretch)";
+        } else if (allMeasured && gearOK && !plateSpanMeasured) {
+          out.basis = "band path from the footplate and your attachment height, " +
+                      "on your Tension Master readings but over an unmeasured " +
+                      "footplate band span";
+        } else {
+          out.basis = "band path from the footplate and your attachment height, " +
+                      "on the fitted curve";
+        }
         return out;
       }
       /* Nothing riggable: stays RATED, and still never falls through. */
@@ -724,6 +790,7 @@
     /* ---- reference-strain path: unchanged for every other exercise ------ */
     var delta = gearPathDelta(gearIds, ctx.gearOf);
     var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0, slack = false;
+    var minStrainR = Infinity, maxStrainR = 0;
 
     ids.forEach(function (id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
@@ -733,7 +800,13 @@
         ? geom.restLengthIn : (b.lengthIn || 0);
       if (!rest) { lb += bandMid(b); refTotal += bandMid(b); return; }
       if (isFinite(geom.restLengthIn) || delta) anyGeom = true;
-      var pts = Array.isArray(geom.measured) ? geom.measured : [];
+      /* sanitizeMeasuredPoints, not the raw array: a half-entered reading
+         (stretch typed, lb still null) is padded into `measured` by the
+         calibration panel on purpose, and counting it here claimed MEASURED
+         over a number bandForceAt had computed off the FITTED CURVE, because
+         bandForceAt sanitizes and found only one usable point. Same floor,
+         read the same way, in both places. */
+      var pts = sanitizeMeasuredPoints(geom.measured);
       if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) anyMeasured = true;
       var refStretch = LOAD_MODEL.REF_STRAIN * rest;
       /* Series gear (ropes, anchors, handles) longer than the reference path
@@ -745,6 +818,16 @@
          partial sum from the OTHER bands in the stack would still stamp a
          provenance on a geometry this model cannot describe. */
       if (refStretch + delta <= 0) { slack = true; return; }
+      /* The sub-rated ramp is NEW (2026-08-02), and it turned the old
+         confident 0 into a small positive number -- which is honest, but only
+         if the caller is told the figure came off an extrapolation BELOW
+         anything the vendor publishes. belowRated used to be set by the belt
+         path alone, so every non-belt setup with enough series gear to fall
+         under strain 0.5 got that number with nothing flagging it.
+         bandForceAt's own comment already claimed "callers surface it". */
+      var strainR = (refStretch + delta) / rest;
+      if (strainR < minStrainR) minStrainR = strainR;
+      if (strainR > maxStrainR) maxStrainR = strainR;
       refTotal += bandForceAt(b, refStretch, geom);
       lb += bandForceAt(b, refStretch + delta, geom);
     });
@@ -764,6 +847,10 @@
     out.lb = lb;
     out.ratio = refTotal ? (lb / refTotal) : 1;
     out.stretchIn = delta;
+    /* Infinity/0 when no band was evaluated, which reads as "not flagged" --
+       correct, because nothing was computed to flag. */
+    out.belowRated = minStrainR < LOAD_MODEL.STRAIN_AT_RATED_MIN;
+    out.aboveRated = maxStrainR > LOAD_MODEL.STRAIN_AT_RATED_MAX;
     /* MEASURED requires BOTH a measured band curve AND (when gear is in play)
        gear the user measured. Anything less is MODELED - it is still an
        estimate, and must not be presented as a reading. */
@@ -799,16 +886,33 @@
                       -- exactly what effectiveLoad needs.
 
      Returns the effectiveLoad result for the heaviest set, or null when no
-     set in the list logged any bands. */
+     set in the list logged any bands.
+
+     "Heaviest" is decided WITHIN a provenance tier first, and only then by lb,
+     because a RATED figure and a MODELED one are not the same kind of number.
+     A RATED result is either a degradation ("this setup could not be
+     computed") or a bare vendor midpoint at an unstated stretch; a MODELED or
+     MEASURED one is a real computed load at a known stretch. Comparing them
+     directly let a degraded RATED 30 beat a correctly computed MODELED 8 and
+     become the exercise's stamped load -- the frozen, permanent record of what
+     that workout meant -- and singled sub-rated loads are small enough to make
+     that reachable in ordinary use. So: any real result outranks every
+     degraded one, and if EVERY set degraded the exercise degrades, carrying
+     its own basis rather than a number borrowed from a different model.
+     MEASURED and MODELED share a tier: both are real loads on the same scale,
+     and picking by provenance there would report a lighter set as the top. */
   function bestSetLoad(ctx, sets, gearIds, attachHeightIn) {
-    var best = null;
+    var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
         ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
       if (!bands.length) return;
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn });
-      if (!best || e.lb > best.lb) best = e;
+      var tier = e.provenance === "RATED" ? 0 : 1;
+      if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
+        best = e; bestTier = tier;
+      }
     });
     return best;
   }
@@ -861,7 +965,10 @@
     Object.keys(exercises || {}).forEach(function (exId) {
       var sets = exercises[exId] || [];
       var gearIds = (gearMap && gearMap[exId]) || [];
-      var attachIn = (attachMap && isFinite(attachMap[exId])) ? attachMap[exId] : undefined;
+      /* finitePos, NOT isFinite -- see finitePos. `attach` is written on every
+         save, including as {} or with a null per exercise, so isFinite would
+         have passed null straight through to effectiveLoad as a "height". */
+      var attachIn = (attachMap && finitePos(attachMap[exId])) ? attachMap[exId] : undefined;
       var best = bestSetLoad(ctx, sets, gearIds, attachIn);
       if (!best) return;
       any = true;
@@ -3033,6 +3140,7 @@
     resolveGearDims: resolveGearDims,
     applyGearDimEdit: applyGearDimEdit,
     gearDimsVerified: gearDimsVerified,
+    finitePos: finitePos,
     effectiveLoad: effectiveLoad,
     bestSetLoad: bestSetLoad,
     stampLoad: stampLoad,
