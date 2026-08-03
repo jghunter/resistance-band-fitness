@@ -272,10 +272,31 @@
     /* The single strain assumption this whole model rests on, stated once.
        Loop bands are conventionally rated with the maximum figure at about
        2.5x the loop's rest length (strain 1.5) and the minimum at a light
-       working stretch (strain 0.5). Between those two points the fit is
-       LINEAR: real latex stiffens toward the top of its range, so modeled
-       figures understate load at high stretch. Measured points remove the
-       assumption entirely, which is the whole reason for the Tension Master. */
+       working stretch (strain 0.5).
+
+       The fit is THREE SEGMENTS and continuous:
+
+         strain <= 0            0 lb. A slack band pulls on nothing.
+         0 < strain < 0.5       a straight ramp from the origin up to the
+                                vendor's rated MINIMUM at strain 0.5.
+         strain >= 0.5          the LINEAR fit between rated min and rated
+                                max, extended above 1.5.
+
+       Only the middle segment is new, and it is an EXTRAPOLATION BELOW
+       ANYTHING THE VENDOR PUBLISHES: no manufacturer rates a band under its
+       rated minimum, so nothing anchors that ramp except the two facts that a
+       band at zero stretch makes zero force and the curve must meet the rated
+       minimum where the rated range begins. Sub-rated figures are therefore
+       the least reliable numbers this model produces -- report them, flag
+       them (`belowRated`), do not treat them as measurements. What they are
+       NOT is what preceded them: running the upper line backwards past its
+       own lower anchor produced negative force, which `f < 0 ? 0 : f` then
+       hid as a confident 0 lb.
+
+       Above strain 0.5 the fit is linear: real latex stiffens toward the top
+       of its range, so modeled figures understate load at high stretch.
+       Measured points remove the assumption entirely, which is the whole
+       reason for the Tension Master. */
     STRAIN_AT_RATED_MIN: 0.5,
     STRAIN_AT_RATED_MAX: 1.5,
     /* Assumed working strain of a REFERENCE setup - the strain at which a
@@ -286,7 +307,24 @@
   };
 
   /* Force in lb at a given absolute stretched-past-rest distance.
-     stretchIn is how far BEYOND its rest length the loop has been pulled. */
+     stretchIn is how far BEYOND its rest length the loop has been pulled.
+
+     With >= 2 Tension Master readings this interpolates them and never
+     reaches the fitted curve at all. Otherwise it evaluates the three-segment
+     fit described on LOAD_MODEL:
+
+       s <= 0        0 -- a slack band makes no force.
+       0 < s < lo    r.min * (s / lo) -- a straight ramp from the origin,
+                     meeting the rated minimum exactly at s === lo so the two
+                     segments join continuously. THIS SEGMENT IS AN
+                     EXTRAPOLATION BELOW THE VENDOR'S PUBLISHED RANGE and is
+                     the least reliable output of the whole model; callers
+                     surface it as `belowRated`.
+       s >= lo       the linear rated fit, unchanged.
+
+     Before this ramp existed the upper line was simply run BACKWARDS below
+     strain 0.5, went negative, and was clamped to 0 -- so a genuinely light
+     but real setup reported a confident zero pounds. */
   function bandForceAt(band, stretchIn, geom) {
     if (!band) return 0;
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
@@ -315,6 +353,8 @@
     var s = stretchIn / rest;                                   // strain
     var lo = LOAD_MODEL.STRAIN_AT_RATED_MIN, hi = LOAD_MODEL.STRAIN_AT_RATED_MAX;
     if (hi <= lo) return bandMid(band);
+    if (s <= 0) return 0;                       // slack: no force, not a fit
+    if (s < lo) return r.min * (s / lo);        // sub-rated ramp from the origin
     var f = r.min + (r.max - r.min) * ((s - lo) / (hi - lo));
     return f < 0 ? 0 : f;                                       // never negative
   }
