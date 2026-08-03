@@ -418,9 +418,126 @@
       var d = resolveGearDims(g) || {}, t = g.type;
       if (t === "footplate") return a + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
       if (t === "bar")       return a - (d.hookOffsetIn || 0);
-      if (t === "handle" || t === "anchor" || t === "belt") return a - (d.seriesIn || 0);
+      if (t === "handle" || t === "anchor") return a - (d.seriesIn || 0);
+      /* A belt is a loop AROUND the body, not a length in series with the
+         band. Its recorded 40in was the waist circumference and it drove every
+         belt exercise to 0 lb. Belt setups are modelled by beltReach /
+         beltStretch, which need nothing from the belt at all. */
+      if (t === "belt")      return a;
       return a + 2 * (d.thicknessIn || 0) - (d.seriesIn || 0);
     }, 0);
+  }
+
+  /* ---- belt / footplate band path ---------------------------------------
+     A belt exercise is not a series-length problem. The band goes UNDER a
+     footplate, both strands come up, and whatever they attach to -- a belt
+     clip, a rod under a rope, a threaded strap -- sits at some height. Greg's
+     ruling 2026-08-02: the model terminates AT THE BAND. No belt dimension is
+     an input, because the connector above the band is a rope, rod or
+     adjustable strap of arbitrary length, threaded anywhere, on one or both
+     sides of the body.
+
+     What the plate and body absorb is known; what is left is the band's reach
+     above the plate; the one supplied number is how high the attachment sits.
+     See docs/superpowers/specs/2026-08-02-belt-footplate-band-path-design.md */
+
+  /* Body landmarks, in ascending order. The picker offers these; each is a
+     plain floor-to-landmark measurement on the profile. */
+  var BODY_LANDMARKS = [
+    { k: "kneeHeightIn",     l: "KNEE" },
+    { k: "midThighHeightIn", l: "MID-THIGH" },
+    { k: "hipHeightIn",      l: "HIP" }
+  ];
+
+  function beltPlateOf(gearIds, gearOf) {
+    if (!gearIds || !gearIds.length || !gearOf) return null;
+    for (var i = 0; i < gearIds.length; i++) {
+      var g = gearOf(gearIds[i]);
+      if (g && g.type === "footplate") return g;
+    }
+    return null;
+  }
+
+  function beltBeltPresent(gearIds, gearOf) {
+    if (!gearIds || !gearIds.length || !gearOf) return false;
+    return gearIds.some(function (id) {
+      var g = gearOf(id);
+      return !!(g && g.type === "belt");
+    });
+  }
+
+  /* How far the band's own end reaches above the TOP of the plate, unstretched.
+
+       usableC  = 2 * restLength / d      the loop circumference in play; a
+                                          doubled band is a half-length loop
+       consumed = the plate's under-run, both edge crossings, the channel, and
+                  -- SINGLED ONLY -- the user's width, because singled the loop
+                  runs up both sides of the body and its top has to cross
+                  between them. Doubled the band ends inches above the plate
+                  and never spans anything.
+       reach    = (usableC - consumed) / 2 because two strands go up.
+
+     `plate` is a RESOLVED dims object (resolveGearDims output), not a gear
+     item. Returns null when the band is too short to be rigged this way --
+     never a negative reach, and never a fabricated load. */
+  function beltReach(band, geom, plate, doubled, body) {
+    if (!band || !plate || !body) return null;
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : (band.lengthIn || 0);
+    if (!rest) return null;
+    var d = doubled ? 2 : 1;
+    var usableC = 2 * rest / d;
+    var width = doubled ? 0 : (body.bodyWidthIn || 0);
+    var consumed = (plate.bandSpanIn || plate.lengthIn || 0)
+                 + 2 * (plate.thicknessIn || 0)
+                 + (plate.channelIn || 0)
+                 + width;
+    var reach = (usableC - consumed) / 2;
+    return reach > 0 ? reach : null;
+  }
+
+  /* The gap between the band's own top and the attachment, which IS the
+     elongation. The plate's thickness is deliberately NOT subtracted: the
+     lifter stands on the plate, so it raises the body and the band's top by
+     the same amount and cancels. attachHeightIn is therefore the plain
+     floor-to-landmark body measurement, used as measured.
+
+     Returns null at or below the band's own top -- there is no elongation
+     there, and reporting 0 lb as though it were a load is the exact failure
+     this model replaces. */
+  function beltStretch(reach, attachHeightIn) {
+    if (reach == null || !isFinite(reach)) return null;
+    if (!isFinite(attachHeightIn)) return null;
+    var s = attachHeightIn - reach;
+    return s > 0 ? s : null;
+  }
+
+  /* The landmarks this band can actually be attached to, each with the strain
+     it implies and whether that strain falls outside the vendor's rated span.
+     Sub-rated options are MARKED, not hidden: a singled 41in band on a
+     footplate never reaches strain 0.5 at any landmark up to the hip, so
+     hiding them would leave the picker empty. */
+  function beltAttachOptions(band, geom, plate, doubled, body) {
+    var reach = beltReach(band, geom, plate, doubled, body);
+    if (reach == null) return [];
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : (band.lengthIn || 0);
+    var d = doubled ? 2 : 1;
+    var effRest = rest / d;
+    var out = [];
+    BODY_LANDMARKS.forEach(function (lm) {
+      var h = body[lm.k];
+      if (!isFinite(h)) return;
+      var s = beltStretch(reach, h);
+      if (s == null) return;
+      var strain = effRest ? (s / effRest) : 0;
+      out.push({
+        k: lm.k, label: lm.l, heightIn: h, stretchIn: s, strain: strain,
+        belowRated: strain < LOAD_MODEL.STRAIN_AT_RATED_MIN,
+        aboveRated: strain > LOAD_MODEL.STRAIN_AT_RATED_MAX
+      });
+    });
+    return out;
   }
 
   /* True only when every dimension in play was measured by the user. A vendor
@@ -440,20 +557,124 @@
   /* Effective load for one set, with its provenance.
        bandIds   the stack
        gearIds   the gear used for this exercise (may be empty)
-       ctx       needs bandOf, and optionally gearOf / bandGeomOf
-     Returns { lb, rated, ratio, provenance, stretchIn, basis }.
-     provenance is MEASURED / MODELED / RATED and callers MUST surface it -
-     the number means something different in each case. */
-  function effectiveLoad(ctx, bandIds, gearIds) {
+       ctx       needs bandOf, and optionally gearOf / bandGeomOf / body
+       opts      optional { doubled: Boolean, attachHeightIn: Number }
+     Returns { lb, rated, ratio, provenance, stretchIn, basis, doubled,
+     attachHeightIn, belowRated, aboveRated }. provenance is MEASURED /
+     MODELED / RATED and callers MUST surface it - the number means something
+     different in each case.
+
+     Two paths, and a footplate + belt COMMITS to the first one:
+       - ABSOLUTE-STRETCH (belt path): taken whenever the exercise has both a
+         footplate and a belt. The band's geometry fixes where it reaches; the
+         attachment height fixes the gap. REF_STRAIN is never consulted here
+         and gearPathDelta is never called - this stretch is real, not a nudge
+         off an assumption. Missing ctx.body, a missing/non-finite
+         opts.attachHeightIn, or a footplate whose dimensions cannot be
+         resolved all degrade to RATED with a `basis` naming the reason. They
+         do NOT fall through to the reference-strain path: that path subtracts
+         a belt's whole waist circumference as inline series length and
+         reports a confident 0 lb, which is the defect this path replaces.
+       - REFERENCE-STRAIN (every other exercise): unchanged from before this
+         path existed. */
+  function effectiveLoad(ctx, bandIds, gearIds, opts) {
     var ids = bandIds || [];
+    var o = opts || {};
+    var d = o.doubled ? 2 : 1;
+    /* Deliberately NOT multiplied by `d`. This is the RATED fallback, and on
+       the reference-strain path below `lb` carries no doubling either -- a
+       doubled non-belt set must not stamp a singled lb against a doubled
+       rated. The belt path computes its own `refB` (which DOES double) and
+       overwrites out.rated with it. */
     var rated = ids.reduce(function (a, id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
       return a + (b ? bandMid(b) : 0);
     }, 0);
     var out = { lb: rated, rated: rated, ratio: 1, provenance: "RATED",
-                stretchIn: null, basis: "vendor midpoint" };
+                stretchIn: null, basis: "vendor midpoint",
+                doubled: !!o.doubled, attachHeightIn: null,
+                belowRated: false, aboveRated: false };
     if (!ids.length) return out;
 
+    /* ---- absolute-stretch path: footplate + belt + attachment height ----
+       The band's own geometry fixes where it reaches; the attachment height
+       fixes the gap. REF_STRAIN is never consulted here and gearPathDelta is
+       never called -- this stretch is real, not a nudge off an assumption. */
+    var plateItem = beltPlateOf(gearIds, ctx.gearOf);
+    var beltOn = beltBeltPresent(gearIds, ctx.gearOf);
+    if (plateItem && beltOn) {
+      /* A footplate AND a belt means this IS a belt setup, and there is no
+         second opinion to fall back on. The reference-strain path treats the
+         belt as inline series length and subtracts its whole waist
+         circumference, which is exactly the bug this path exists to remove --
+         so a belt setup that cannot be computed degrades to RATED and SAYS
+         WHY. It must never reach gearPathDelta. */
+      if (!ctx.body) {
+        out.basis = "belt setup: body measurements not set";
+        return out;
+      }
+      if (!isFinite(o.attachHeightIn)) {
+        out.basis = "belt setup: no attachment height recorded";
+        return out;
+      }
+      /* resolveGearDims never returns falsy for a real item -- an unknown
+         brand|name comes back as a bare unverified estimate with no
+         dimensions at all. Defaulting that to {} would let beltReach compute
+         off the body width alone and report a fabricated number as MODELED,
+         defeating beltReach's own `if (!plate) return null` guard. */
+      var plate = resolveGearDims(plateItem);
+      if (!plate || (!isFinite(plate.thicknessIn) &&
+                     !isFinite(plate.bandSpanIn) &&
+                     !isFinite(plate.lengthIn))) {
+        out.basis = "belt setup: the footplate's dimensions are unknown";
+        return out;
+      }
+      var lbB = 0, refB = 0, anyB = false, allMeasured = true, minStrain = Infinity,
+          maxStrain = 0, firstStretch = null;
+      ids.forEach(function (id) {
+        var b = ctx.bandOf ? ctx.bandOf(id) : null;
+        if (!b) return;
+        var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
+        var reach = beltReach(b, geom, plate, o.doubled, ctx.body);
+        var s = beltStretch(reach, o.attachHeightIn);
+        if (s == null) return;                    // this band cannot be rigged so
+        anyB = true;
+        if (firstStretch == null) firstStretch = s;
+        var rest = (isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+          ? geom.restLengthIn : (b.lengthIn || 0);
+        var strain = rest ? (d * s / rest) : 0;
+        if (strain < minStrain) minStrain = strain;
+        if (strain > maxStrain) maxStrain = strain;
+        var pts = sanitizeMeasuredPoints(geom.measured);
+        /* Readings must BRACKET the stretch. Extrapolating past the ends of
+           the measured span is not a measurement. */
+        if (!(pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS &&
+              pts[0].stretchIn <= d * s &&
+              pts[pts.length - 1].stretchIn >= d * s)) allMeasured = false;
+        lbB  += d * bandForceAt(b, d * s, geom);
+        refB += d * bandMid(b);
+      });
+      if (anyB) {
+        out.lb = lbB;
+        out.rated = refB;
+        out.ratio = refB ? (lbB / refB) : 1;
+        out.stretchIn = firstStretch;
+        out.attachHeightIn = o.attachHeightIn;
+        out.belowRated = minStrain < LOAD_MODEL.STRAIN_AT_RATED_MIN;
+        out.aboveRated = maxStrain > LOAD_MODEL.STRAIN_AT_RATED_MAX;
+        var gearOK = gearDimsVerified(gearIds, ctx.gearOf);
+        out.provenance = (allMeasured && gearOK) ? "MEASURED" : "MODELED";
+        out.basis = out.provenance === "MEASURED"
+          ? "interpolated through your Tension Master readings at a measured band path"
+          : "band path from the footplate and your attachment height, on the fitted curve";
+        return out;
+      }
+      /* Nothing riggable: stays RATED, and still never falls through. */
+      out.basis = "belt setup: no band in this stack can be rigged on this footplate";
+      return out;
+    }
+
+    /* ---- reference-strain path: unchanged for every other exercise ------ */
     var delta = gearPathDelta(gearIds, ctx.gearOf);
     var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0;
 
@@ -480,8 +701,8 @@
     /* MEASURED requires BOTH a measured band curve AND (when gear is in play)
        gear the user measured. Anything less is MODELED - it is still an
        estimate, and must not be presented as a reading. */
-    var gearOK = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
-    out.provenance = (anyMeasured && gearOK) ? "MEASURED" : "MODELED";
+    var gearOK2 = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
+    out.provenance = (anyMeasured && gearOK2) ? "MEASURED" : "MODELED";
     out.basis = out.provenance === "MEASURED"
       ? "interpolated through your Tension Master readings"
       : "fitted from the vendor's rated range at an assumed strain, adjusted for gear";
@@ -501,22 +722,26 @@
      bands ACROSS sets into one artificial stack (a lighter warm-up band plus
      a heavier working band is not a real combined stack anyone wears).
 
-       sets      [ {reps, bands, segments?, ...}, ... ] -- one exercise's sets
-       gearIds   [gearId, ...] -- gear used for this exercise (same for every
-                 set; gear doesn't change set to set the way band resistance
-                 does)
-       ctx       needs bandOf, and optionally gearOf / bandGeomOf -- exactly
-                 what effectiveLoad needs.
+       sets           [ {reps, bands, segments?, doubled?, ...}, ... ] -- one
+                      exercise's sets; `doubled` is read off each set itself.
+       gearIds        [gearId, ...] -- gear used for this exercise (same for
+                      every set; gear doesn't change set to set the way band
+                      resistance does)
+       attachHeightIn a bare number -- the belt attachment height for this
+                      exercise, or undefined/omitted when not a belt exercise.
+       ctx            needs bandOf, and optionally gearOf / bandGeomOf / body
+                      -- exactly what effectiveLoad needs.
 
      Returns the effectiveLoad result for the heaviest set, or null when no
      set in the list logged any bands. */
-  function bestSetLoad(ctx, sets, gearIds) {
+  function bestSetLoad(ctx, sets, gearIds, attachHeightIn) {
     var best = null;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
         ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
       if (!bands.length) return;
-      var e = effectiveLoad(ctx, bands, gearIds);
+      var e = effectiveLoad(ctx, bands, gearIds,
+                            { doubled: !!s.doubled, attachHeightIn: attachHeightIn });
       if (!best || e.lb > best.lb) best = e;
     });
     return best;
@@ -529,33 +754,62 @@
      discipline as the band-id stability rule, applied to load instead of
      identity.
 
-       exercises   { exId: [ {reps, bands, segments?, ...}, ... ] } -- the
-                   `exercises` map of a log entry
+       exercises   { exId: [ {reps, bands, segments?, doubled?, ...}, ... ] }
+                   -- the `exercises` map of a log entry
        gearMap     { exId: [gearId, ...] } -- the `gear` map of a log entry,
                    keyed by exercise id (gear doesn't change set to set the
                    way band resistance does)
-       ctx         needs bandOf, and optionally gearOf / bandGeomOf -- exactly
-                   what effectiveLoad needs. Callers build and inject it
-                   (makeReportCtx() in both apps); this module touches no DOM,
-                   no localStorage and no app globals.
+       ctx         needs bandOf, and optionally gearOf / bandGeomOf / body --
+                   exactly what effectiveLoad needs. Callers build and inject
+                   it (makeReportCtx() in both apps); this module touches no
+                   DOM, no localStorage and no app globals.
+       attachMap   { exId: heightIn } -- belt attachment height per exercise
+                   id, or absent/undefined for exercises that aren't a belt
+                   setup.
 
-     Returns { exId: { lb, rated, ratio, provenance, deltaIn } }, one entry per
-     exercise that logged at least one band. The band stack can differ set to
-     set, so the stamp uses the HEAVIEST set -- the same set setTopLoad already
-     reports. Returns undefined when there is nothing to stamp (no usable ctx,
-     or no exercise logged any bands). */
-  function stampLoad(exercises, gearMap, ctx) {
+     Returns { exId: { lb, rated, ratio, provenance, deltaIn | stretchIn,
+     doubled, attachIn, belowRated } }, one entry per exercise that logged at
+     least one band. The band stack can differ set to set, so the stamp uses
+     the HEAVIEST set -- the same set setTopLoad already reports. Returns
+     undefined when there is nothing to stamp (no usable ctx, or no exercise
+     logged any bands).
+
+     `deltaIn` and `stretchIn` are MUTUALLY EXCLUSIVE, and each means exactly
+     one thing:
+       deltaIn    reference-strain path. The signed number of inches the GEAR
+                  adds to (+) or removes from (-) the reference stretch. A
+                  DELTA; on its own it says nothing about how far the band was
+                  actually pulled.
+       stretchIn  belt path (identified by best.attachHeightIn != null). The
+                  ABSOLUTE elongation of the band, in inches past its rest
+                  length.
+     Writing both under one key would leave a consumer unable to tell a -35in
+     gear delta from a 35in real stretch without reverse-engineering the entry.
+
+     Note the persisted stamp writes `attachIn`, while the live effectiveLoad
+     result carries `attachHeightIn` -- different names, deliberately, so a
+     stamped field is never confused for a live one. */
+  function stampLoad(exercises, gearMap, ctx, attachMap) {
     if (!ctx || typeof ctx.bandOf !== "function") return undefined;
     var out = {}, any = false;
     Object.keys(exercises || {}).forEach(function (exId) {
       var sets = exercises[exId] || [];
       var gearIds = (gearMap && gearMap[exId]) || [];
-      var best = bestSetLoad(ctx, sets, gearIds);
+      var attachIn = (attachMap && isFinite(attachMap[exId])) ? attachMap[exId] : undefined;
+      var best = bestSetLoad(ctx, sets, gearIds, attachIn);
       if (!best) return;
       any = true;
+      /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
+         both under the same name. See the note above. */
+      var isBelt = best.attachHeightIn != null;
       out[exId] = { lb: Math.round(best.lb * 10) / 10, rated: Math.round(best.rated * 10) / 10,
                     ratio: Math.round(best.ratio * 1000) / 1000,
-                    provenance: best.provenance, deltaIn: best.stretchIn };
+                    provenance: best.provenance,
+                    deltaIn: isBelt ? undefined : best.stretchIn,
+                    stretchIn: isBelt ? best.stretchIn : undefined,
+                    doubled: best.doubled || undefined,
+                    attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
+                    belowRated: best.belowRated || undefined };
     });
     return any ? out : undefined;
   }
@@ -2476,7 +2730,8 @@
                                   note: "29in. NOT OWNED YET — seeded inbound so the figure is ready when it arrives." },
     "Harambe|White Ropes":      { seriesIn: 12.5, source: "measured", verified: true,
                                   note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod." },
-    "Harambe|Split Squat Belt": { seriesIn: 40, wornHeightIn: 36, source: "measured", verified: true },
+    "Harambe|Split Squat Belt": { source: "measured", verified: true,
+                                  note: "no dimension is an input to load: the band's attachment is modelled by beltReach/beltStretch. seriesIn 40in (removed 2026-08-02) was the WAIST CIRCUMFERENCE and reported 0 lb on every belt lift." },
     "Harambe|Wedges":           { thicknessIn: 1.375, source: "measured", verified: true,
                                   note: "RAMP, not a slab: 2.5in at the high end, 0.25in at the low end, 8.75in of ramp. 1.375 is the mean; used both directions depending on the lift." },
     "Harambe|Foam Block":       { thicknessIn: 6, lengthIn: 9, widthIn: 3.5,
@@ -2490,7 +2745,8 @@
                                   attachSpanIn: 20.375, source: "measured", verified: true },
     "X3 Bar|Force Bar":         { lengthIn: 22.375, hookOffsetIn: 1.75, hookSide: "opposite",
                                   attachSpanIn: 20.375, source: "measured", verified: true },
-    "X3 Bar|Squat Belt (Medium)": { seriesIn: 40, wornHeightIn: 36, source: "measured", verified: true },
+    "X3 Bar|Squat Belt (Medium)": { source: "measured", verified: true,
+                                  note: "as the Harambe belt: no dimension is an input to load. A strap-and-hook hangs below this belt and a bar sits on the hooks, so the band never touches the belt at all." },
     // ---- Clench ----------------------------------------------------------
     "Clench|Carbon Pro Bar":    { lengthIn: 26, hookOffsetIn: 3.25, hookSide: "opposite",
                                   attachSpanIn: 25, source: "measured", verified: true },
@@ -2546,9 +2802,9 @@
     { k:"widthIn",      l:"Width",        hint:"",                          types:["footplate","other"] },
     { k:"hookOffsetIn", l:"Hook offset",  hint:"grip axis to band bearing surface", types:["bar"] },
     { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
-    { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","belt","other"] },
+    { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","other"] },
   ];
-  var GEAR_DIMS_REV = "2026-07-31-measured-r3";
+  var GEAR_DIMS_REV = "2026-08-02-belt-path-r1";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */
@@ -2696,6 +2952,12 @@
     applyBandRestLengthEdit: applyBandRestLengthEdit,
     applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
     gearPathDelta: gearPathDelta,
+    BODY_LANDMARKS: BODY_LANDMARKS,
+    beltPlateOf: beltPlateOf,
+    beltBeltPresent: beltBeltPresent,
+    beltReach: beltReach,
+    beltStretch: beltStretch,
+    beltAttachOptions: beltAttachOptions,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
     GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,
