@@ -3260,6 +3260,140 @@
     return assign(edited, { source: "measured", verified: true, userEdited: true });
   }
 
+  /* ====================================================================
+     FOLD-ENCODING MIGRATION  (2026-08-04)
+     ====================================================================
+     Until the band picker was reworked, DOUBLE x2 expressed "the whole
+     stack was folded" by DUPLICATING EVERY BAND ID. `bands` and `doubled`
+     are INDEPENDENT AXES (see CLAUDE.md), so that encoding lies about the
+     band count and hands the belt path d = 1 for a folded band -- modelling
+     one folded loop as two full-length loops side by side.
+
+     DETERMINACY. A list where every distinct id appears EXACTLY twice is
+     what DOUBLE x2 produced, so it means "folded". Anything else is left
+     ALONE. That matters: three real 2026-06 lists have one id once and
+     another twice, which NEITHER control in the app can produce, and
+     collapsing them would silently halve a genuine two-band stack. The
+     handoff claimed DOUBLE x2 was the only source of duplicate ids in
+     app-written data; measuring the log showed it is not.
+
+     The fold is WHOLE-SET, so a segmented set migrates all-or-nothing.
+
+     `entry.load` is NEVER rewritten -- the freeze rule. The single
+     permitted write is `.era = "pre-fold"` on an exercise that actually
+     changed, so a reader comparing a stamp to its own band list finds an
+     explanation instead of a silent contradiction.
+
+     PURE: no DOM, no localStorage, no clock. `cutoffISO` is a PARAMETER,
+     and the input log is deep-cloned rather than mutated. */
+
+  function foldShapeOf(bands) {
+    if (!bands || !bands.length) return "empty";
+    /* Object.create(null) -- a band id of "constructor", "__proto__" etc
+       must never be answered by Object.prototype instead of by this data.
+       A user-imported backup's band ids are not validated, so this is a
+       real input, not a hypothetical one. */
+    var counts = Object.create(null), ids = [], i;
+    for (i = 0; i < bands.length; i++) {
+      if (counts[bands[i]] == null) { counts[bands[i]] = 0; ids.push(bands[i]); }
+      counts[bands[i]]++;
+    }
+    var anyDup = false, allTwo = true;
+    for (i = 0; i < ids.length; i++) {
+      if (counts[ids[i]] > 1) anyDup = true;
+      if (counts[ids[i]] !== 2) allTwo = false;
+    }
+    if (!anyDup) return "clean";
+    return allTwo ? "allx2" : "mixed";
+  }
+
+  function distinctBandIds(bands) {
+    /* Same prototype-collision hazard as foldShapeOf above. */
+    var seen = Object.create(null), out = [], i;
+    for (i = 0; i < bands.length; i++) {
+      if (!seen[bands[i]]) { seen[bands[i]] = 1; out.push(bands[i]); }
+    }
+    return out;
+  }
+
+  function migrateFoldEncoding(log, cutoffISO) {
+    var changed = [], skipped = [];
+    if (!log || !log.length) return { log: log || [], changed: changed, skipped: skipped };
+
+    var out;
+    try { out = JSON.parse(JSON.stringify(log)); }
+    catch (e) { return { log: log, changed: changed, skipped: skipped }; }
+
+    for (var e2 = 0; e2 < out.length; e2++) {
+      var entry = out[e2];
+      if (!entry || !entry.exercises) continue;
+      if (!entry.date || entry.date > cutoffISO) continue;
+
+      var exIds = Object.keys(entry.exercises);
+      for (var x = 0; x < exIds.length; x++) {
+        var exId = exIds[x];
+        var sets = entry.exercises[exId] || [];
+        var exChanged = false;
+
+        for (var s = 0; s < sets.length; s++) {
+          var set = sets[s];
+          if (!set) continue;
+          var segs = Array.isArray(set.segments) ? set.segments : null;
+          var lists = segs
+            ? segs.map(function (g) { return (g && g.bands) || []; })
+            : [set.bands || []];
+
+          var shapes = [], anyDup = false, allOk = true, k;
+          for (k = 0; k < lists.length; k++) {
+            var sh = foldShapeOf(lists[k]);
+            shapes.push(sh);
+            if (sh === "allx2" || sh === "mixed") anyDup = true;
+            /* "empty" never blocks -- an unused drop segment is not a
+               disagreement about the fold. */
+            if (sh !== "allx2" && sh !== "empty") allOk = false;
+          }
+          if (!anyDup) continue;
+
+          if (!allOk) {
+            skipped.push({
+              date: entry.date, exId: exId, set: s, shapes: shapes.join(","),
+              reason: shapes.indexOf("mixed") >= 0
+                ? "mixed counts -- not produced by DOUBLE x2, may be a real multi-band stack"
+                : "some band lists in this set are not doubled -- the fold is whole-set"
+            });
+            continue;
+          }
+
+          if (segs) {
+            for (k = 0; k < segs.length; k++) {
+              if (segs[k] && (segs[k].bands || []).length) {
+                segs[k].bands = distinctBandIds(segs[k].bands);
+              }
+            }
+          } else {
+            set.bands = distinctBandIds(set.bands);
+          }
+          set.doubled = true;
+          exChanged = true;
+          changed.push({ date: entry.date, exId: exId, set: s });
+        }
+
+        /* Only where a stamp already exists. Never invent a load object.
+           A malformed stamp (e.g. a bare number from a corrupted or
+           hand-edited backup) is not this function's to repair or discard --
+           leave it exactly as it is and move on. Under "use strict",
+           writing a property onto a primitive throws, and this migration is
+           a single pass over the whole log, so one bad entry must not abort
+           every entry after it. */
+        if (exChanged && entry.load && entry.load[exId] &&
+            typeof entry.load[exId] === "object") {
+          entry.load[exId].era = "pre-fold";
+        }
+      }
+    }
+    return { log: out, changed: changed, skipped: skipped };
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -3342,6 +3476,9 @@
     applyGearDimEdit: applyGearDimEdit,
     gearDimsVerified: gearDimsVerified,
     finitePos: finitePos,
+    foldShapeOf: foldShapeOf,
+    distinctBandIds: distinctBandIds,
+    migrateFoldEncoding: migrateFoldEncoding,
     effectiveLoad: effectiveLoad,
     bestSetLoad: bestSetLoad,
     stampLoad: stampLoad,

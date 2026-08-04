@@ -230,6 +230,15 @@ const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'num
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
+// Does this set name a band ANYWHERE? setBandsOf reads only the FIRST segment,
+// which is right for the ATTACH AT picker (one rig per set) but wrong as a
+// "has any band" test: a drop set whose first phase is still empty would
+// report none. The fold button gates on this.
+const setHasAnyBand = (s) => {
+  if (!s) return false
+  if (Array.isArray(s.segments)) return s.segments.some(g => ((g && g.bands) || []).length > 0)
+  return ((s.bands) || []).length > 0
+}
 // ── Per-side (L/R) logging for unilateral exercises (mirrors fitness_app.html) ──
 // side is OPTIONAL and set-level (like rir): absent = bilateral, zero migration.
 // Coexists with intensifiers/segments — a drop set on the left leg =
@@ -380,12 +389,20 @@ async function saveEntryToFirestore(uid, entry) {
    path, which dates, and that this device is now the only copy. */
 function logCloudWriteFailure(where, dates, err) {
   const list = (Array.isArray(dates) ? dates : [dates]).filter(Boolean)
+  /* Every OTHER call site's failure leaves the entry saved locally but not
+     synced. Fold migration's does not: its localStorage write sits in the
+     SAME try, after the cloud write this reports on, so a failure here means
+     local was never touched either -- the pre-migration data is still what's
+     on disk, and it will retry on the next sign-in. */
+  const tail = where === 'fold migration'
+    ? 'failed to sync their fold migration: ' + (list.join(', ') || '(date unknown)') +
+      '. Local storage was NOT updated either, so this device still holds the pre-migration data and will retry on the next sign-in.'
+    : 'saved locally but NOT synced: ' + (list.join(', ') || '(date unknown)') +
+      '. This device is now the only copy.'
   console.error(
     '[rbts] CLOUD WRITE FAILED (' + where + ') — ' +
     (list.length ? list.length : 'an unknown number of') +
-    ' entr' + (list.length === 1 ? 'y' : 'ies') +
-    ' saved locally but NOT synced: ' + (list.join(', ') || '(date unknown)') +
-    '. This device is now the only copy.',
+    ' entr' + (list.length === 1 ? 'y' : 'ies') + ' ' + tail,
     err)
 }
 
@@ -398,6 +415,50 @@ function entryTs(e) {
   if (typeof e.updatedAt === 'number') return e.updatedAt
   const c = e.completedAt ? Date.parse(e.completedAt) : NaN
   return Number.isNaN(c) ? 0 : c
+}
+
+/* One-time conversion of the pre-2026-08-04 fold encoding. The pure function
+   lives in rbts_reports.js so both apps share it; see the HTML app's
+   ensureFoldMigration for the two-guard rationale (date cutoff bounds scope,
+   flag gives idempotency).
+
+   TWO flags, not one, because the PWA has TWO independent stores. A single
+   flat flag let whichever path ran first (typically the signed-out
+   localStorage path) mark the migration done, so the Firestore path's own
+   call returned immediately without ever touching the cloud copy -- and
+   because the migration does not bump updatedAt, the sign-in reconciliation
+   never pushed the fix either. The cloud data then stayed on the old
+   encoding permanently. `flagKey` is passed in per call site so each store
+   tracks its own completion: 'rbts_foldMigration' for the two localStorage
+   paths (unchanged, so anyone who already ran the old single-flag version is
+   unaffected), 'rbts_foldMigration_cloud_<uid>' for Firestore, keyed by uid
+   because two accounts on one device are genuinely different datasets. */
+const FOLD_CUTOFF = '2026-08-04'
+function migrateFoldOnce(entries, flagKey) {
+  // RBTS_REPORTS is a static import (top of file), so it can never itself be
+  // falsy -- but reports.js is a GENERATED copy (python sync_phase_module.py)
+  // and a stale one predating Task 1 would lack this method, so that half of
+  // the guard stays.
+  if (!RBTS_REPORTS.migrateFoldEncoding) return { entries, changedDates: [] }
+  if (localStorage.getItem(flagKey) === FOLD_CUTOFF) return { entries, changedDates: [] }
+  let res
+  try {
+    res = RBTS_REPORTS.migrateFoldEncoding(entries, FOLD_CUTOFF)
+  } catch (e) {
+    // This runs on every load over data that can arrive from a user-imported
+    // backup JSON -- a throw here must never be able to break the log load.
+    // Leave the flag unset so the next load retries, and hand back the
+    // entries untouched.
+    console.error('[fold migration] threw, will retry next load:', e)
+    return { entries, changedDates: [] }
+  }
+  if (res.changed.length || res.skipped.length) {
+    console.log(`[fold migration] collapsed ${res.changed.length} set(s), skipped ${res.skipped.length}`)
+    res.skipped.forEach(s =>
+      console.log(`  SKIPPED ${s.date} ex${s.exId} set${s.set} [${s.shapes}]: ${s.reason}`))
+  }
+  const dates = [...new Set(res.changed.map(c => c.date))]
+  return { entries: res.log, changedDates: dates }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -734,7 +795,7 @@ function SessionView({ prog, sKey, week }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // BAND PICKER
 // ─────────────────────────────────────────────────────────────────────────────
-function BandPicker({ selected, onChange }) {
+function BandPicker({ selected, onChange, doubled }) {
   const [open, setOpen]       = useState(false)
   const [search, setSearch]   = useState('')
   const [bFilter, setBFilter] = useState('All')
@@ -760,26 +821,38 @@ function BandPicker({ selected, onChange }) {
     })
   }, [search, bFilter])
 
-  // Stack model: distinct bands, all same length; doubling is all-or-nothing.
-  // RULES: stacked bands must be the same length; doubling applies to the whole
-  // stack (each band looped over -> x2), never one band without the others.
+  // Stack model: a MULTISET of band ids. A repeated id is TWO PHYSICAL BANDS of
+  // that model, side by side.
+  //
+  // THE FOLD IS NOT HERE. `bands` (how many) and `doubled` (whether the whole
+  // stack is folded on itself) are INDEPENDENT AXES; the fold is owned by the
+  // set row's SINGLED/DOUBLED button. This picker used to express the fold by
+  // duplicating every id, which lied about the count and handed the belt path
+  // d = 1 for a folded band. The `doubled` prop is DISPLAY ONLY.
+  const MAX_PER_BAND = 4
   const counts = {}; const distinct = []
   selected.forEach(id => { if (counts[id]==null){counts[id]=0;distinct.push(id)} counts[id]++ })
   const stackBand0 = distinct.length ? BANDS.find(x=>x.id===distinct[0]) : null
   const stackLen = stackBand0 ? stackBand0.lengthIn : null
-  const isDoubled = distinct.length>0 && distinct.every(id => counts[id] >= 2)
-  const rebuildStack = (ids, doubled) => { const out=[]; ids.forEach(id => { out.push(id); if(doubled) out.push(id) }); return out }
+  const rebuildStack = (ids, cnts) => {
+    const out=[]
+    ids.forEach(id => {
+      const n = Math.max(1, Math.min(MAX_PER_BAND, cnts[id] || 1))
+      for (let i=0;i<n;i++) out.push(id)
+    })
+    return out
+  }
   const addBand = (id) => {
     const b = BANDS.find(x=>x.id===id); if(!b) return
-    if (distinct.indexOf(id) >= 0) return
     if (stackLen != null && b.lengthIn !== stackLen) return
-    onChange(rebuildStack([...distinct, id], isDoubled))
+    if (distinct.indexOf(id) >= 0) return   // already present; use [+] for a copy
+    onChange(rebuildStack([...distinct, id], {...counts, [id]: 1}))
   }
-  const removeBandId = (id) => {
-    const nd = distinct.filter(x => x !== id)
-    onChange(rebuildStack(nd, nd.length ? isDoubled : false))
+  const removeBandId = (id) => onChange(rebuildStack(distinct.filter(x => x !== id), counts))
+  const setCount = (id, n) => {
+    if (distinct.indexOf(id) < 0) return
+    onChange(rebuildStack(distinct, {...counts, [id]: Math.max(1, Math.min(MAX_PER_BAND, n))}))
   }
-  const toggleDouble = () => { if (distinct.length) onChange(rebuildStack(distinct, !isDoubled)) }
 
   return (
     <div ref={pickerRef} style={{position:'relative'}}>
@@ -789,43 +862,44 @@ function BandPicker({ selected, onChange }) {
           if (!b) return null
           const hex = COLOR_HEX[b.color] || '#888'
           const cnt = counts[id]
+          const step = {cursor:'pointer',color:C.dimGray,fontSize:12,lineHeight:1,
+                        padding:'3px 5px',userSelect:'none'}
           return (
             <span key={id} style={{
               background:hex+'22',border:`1px solid ${hex}66`,borderRadius:4,
-              padding:'2px 7px',fontFamily:'monospace',fontSize:9,color:C.text,
-              display:'flex',alignItems:'center',gap:4,
+              padding:'2px 4px 2px 7px',fontFamily:'monospace',fontSize:9,color:C.text,
+              display:'flex',alignItems:'center',gap:2,
             }}>
               <span style={{width:8,height:8,borderRadius:'50%',background:hex,flexShrink:0}}/>
-              {b.brand.split(' ')[0]} {b.color} {b.model}
-              {cnt > 1
-                ? <span style={{background:C.amber+'33',border:`1px solid ${C.amber}66`,borderRadius:3,padding:'0 4px',color:C.amber,fontWeight:700,fontSize:9}}>×{cnt}</span>
-                : <span style={{color:C.dimGray}}> {b.res}</span>}
-              <span onClick={() => removeBandId(id)}
-                style={{cursor:'pointer',color:C.dimGray,fontSize:12,lineHeight:1}}>x</span>
+              <span style={{marginRight:2}}>{b.brand.split(' ')[0]} {b.color} {b.model}</span>
+              {/* Count is always shown, including at x1. A repeated id is TWO
+                  PHYSICAL BANDS -- not the fold, which lives on the set row. */}
+              <span title="Remove one of these bands" onClick={() => setCount(id, cnt-1)}
+                style={{...step, ...(cnt<=1 ? {opacity:0.3,cursor:'default'} : {})}}>&minus;</span>
+              <span title={`${cnt} physical band${cnt===1?'':'s'} of this model, side by side`}
+                style={{color:cnt>1?C.amber:C.textSec,fontWeight:700,minWidth:14,textAlign:'center'}}>
+                &times;{cnt}
+              </span>
+              <span title={cnt>=MAX_PER_BAND ? `Maximum ${MAX_PER_BAND} of one band` : 'Add another band of this model'}
+                onClick={() => setCount(id, cnt+1)}
+                style={{...step, ...(cnt>=MAX_PER_BAND ? {opacity:0.3,cursor:'default'} : {})}}>+</span>
+              <span style={{color:C.dimGray,marginLeft:2}}>{b.res}</span>
+              <span title="Remove this band" onClick={() => removeBandId(id)}
+                style={{cursor:'pointer',color:C.dimGray,fontSize:14,lineHeight:1,padding:'4px 6px',margin:'-4px -2px -4px 2px'}}>&#10005;</span>
             </span>
           )
         })}
-        {selected.length > 0 && (
-          <button title={"Double the whole stack — every band looped over on itself. "
-            + "The ≈2× figure this app shows is the manufacturer's convention, and it is "
-            + "only true at the same PERCENTAGE stretch. At the same absolute length — "
-            + "which is what your actual range of motion is — a doubled band is typically "
-            + "5–8× heavier, not 2×. Treat DOUBLED as a big jump, not a small one. "
-            + "All bands double together, never one alone."}
-            style={{...btn(isDoubled,C.amber),fontSize:9,padding:'2px 8px'}}
-            onClick={toggleDouble}>
-            {isDoubled ? '×2 DOUBLED' : 'DOUBLE ×2'}
-          </button>
-        )}
-        {isDoubled && (
-          /* Panel: "the single largest silent error a user can make in the app."
-             The readout goes 30 lb to 60 lb; the true change at a real bar path
-             is most of an order of magnitude larger. */
-          <span style={{fontFamily:'monospace',fontSize:9,color:C.red,
-            padding:'2px 6px',background:'rgba(239,68,68,0.12)',borderRadius:3,
-            border:`1px solid ${C.red}55`,lineHeight:1.4}}>
-            ⚠ ×2 IS THE SPEC-SHEET FIGURE — at your real ROM a doubled band is
-            typically 5–8× heavier. The number below understates it badly.
+        {doubled && (
+          /* Display only -- the fold is set on the SET ROW. The band ratings
+             above are the PHYSICAL bands unfolded; the EFFECTIVE figure below
+             the sets is what accounts for the fold. This app has no
+             totalBandRes readout in this row, so the marker sits at the END
+             of the tag row rather than beside a lbs range (cf. fitness_app.html). */
+          <span title="This set is folded -- see the SINGLED/DOUBLED button on the set row. The band ratings above are for the bands unfolded; the EFFECTIVE figure accounts for the fold."
+            style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+            padding:'2px 6px',background:C.amber+'18',borderRadius:3,
+            border:`1px solid ${C.amber}66`,fontWeight:700}}>
+            FOLDED
           </span>
         )}
         <button style={{...btn(false),fontSize:9,padding:'2px 8px'}}
@@ -1167,7 +1241,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, loadStamp }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -1242,11 +1316,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
     for (let i=0;i<sets.length;i++) { if (setBandsOf(sets[i]).length) return sets[i] }
     return {}
   }
-  /* Folding the band in half is only a modelled quantity on a belt rig (it
-     halves the loop's rest length and doubles the layers), so the per-set
-     SINGLED/DOUBLED toggle appears only there instead of on every set of every
-     exercise. NOT the same thing as listing a band id twice — that still means
-     two physical bands. */
+  /* The fold changes the load on BOTH paths since 2026-08-03, so the
+     SINGLED/DOUBLED button shows on every set that names a band -- not only on
+     a belt rig, which is how it was gated while the fold was a belt-only
+     quantity. A fold with no band is meaningless, so an empty set stays clean.
+     `beltRig` is still computed: it selects the tooltip wording. */
   const beltRig = (() => {
     const g = gear || []
     if (!g.length) return false
@@ -1360,20 +1434,16 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                     onChange={e=>{const v=e.target.value; updateSet(i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                     style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                 </div>
-                {/* Rendered when this is a belt rig OR the set is already
-                    marked doubled. The second case matters: strip the
-                    footplate off an exercise whose set is DOUBLED and the flag
-                    would otherwise keep being read by bestSetLoad/stampLoad
-                    with no control left on screen to see or clear it. Never
-                    auto-cleared — silently mutating a logged set in response
-                    to an unrelated gear edit is its own hazard. */}
-                {(beltRig || !!s.doubled) && (
+                {(setHasAnyBand(s) || !!s.doubled) && (
                   <button
                     onClick={()=>updateSet(i,'doubled', s.doubled ? undefined : true)}
-                    title={beltRig
-                      ? 'Doubled under the footplate: half the rest length, twice the layers. Not the same as logging the same band twice — that is two physical bands.'
-                      : 'This set is still counted as DOUBLED even though its gear is no longer a footplate + belt rig. Tap to clear it.'}
-                    style={{...btn(!!s.doubled, beltRig ? undefined : C.amber),fontSize:9,padding:'5px 7px',flexShrink:0}}>
+                    title={'DOUBLED = the whole stack is folded over on itself. This is a '
+                      + 'SEPARATE axis from how many bands you logged: two of the same band '
+                      + 'side by side is a count of 2 on the band tag, not a fold. Folding '
+                      + 'halves the free length at the same range of motion, so it is a big '
+                      + 'jump -- see the EFFECTIVE figure, not the band ratings.'
+                      + (beltRig ? " On this belt rig it also halves the loop's rest length." : '')}
+                    style={{...btn(!!s.doubled),fontSize:9,padding:'5px 7px',flexShrink:0}}>
                     {s.doubled ? 'DOUBLED' : 'SINGLED'}
                   </button>
                 )}
@@ -1390,7 +1460,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                       <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}}
                         title="Resistance phase / drop">▼{gi+1}</span>
                       <div style={{flex:1,minWidth:150}}>
-                        <BandPicker selected={g.bands||[]} onChange={v=>updateSeg(i,gi,'bands',v)}/>
+                        <BandPicker selected={g.bands||[]} doubled={!!s.doubled} onChange={v=>updateSeg(i,gi,'bands',v)}/>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                         <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
@@ -1424,7 +1494,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               ) : (
                 <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
                   <div style={{flex:1,minWidth:160}}>
-                    <BandPicker selected={s.bands||[]} onChange={v=>updateSet(i,'bands',v)}/>
+                    <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(i,'bands',v)}/>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                     <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
@@ -1468,24 +1538,39 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // stretch, and only MEASURED reflects real gauge readings. Showing a
         // number without this would invite reading a vendor guess as fact.
         const PROV_COLOR = { MEASURED: C.green, MODELED: '#7ecfff', RATED: C.dimGray }
+        // The fold migration never rewrites a frozen stamp -- it only marks
+        // `era: 'pre-fold'` on stamps whose bands it changed. The EFFECTIVE
+        // readout above always recomputes under the CURRENT fold model, so a
+        // migrated set can show a number that silently disagrees with what
+        // was actually saved. Surface the stamp so that disagreement is
+        // never invisible. Nothing here reads or writes the stamp otherwise.
+        const preFoldLb = (loadStamp && loadStamp.era === 'pre-fold' && loadStamp.lb != null) ? loadStamp.lb : null
         return (
-          <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4,flexWrap:'wrap'}}>
-            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
-              EFFECTIVE {e.lb.toFixed(1)} lb
-            </span>
-            <span style={{...pill(PROV_COLOR[e.provenance] || C.dimGray), fontSize:9}}
-              title={e.basis || ''}>
-              {e.provenance}
-            </span>
-            {/* The stretch is shown beside the number on purpose: an
-                unauditable load is how `seriesIn: 40` survived for months. */}
-            {e.attachHeightIn != null && (
-              <span style={{fontFamily:'monospace',fontSize:9,color:C.textSec}}>
-                {' · '}{Math.round(e.stretchIn*10)/10}&quot; stretch
-                {e.doubled ? ' · doubled' : ''}
-                {e.belowRated ? ' · below rated span' : ''}
-                {e.aboveRated ? ' · above rated span' : ''}
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4,flexWrap:'wrap'}}>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+                EFFECTIVE {e.lb.toFixed(1)} lb
               </span>
+              <span style={{...pill(PROV_COLOR[e.provenance] || C.dimGray), fontSize:9}}
+                title={e.basis || ''}>
+                {e.provenance}
+              </span>
+              {/* The stretch is shown beside the number on purpose: an
+                  unauditable load is how `seriesIn: 40` survived for months. */}
+              {e.attachHeightIn != null && (
+                <span style={{fontFamily:'monospace',fontSize:9,color:C.textSec}}>
+                  {' · '}{Math.round(e.stretchIn*10)/10}&quot; stretch
+                  {e.doubled ? ' · doubled' : ''}
+                  {e.belowRated ? ' · below rated span' : ''}
+                  {e.aboveRated ? ' · above rated span' : ''}
+                </span>
+              )}
+            </div>
+            {preFoldLb != null && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:2}}
+                title="This set was logged when a folded band was recorded as two separate bands. The stamp is frozen at what the app believed that day; the figure above is what the current model computes.">
+                stamped {preFoldLb.toFixed(1)} lb before the fold fix
+              </div>
             )}
           </div>
         )
@@ -1543,6 +1628,12 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
       .sort((a,b) => b.date.localeCompare(a.date))
     return found[0] ? found[0].exercises[exerciseId] : null
   }
+  /* The frozen stamp for TODAY'S already-saved entry, keyed by exercise id --
+     computed once per render, not once per card. `log` already arrives as a
+     prop here, so there's no storage to reach for. Only an entry that was
+     already saved (same date + session) carries one; a fresh, unsaved
+     session has none, and LoggedExCard degrades that to "render nothing". */
+  const savedLoad = (log.find(e => e && e.date === todayDate && e.session === sKey) || {}).load || {}
   function renderCard(slot, id, role) {
     const prev = getPrevSets(String(id))
     // Progression flag lives in RBTS_REPORTS.progressionState so the in-workout
@@ -1566,7 +1657,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
         onGearChange={ids=>updateExGear(id,ids)}
         attachHeightIn={(attach||{})[String(id)]}
-        onAttachChange={h=>updateAttach(id,h)}/>
+        onAttachChange={h=>updateAttach(id,h)}
+        loadStamp={savedLoad[String(id)]}/>
     )
   }
 
@@ -1595,7 +1687,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
           onGearChange={ids=>updateExGear(id,ids)}
           attachHeightIn={(attach||{})[String(id)]}
-          onAttachChange={h=>updateAttach(id,h)}/>
+          onAttachChange={h=>updateAttach(id,h)}
+          loadStamp={savedLoad[String(id)]}/>
       </div>
     )
   }
@@ -3154,9 +3247,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     if (h == null) delete n[id]; else n[id] = h
     return n
   })
-  /* Same two helpers LoggedExCard uses, per exercise: the first set naming a
-     band drives the ATTACH AT preview, and footplate + belt gates the per-set
-     SINGLED/DOUBLED toggle. */
+  /* Same helper LoggedExCard uses, per exercise: the first set naming a band
+     drives the ATTACH AT preview. `beltRigOf` no longer gates the per-set
+     SINGLED/DOUBLED toggle -- the fold changes the load on BOTH paths since
+     2026-08-03 -- it only selects the tooltip wording, same role as `beltRig`
+     in LoggedExCard. */
   const refSetOf = (id) => {
     const arr = ex[id] || []
     for (let i = 0; i < arr.length; i++) { if (setBandsOf(arr[i]).length) return arr[i] }
@@ -3289,17 +3384,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                       onChange={e=>{const v=e.target.value; updateSet(id,i,'rir', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                       style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                   </div>
-                  {/* Same rule as the in-workout card: visible on a belt rig,
-                      and visible anyway on an already-doubled set so the flag
-                      can never keep influencing the load with no control on
-                      screen. Never auto-cleared. */}
-                  {(beltRigOf(id) || !!s.doubled) && (
+                  {(setHasAnyBand(s) || !!s.doubled) && (
                     <button
                       onClick={()=>updateSet(id,i,'doubled', s.doubled ? undefined : true)}
-                      title={beltRigOf(id)
-                        ? 'Doubled under the footplate: half the rest length, twice the layers. Not the same as logging the same band twice — that is two physical bands.'
-                        : 'This set is still counted as DOUBLED even though its gear is no longer a footplate + belt rig. Tap to clear it.'}
-                      style={{...btn(!!s.doubled, beltRigOf(id) ? undefined : C.amber),fontSize:9,padding:'5px 7px',flexShrink:0}}>
+                      title={'DOUBLED = the whole stack is folded over on itself. This is a '
+                        + 'SEPARATE axis from how many bands you logged: two of the same band '
+                        + 'side by side is a count of 2 on the band tag, not a fold. Folding '
+                        + 'halves the free length at the same range of motion, so it is a big '
+                        + 'jump -- see the EFFECTIVE figure, not the band ratings.'
+                        + (beltRigOf(id) ? " On this belt rig it also halves the loop's rest length." : '')}
+                      style={{...btn(!!s.doubled),fontSize:9,padding:'5px 7px',flexShrink:0}}>
                       {s.doubled ? 'DOUBLED' : 'SINGLED'}
                     </button>
                   )}
@@ -3315,7 +3409,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                       <div key={gi} style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                         <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}} title="Resistance phase / drop">▼{gi+1}</span>
                         <div style={{flex:1,minWidth:150}}>
-                          <BandPicker selected={g.bands||[]} onChange={v=>updateSeg(id,i,gi,'bands',v)}/>
+                          <BandPicker selected={g.bands||[]} doubled={!!s.doubled} onChange={v=>updateSeg(id,i,gi,'bands',v)}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                           <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSeg(id,i,gi,'reps',Math.max(0,(g.reps||0)-1))}>−</button>
@@ -3343,7 +3437,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                 ) : (
                   <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
                     <div style={{flex:1,minWidth:160}}>
-                      <BandPicker selected={s.bands||[]} onChange={v=>updateSet(id,i,'bands',v)}/>
+                      <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(id,i,'bands',v)}/>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                       <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSet(id,i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
@@ -4129,7 +4223,31 @@ export default function App() {
             }
           }
           const entries = await loadLogFromFirestore(u.uid)
-          setLog(entries)
+          const cloudFoldFlag = `rbts_foldMigration_cloud_${u.uid}`
+          const mig = migrateFoldOnce(entries, cloudFoldFlag)
+          if (mig.changedDates.length) {
+            const touched = mig.entries.filter(e => mig.changedDates.includes(e.date))
+            try {
+              await Promise.all(touched.map(e => saveEntryToFirestore(u.uid, e)))
+              localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
+              localStorage.setItem(cloudFoldFlag, FOLD_CUTOFF)
+              /* Mark the LOCAL flag too, not just cloud. This is safe (not just
+                 convenient): 'rbts_log' was just overwritten, above, with
+                 mig.entries, which has passed through migrateFoldOnce by
+                 construction. The sign-in push a few lines up either succeeds
+                 or throws and aborts this whole try before reaching here, so
+                 there is no path where 'rbts_log' ends up holding anything
+                 else. Setting the local flag here just skips a redundant,
+                 no-op re-scan on the next sign-out instead of leaving it to
+                 happen once more. */
+              localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
+            } catch (err) {
+              /* Do NOT set either flag. A partial cloud write must be
+                 retried on the next sign-in, not recorded as done. */
+              logCloudWriteFailure('fold migration', mig.changedDates, err)
+            }
+          }
+          setLog(mig.entries)
         } catch (e) { console.error('Error loading log:', e) }
         // Gear: backfill local → Firestore when empty, then load
         try {
@@ -4227,7 +4345,19 @@ export default function App() {
       } else {
         try {
           const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
-          setLog(local)
+          const mig = migrateFoldOnce(local, 'rbts_foldMigration')
+          if (mig.changedDates.length) {
+            try {
+              localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
+              localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
+            } catch (e) {
+              // Write failed (quota, private mode) -- do NOT set the flag: a
+              // flag set over an unwritten log would strand the old encoding
+              // forever with nothing reporting it.
+              console.error('[fold migration] localStorage write failed, will retry next load:', e)
+            }
+          }
+          setLog(mig.entries)
         } catch { setLog([]) }
         setGear(withGearTypes(getLocalGear()))
         setMyBands(getLocalMyBands())
@@ -4248,7 +4378,19 @@ export default function App() {
   async function handleSignOut() {
     await signOut(auth)
     setUser(null)
-    try { setLog(JSON.parse(localStorage.getItem('rbts_log')||'[]')) } catch { setLog([]) }
+    try {
+      const local = JSON.parse(localStorage.getItem('rbts_log')||'[]')
+      const mig = migrateFoldOnce(local, 'rbts_foldMigration')
+      if (mig.changedDates.length) {
+        try {
+          localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
+          localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
+        } catch (e) {
+          console.error('[fold migration] localStorage write failed, will retry next load:', e)
+        }
+      }
+      setLog(mig.entries)
+    } catch { setLog([]) }
     setGear(withGearTypes(getLocalGear()))
     setMyBands(getLocalMyBands())
     setSettings(getLocalSettings())
