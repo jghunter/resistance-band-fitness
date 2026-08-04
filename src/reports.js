@@ -580,6 +580,115 @@
     return out;
   }
 
+  /* Which landmark a BELT determines, keyed `brand|name`.
+
+     Greg's ruling 2026-08-03, from doing the lift rather than from the model:
+     the attachment landmark is a property of the BELT, not a free per-exercise
+     choice. The picker used to default to nothing, so a field with exactly one
+     right answer sat blank and the exercise stamped RATED -- nothing was
+     mis-measured, nothing was mis-modelled, a required input was simply never
+     supplied and no code noticed.
+
+       fixed:true    structurally determined; no other gear can move it. The X3
+                     hangs a bar off the belt with one leg in front of it and one
+                     behind, so on the ascent the bar meets the hamstring and
+                     stops there.
+       fixed:false   true only when the band runs STRAIGHT from plate to belt. A
+                     rope or handle in the path hangs the attachment lower by an
+                     adjustable amount no landmark describes, so the default is
+                     WITHDRAWN and the user types a CUSTOM height instead. */
+  var BELT_ATTACH_DEFAULT = {
+    "X3 Bar|Squat Belt (Medium)": { landmark: "midThighHeightIn", fixed: true },
+    "Harambe|Split Squat Belt":   { landmark: "hipHeightIn",      fixed: false }
+  };
+  /* Gear that sits INLINE between the band and the belt, hanging the attachment
+     lower than the belt itself by an adjustable amount.
+
+     CURATED, keyed brand|name, deliberately NOT inferred. Two heuristics were
+     tried and both were wrong inside a day:
+
+       `type` in [handle, anchor]   Every rope in GEAR_SEED is typed "other", so
+                                    the Harambe hip default survived the exact
+                                    gear that invalidates it.
+       positive `seriesIn`          Greg's correction 2026-08-03: an ANCHOR
+                                    carries a series length but sits at the
+                                    band's FIXED end, not between band and belt
+                                    -- the RBT Band Utility Strap is an anchor
+                                    and was being flagged -- and you do not hold
+                                    a HANDLE in a belt setup at all.
+
+     No property of a gear item says "this hangs below a belt". It is a fact
+     about how the item is USED, so it is written down per item rather than
+     guessed from a field that happens to correlate.
+
+     The failure mode of an omission is mild and visible: a default that stays
+     HIP when it should have been withdrawn, shown on screen as a landmark the
+     user can see and change. That is why a curated list is acceptable here and
+     would not be in the load arithmetic. */
+  var BELT_EXTENDERS = {
+    "Harambe|Black Ropes":   true,
+    "Harambe|Yellow Ropes":  true,
+    "Harambe|White Ropes":   true,
+    "Harambe|Blue Ropes":    true,
+    /* heavydutybar.com/collections/accessories - a pair; usable with the belt,
+       a bar, handles or a footplate, and in combination. Greg's, added
+       2026-08-03. Its own seriesIn is not recorded yet, and is not needed to
+       classify it: whether an item extends the belt path and how long it is are
+       separate facts. */
+    "HeavyDutyBar|X Straps": true
+  };
+  function beltSlackens(g) {
+    if (!g) return false;
+    return BELT_EXTENDERS[(g.brand || "") + "|" + (g.name || "")] === true;
+  }
+
+  function beltAttachDefault(gearIds, gearOf) {
+    if (!gearIds || !gearIds.length || !gearOf) return null;
+    /* A belt with no footplate is not a belt setup, and effectiveLoad would not
+       take the belt path for it -- offering a default here would put a height on
+       an entry the engine prices by another route entirely. */
+    if (!beltPlateOf(gearIds, gearOf)) return null;
+    var rule = null;
+    gearIds.forEach(function (id) {
+      var g = gearOf(id);
+      if (!g || g.type !== "belt" || rule) return;
+      rule = BELT_ATTACH_DEFAULT[(g.brand || "") + "|" + (g.name || "")] || null;
+    });
+    if (!rule) return null;
+    if (!rule.fixed && gearIds.some(function (id) {
+      return beltSlackens(gearOf(id));
+    })) return null;
+    return rule.landmark;
+  }
+
+  /* One arbitrary attachment height, priced EXACTLY as beltAttachOptions prices
+     a landmark, so CUSTOM 28 and MID-THIGH 28 can never disagree about the same
+     rig. Returns null when the height is unusable or sits at or below the band's
+     own reach -- never a 0, which is the whole discipline of this path.
+
+     Added 2026-08-03 for the CUSTOM option, chosen over a MID-SHIN landmark
+     because the Harambe-with-a-strap case is a VARIABLE length and no fixed
+     landmark can express it. */
+  function beltAttachAt(band, geom, plate, doubled, body, heightIn) {
+    /* finitePos, not isFinite: the picker's number input hands back "" while it
+       is being typed into and an imported profile can hand back "28". isFinite
+       says true to both. */
+    if (!finitePos(heightIn)) return null;
+    var reach = beltReach(band, geom, plate, doubled, body);
+    if (reach == null) return null;
+    var s = beltStretch(reach, heightIn);
+    if (s == null) return null;
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : (band.lengthIn || 0);
+    var effRest = rest / (doubled ? 2 : 1);
+    var strain = effRest ? (s / effRest) : 0;
+    return {
+      k: "custom", label: "CUSTOM", heightIn: heightIn, stretchIn: s, strain: strain,
+      belowRated: strain < LOAD_MODEL.STRAIN_AT_RATED_MIN,
+      aboveRated: strain > LOAD_MODEL.STRAIN_AT_RATED_MAX
+    };
+  }
+
   /* True only when every dimension in play was measured by the user. A vendor
      spec is not a measurement of THIS unit. Routes through resolveGearDims
      so that PWA-shaped gear (no stored dims, resolved from table) is handled
@@ -646,12 +755,14 @@
     var ids = bandIds || [];
     var o = opts || {};
     var d = o.doubled ? 2 : 1;
-    /* Deliberately NOT multiplied by `d`. This is the RATED fallback, and on
-       the reference-strain path below `lb` carries no doubling either -- a
-       doubled non-belt set must not stamp a singled lb against a doubled
-       rated. The belt path computes its own `refB` (which DOES double) and
-       overwrites out.rated with it. */
-    var rated = ids.reduce(function (a, id) {
+    /* MULTIPLIED BY `d` since 2026-08-03. It used to be deliberately undoubled,
+       justified in a comment here on the grounds that "on the reference-strain
+       path below `lb` carries no doubling either" -- which was true, and was
+       itself the bug: a doubled NON-belt set changed no load at all. Now that
+       `lb` doubles on both paths, an undoubled `rated` would stamp a doubled lb
+       against a singled rated. 2x is also the vendor's own doubled convention,
+       so it is the right figure for a fallback that quotes the vendor. */
+    var rated = d * ids.reduce(function (a, id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
       return a + (b ? bandMid(b) : 0);
     }, 0);
@@ -825,11 +936,28 @@
          path alone, so every non-belt setup with enough series gear to fall
          under strain 0.5 got that number with nothing flagging it.
          bandForceAt's own comment already claimed "callers surface it". */
-      var strainR = (refStretch + delta) / rest;
+      /* THE FOLD, applied here since 2026-08-03. `doubled` used to be read only
+         on the belt path, so folding a band off a belt -- physically the biggest
+         single jump this app can log -- moved the number by exactly zero.
+
+         Mirrors the belt path's convention exactly rather than inventing a
+         second one: folding halves the band's free length while the lifter's ROM
+         does not change, so the ABSOLUTE elongation is unchanged and the STRAIN
+         doubles; then `d` strands carry it. Hence d * bandForceAt(.., d * s),
+         the same shape beltReach/beltStretch already use.
+
+         This lands well above the vendor's 2x convention, which is the point:
+         the DOUBLE button in both apps already warns that 2x is the spec-sheet
+         figure and a real ROM gives 5-8x. The engine now agrees with the warning
+         instead of quietly contradicting it.
+
+         `refTotal` doubles too, so `ratio` keeps meaning "what the GEAR did"
+         rather than silently absorbing the fold. */
+      var strainR = d * (refStretch + delta) / rest;
       if (strainR < minStrainR) minStrainR = strainR;
       if (strainR > maxStrainR) maxStrainR = strainR;
-      refTotal += bandForceAt(b, refStretch, geom);
-      lb += bandForceAt(b, refStretch + delta, geom);
+      refTotal += d * bandForceAt(b, d * refStretch, geom);
+      lb += d * bandForceAt(b, d * (refStretch + delta), geom);
     });
 
     /* Whole-set, not per-band: if one band in a stack is slack and another
@@ -1015,26 +1143,96 @@
   /* Did the equipment change between two sessions, and by how much?
      The WARNING is worth more than a correction: an 18-36% shift the model can
      only estimate is better flagged than silently modelled away. */
-  function gearChange(ctx, prevGearIds, nowGearIds) {
+  /* BELT-AWARE since 2026-08-03, and it had to become so because it was
+     confidently wrong on screen.
+
+     This function used to report gearPathDelta unconditionally. gearPathDelta is
+     the REFERENCE-STRAIN quantity, which the belt path never consults -- so on a
+     belt lift the banner described a mechanism that does not apply to the lift
+     AND inverted the answer. Greg's real screen, swapping the Acacia plate for
+     the Qdeck on a belted split squat, read "about 0.8in of band path, which
+     makes the same band LIGHTER". The Qdeck consumes MORE band, so it leaves
+     LESS reach, so the same band is stretched FURTHER at the same attachment
+     height: it is the HEAVIER setup. Same failure as the belt bug itself -- a
+     number produced by the wrong path, stated without hedging.
+
+     `mode` names the currency, so no caller can render the wrong sentence:
+
+       "path"         neither setup is a belt setup. deltaIn is band path, as
+                      before, and positive still means heavier.
+       "belt"         both are belt setups. deltaIn is the change in STRETCH at
+                      a fixed attachment height, i.e. -(reachNow - reachPrev),
+                      so positive still means heavier and callers keep one sign
+                      convention. reachPrev/reachNow are exposed for the text.
+       "incomparable" the setup gained or lost its belt, or is a belt setup with
+                      no band logged yet. The two states are not measured in the
+                      same units and there is no honest single number, so
+                      `direction` is "unknown" and deltaIn is null. Callers must
+                      say the setup changed WITHOUT quantifying it.
+
+     opts { band, geom, doubled } is required to reach "belt"; without a band
+     there is no reach to compute and it degrades to "incomparable" rather than
+     falling back to the path sentence that is wrong for it. */
+  function gearChange(ctx, prevGearIds, nowGearIds, opts) {
     var a = (prevGearIds || []).slice().sort().join(",");
     var b = (nowGearIds || []).slice().sort().join(",");
     if (a === b) return null;
-    var da = gearPathDelta(prevGearIds, ctx.gearOf);
-    var db = gearPathDelta(nowGearIds, ctx.gearOf);
+    var o = opts || {};
     var names = function (list) {
       return (list || []).map(function (id) {
         var g = ctx.gearOf ? ctx.gearOf(id) : null;
         return g ? g.name : id;
       });
     };
-    return {
-      changed: true,
-      deltaIn: db - da,
-      prev: names(prevGearIds),
-      now: names(nowGearIds),
-      /* Positive delta = more stretch = heavier at the same body position. */
-      direction: (db - da) > 0 ? "heavier" : ((db - da) < 0 ? "lighter" : "unknown")
-    };
+    var out = { changed: true, prev: names(prevGearIds), now: names(nowGearIds) };
+
+    var beltBefore = !!(beltPlateOf(prevGearIds, ctx.gearOf) &&
+                        beltBeltPresent(prevGearIds, ctx.gearOf));
+    var beltAfter  = !!(beltPlateOf(nowGearIds, ctx.gearOf) &&
+                        beltBeltPresent(nowGearIds, ctx.gearOf));
+
+    if (beltBefore !== beltAfter) {
+      out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      out.reason = beltAfter ? "this setup adds a belt; the previous one had none"
+                             : "the previous setup used a belt and this one does not";
+      return out;
+    }
+
+    if (beltBefore && beltAfter) {
+      var band = o.band || null;
+      var pPrev = resolveGearDims(beltPlateOf(prevGearIds, ctx.gearOf));
+      var pNow  = resolveGearDims(beltPlateOf(nowGearIds, ctx.gearOf));
+      var body  = ctx.body || null;
+      var rPrev = (band && pPrev && body)
+        ? beltReach(band, o.geom || null, pPrev, !!o.doubled, body) : null;
+      var rNow = (band && pNow && body)
+        ? beltReach(band, o.geom || null, pNow, !!o.doubled, body) : null;
+      if (!finitePos(rPrev) || !finitePos(rNow)) {
+        out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+        out.reason = !band ? "no band logged yet, so the band's reach is unknown"
+                   : (!body ? "body measurements are not set"
+                            : "this band cannot be rigged on one of these footplates");
+        return out;
+      }
+      out.mode = "belt";
+      out.reachPrev = rPrev;
+      out.reachNow = rNow;
+      /* Negated on purpose: LESS reach is MORE stretch. Keeping "positive means
+         heavier" identical across both modes is what lets one banner read the
+         sign without knowing which path produced it. */
+      out.deltaIn = rPrev - rNow;
+      out.direction = out.deltaIn > 0 ? "heavier"
+                    : (out.deltaIn < 0 ? "lighter" : "unknown");
+      return out;
+    }
+
+    var da = gearPathDelta(prevGearIds, ctx.gearOf);
+    var db = gearPathDelta(nowGearIds, ctx.gearOf);
+    out.mode = "path";
+    out.deltaIn = db - da;
+    /* Positive delta = more stretch = heavier at the same body position. */
+    out.direction = (db - da) > 0 ? "heavier" : ((db - da) < 0 ? "lighter" : "unknown");
+    return out;
   }
 
   /* ---- progressive-resistance stack search ------------------------------
@@ -3131,6 +3329,9 @@
     beltReach: beltReach,
     beltStretch: beltStretch,
     beltAttachOptions: beltAttachOptions,
+    beltAttachAt: beltAttachAt,
+    beltAttachDefault: beltAttachDefault,
+    BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
     GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,

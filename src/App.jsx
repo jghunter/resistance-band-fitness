@@ -24,7 +24,10 @@ import {
   progDefaultSets, TRAINING_STYLE,
   /* Belt band path inputs. Mirrored from the profile; no editor here (the HTML
      app owns it), same as defaultSets / volumeModel. */
-  BODY_MEASURE, bodyMeasureComplete,
+  /* bodyMeasureNum is imported, not re-derived: the belt-default effect reads a
+     landmark out of BODY_MEASURE by key, and a bare truthiness check there would
+     accept the string "28" that this guard exists to refuse. */
+  BODY_MEASURE, bodyMeasureComplete, bodyMeasureNum,
 } from './data'
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
@@ -916,6 +919,24 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   const all  = inv || []
   const byId = {}; all.forEach(g => { byId[g.id] = g })
 
+  /* Seed the attachment height from the BELT when nothing is recorded yet.
+     The landmark is a property of the belt (beltAttachDefault), and leaving it
+     blank is not a neutral default — it degrades the exercise to RATED with no
+     recomputation possible later, which is exactly what happened to
+     2026-08-03's split squat in the HTML app. Only ever fills an EMPTY value,
+     so it cannot undo a height the user picked. In an effect, not in render,
+     because it calls back up into the log. */
+  const selKey = sel.slice().sort().join(',')
+  useEffect(() => {
+    if (attachHeightIn != null) return
+    if (!RBTS_REPORTS.beltAttachDefault) return
+    const lm = RBTS_REPORTS.beltAttachDefault(sel, id => byId[id])
+    if (!lm) return
+    const h = bodyMeasureNum(BODY_MEASURE[lm])
+    if (h == null) return                      // not measured: stay blank, say so
+    ;(onAttachChange || (()=>{}))(h)
+  }, [selKey, attachHeightIn])
+
   const typeCounts = {}
   sel.forEach(id => {
     const g = byId[id]; const t = g ? (g.type || 'other') : 'other'
@@ -996,7 +1017,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
            RATED and says so, rather than inventing a hip height. */
         if (!bodyMeasureComplete()) return (
           <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
-            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → SETTINGS) TO COMPUTE BELT LOAD
+            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → TRAINING STYLE) TO COMPUTE BELT LOAD
           </div>
         )
         const bandId = (bands || [])[0]
@@ -1012,16 +1033,29 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const opts = RBTS_REPORTS.beltAttachOptions(
           band, getLocalBandGeom()[band.id] || null,
           RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE)
-        if (!opts.length) return (
-          <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
-            THIS BAND CANNOT BE RIGGED ON THIS PLATE — NO LANDMARK SITS ABOVE ITS REACH
-          </div>
-        )
         const setAttach = onAttachChange || (()=>{})
+        /* CUSTOM, added 2026-08-03 in place of a MID-SHIN landmark: a Harambe
+           belt fed through a rope or strap hangs at a VARIABLE height that no
+           fixed landmark can express. Priced by beltAttachAt, the same
+           arithmetic beltAttachOptions uses, so CUSTOM 28 and MID-THIGH 28 can
+           never disagree about one rig. An empty landmark list no longer blocks
+           the row — a typed height above the band's reach may still be riggable
+           where no landmark is. */
+        const isLm = opts.some(o => o.heightIn === attachHeightIn)
+        const custom = (attachHeightIn != null && !isLm)
+          ? RBTS_REPORTS.beltAttachAt(band, getLocalBandGeom()[band.id] || null,
+              RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE, attachHeightIn)
+          : null
+        const shown = opts.concat(custom ? [custom] : [])
         return (
           <div style={{marginTop:6}}>
             <div style={lbl}>ATTACH AT</div>
-            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+            {!opts.length && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginBottom:4}}>
+                NO LANDMARK SITS ABOVE THIS BAND&apos;S REACH — TYPE A CUSTOM HEIGHT
+              </div>
+            )}
+            <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
               {opts.map(o => (
                 <button key={o.k}
                   title={`Belt hooks at ${o.heightIn} in off the floor — the band stretches `
@@ -1032,18 +1066,37 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                   {o.belowRated ? ' !' : ''}{o.aboveRated ? ' ^' : ''}
                 </button>
               ))}
+              <span style={{display:'flex',alignItems:'center',gap:3,fontFamily:'monospace',
+                fontSize:9,color:custom?C.readout:C.dimGray}}>
+                CUSTOM
+                <input type="number" step="0.25" min="0"
+                  title="Floor-to-hook height, measured STANDING at the top of the rep — not where the band goes slack"
+                  value={custom ? custom.heightIn : ''}
+                  onChange={e => setAttach(e.target.value === '' ? undefined : Number(e.target.value))}
+                  style={{...inputStyle,width:56,fontSize:10,padding:'3px 5px'}}/>
+                &quot;
+                {custom && (
+                  <span>· {Math.round(custom.stretchIn*10)/10}&quot;
+                    {custom.belowRated ? ' !' : ''}{custom.aboveRated ? ' ^' : ''}</span>
+                )}
+              </span>
               {attachHeightIn != null && (
                 <button title="Clear the attachment height — the load falls back to the vendor midpoint"
                   onClick={()=>setAttach(undefined)}
                   style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
               )}
             </div>
-            {opts.some(o => o.belowRated) && (
+            {attachHeightIn != null && !isLm && !custom && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:3}}>
+                THAT HEIGHT IS AT OR BELOW THE BAND&apos;S OWN REACH — THE BAND WOULD BE SLACK
+              </div>
+            )}
+            {shown.some(o => o.belowRated) && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
                 ! below the vendor&apos;s rated span — estimate only
               </div>
             )}
-            {opts.some(o => o.aboveRated) && (
+            {shown.some(o => o.aboveRated) && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
                 ^ above the vendor&apos;s rated span — the linear fit understates real latex here
               </div>

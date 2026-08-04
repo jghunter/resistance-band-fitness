@@ -267,12 +267,41 @@
      stored before this existed, fall back to "differs from PROFILE_DEFAULTS",
      which is conservative in the right direction - an intentionally changed
      value is treated as explicit and therefore protected. */
+  /* CORRECTED 2026-08-03. This used to RETURN EARLY on a stored array, so an
+     array that existed protected only what it happened to name -- which is
+     LESS than no array at all, because the fallback below protects every field
+     that differs from the base default. Greg's live profile was
+     `explicitKeys:["defaultSets","volumeModel"]` with `rirTarget:1` sitting
+     unlisted beside it, so older_adult's suggested 2 overrode a stored 1 and
+     every seeded set read RIR 2. The stored value was never wrong; the record
+     of it being deliberate had been narrowed.
+
+     The two are now UNIONED, which also means a profile damaged this way heals
+     itself on the next load with no migration to run. A value the user left AT
+     the base default is still not "deliberate" and the population may fill it
+     -- that is the whole distinction, and it is why the union is with the
+     DIFFERS test rather than with every key present. */
   function explicitKeysOf(p) {
-    if (p && Array.isArray(p.explicitKeys)) return p.explicitKeys;
-    var out = [];
+    var out = (p && Array.isArray(p.explicitKeys)) ? p.explicitKeys.slice() : [];
     Object.keys(PROFILE_DEFAULTS).forEach(function (k) {
       if (!p || !(k in p)) return;
-      if (JSON.stringify(p[k]) !== JSON.stringify(PROFILE_DEFAULTS[k])) out.push(k);
+      if (JSON.stringify(p[k]) === JSON.stringify(PROFILE_DEFAULTS[k])) return;
+      if (out.indexOf(k) < 0) out.push(k);
+    });
+    return out;
+  }
+
+  /* The explicitKeys a profile SHOULD carry once `keys` have been set on it.
+
+     Seeded from explicitKeysOf(p), never from [] -- that is the entire point.
+     Both apps' saveTrainingStyle built the array from [] and pushed only the
+     key being edited, so the first tap on TODAY -> TRAINING STYLE replaced a
+     nine-field inferred protection with a one-field recorded one and silently
+     unprotected everything else. Pure: returns a new array, mutates nothing. */
+  function markExplicit(p, keys) {
+    var out = explicitKeysOf(p);
+    (keys || []).forEach(function (k) {
+      if (out.indexOf(k) < 0) out.push(k);
     });
     return out;
   }
@@ -506,6 +535,7 @@
     makeProfile: makeProfile,
     resolveProfile: resolveProfile,
     explicitKeysOf: explicitKeysOf,
+    markExplicit: markExplicit,
     gregSeedOverrides: gregSeedOverrides,
     normalizeSet: normalizeSet,
     sseReps: sseReps,
