@@ -3285,7 +3285,29 @@
      explanation instead of a silent contradiction.
 
      PURE: no DOM, no localStorage, no clock. `cutoffISO` is a PARAMETER,
-     and the input log is deep-cloned rather than mutated. */
+     and the input log is deep-cloned rather than mutated.
+
+     THE GUARD TRAVELS WITH THE DATA (2026-08-04, final review finding A).
+     The callers' localStorage flags record a fact about a DEVICE; what has to
+     be recorded is a fact about the LOG. The hole they leave: the reworked
+     picker can now enter TWO REAL COPIES of one band, so a user who edits a
+     pre-cutoff entry and logs `["b30","b30"]` for real has written an
+     exactly-2x list into migration scope. A second device whose own flag is
+     unset then reads that entry from Firestore and collapses a genuine
+     two-band stack to one folded band, silently, everywhere.
+
+     So every pre-cutoff entry this function examines gains
+     `foldMigrated: true` -- INCLUDING ones it did not change, because an
+     untouched June entry that later gains a real two-band stack needs the
+     same protection -- and any entry already carrying the marker is skipped
+     outright. The marker rides through Firestore, through export/import and
+     through a device reset. The date cutoff is now belt-and-braces rather
+     than load-bearing.
+
+     `touched` is returned alongside `changed` and `skipped` and lists every
+     entry modified IN ANY WAY, marker-only included. Callers must persist
+     `touched`, not `changed` -- a marker that is computed and not written
+     protects nothing. */
 
   function foldShapeOf(bands) {
     if (!bands || !bands.length) return "empty";
@@ -3317,19 +3339,26 @@
   }
 
   function migrateFoldEncoding(log, cutoffISO) {
-    var changed = [], skipped = [];
-    if (!log || !log.length) return { log: log || [], changed: changed, skipped: skipped };
+    var changed = [], skipped = [], touched = [];
+    if (!log || !log.length) {
+      return { log: log || [], changed: changed, skipped: skipped, touched: touched };
+    }
 
     var out;
     try { out = JSON.parse(JSON.stringify(log)); }
-    catch (e) { return { log: log, changed: changed, skipped: skipped }; }
+    catch (e) { return { log: log, changed: changed, skipped: skipped, touched: touched }; }
 
     for (var e2 = 0; e2 < out.length; e2++) {
       var entry = out[e2];
-      if (!entry || !entry.exercises) continue;
+      if (!entry) continue;
+      /* Out of scope entirely: no marker, no examination. A post-cutoff entry
+         is written by the current picker, where an exactly-2x list means two
+         real bands and always will. */
       if (!entry.date || entry.date > cutoffISO) continue;
+      /* Already guarded by a previous run, on this device or any other. */
+      if (entry.foldMigrated === true) continue;
 
-      var exIds = Object.keys(entry.exercises);
+      var exIds = entry.exercises ? Object.keys(entry.exercises) : [];
       for (var x = 0; x < exIds.length; x++) {
         var exId = exIds[x];
         var sets = entry.exercises[exId] || [];
@@ -3390,8 +3419,14 @@
           entry.load[exId].era = "pre-fold";
         }
       }
+
+      /* Marked whether or not anything changed -- see the header. An entry
+         with no `exercises` at all is marked too: it is in scope, and it is
+         exactly the entry a later edit could add a real two-band stack to. */
+      entry.foldMigrated = true;
+      touched.push({ date: entry.date, session: entry.session });
     }
-    return { log: out, changed: changed, skipped: skipped };
+    return { log: out, changed: changed, skipped: skipped, touched: touched };
   }
 
   /* ---- public API ------------------------------------------------------- */

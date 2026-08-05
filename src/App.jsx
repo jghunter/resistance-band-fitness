@@ -432,15 +432,26 @@ function entryTs(e) {
    tracks its own completion: 'rbts_foldMigration' for the two localStorage
    paths (unchanged, so anyone who already ran the old single-flag version is
    unaffected), 'rbts_foldMigration_cloud_<uid>' for Firestore, keyed by uid
-   because two accounts on one device are genuinely different datasets. */
+   because two accounts on one device are genuinely different datasets.
+
+   Neither flag is the correctness guarantee -- both are short-circuits. A
+   localStorage flag records a fact about a DEVICE, and the reworked picker
+   can now enter two REAL copies of one band into a pre-cutoff entry, which a
+   second device with its own flag unset would then collapse. The guarantee is
+   the per-entry `foldMigrated: true` marker migrateFoldEncoding writes, which
+   travels through Firestore and through export/import. `flagKey` may be null,
+   which means run REGARDLESS of any flag -- what the import path needs, since
+   a flag says nothing about a backup file written weeks ago. */
 const FOLD_CUTOFF = '2026-08-04'
 function migrateFoldOnce(entries, flagKey) {
   // RBTS_REPORTS is a static import (top of file), so it can never itself be
   // falsy -- but reports.js is a GENERATED copy (python sync_phase_module.py)
   // and a stale one predating Task 1 would lack this method, so that half of
   // the guard stays.
-  if (!RBTS_REPORTS.migrateFoldEncoding) return { entries, changedDates: [] }
-  if (localStorage.getItem(flagKey) === FOLD_CUTOFF) return { entries, changedDates: [] }
+  if (!RBTS_REPORTS.migrateFoldEncoding) return { entries, changedDates: [], touchedDates: [] }
+  if (flagKey && localStorage.getItem(flagKey) === FOLD_CUTOFF) {
+    return { entries, changedDates: [], touchedDates: [] }
+  }
   let res
   try {
     res = RBTS_REPORTS.migrateFoldEncoding(entries, FOLD_CUTOFF)
@@ -450,15 +461,36 @@ function migrateFoldOnce(entries, flagKey) {
     // Leave the flag unset so the next load retries, and hand back the
     // entries untouched.
     console.error('[fold migration] threw, will retry next load:', e)
-    return { entries, changedDates: [] }
+    return { entries, changedDates: [], touchedDates: [] }
   }
   if (res.changed.length || res.skipped.length) {
     console.log(`[fold migration] collapsed ${res.changed.length} set(s), skipped ${res.skipped.length}`)
     res.skipped.forEach(s =>
       console.log(`  SKIPPED ${s.date} ex${s.exId} set${s.set} [${s.shapes}]: ${s.reason}`))
   }
+  // touchedDates is the SUPERSET: it includes entries that gained only the
+  // marker. Persist by that, not by changedDates -- a marker computed and not
+  // written protects nothing. On Greg's log this grows the Firestore write
+  // from ~10 entries to ~32, which is the intended cost.
   const dates = [...new Set(res.changed.map(c => c.date))]
-  return { entries: res.log, changedDates: dates }
+  const tDates = [...new Set(res.touched.map(c => c.date))]
+  return { entries: res.log, changedDates: dates, touchedDates: tDates }
+}
+
+/* Write the whole log, read it back, byte-compare. Mirrors the HTML app's
+   saveLog. Ordinarily the PWA's bare setItem is tolerable -- a normal save is
+   rewritten next session -- but the migration write is the largest the app
+   ever performs and is paired with a RUN-ONCE flag, so a store that truncates
+   rather than throwing would set the flag over a corrupt log and the next
+   JSON.parse would fall into `catch { setLog([]) }`. Signed in that recovers
+   from the cloud; signed out it does not. */
+function writeLogVerified(entries) {
+  let json
+  try { json = JSON.stringify(entries) } catch { return false }
+  try {
+    localStorage.setItem('rbts_log', json)
+    return localStorage.getItem('rbts_log') === json
+  } catch { return false }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1556,10 +1588,15 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                 {e.provenance}
               </span>
               {/* The stretch is shown beside the number on purpose: an
-                  unauditable load is how `seriesIn: 40` survived for months. */}
-              {e.attachHeightIn != null && (
+                  unauditable load is how `seriesIn: 40` survived for months.
+                  `doubled` moved OUT of the belt-path branch on 2026-08-04,
+                  matching fitness_app.html. The fold has changed the load on
+                  both paths since 2026-08-03, so a non-belt doubled set was
+                  showing a folded number with nothing on screen saying so --
+                  and so were `below rated span` / `above rated span`. */}
+              {(e.attachHeightIn != null || e.doubled) && (
                 <span style={{fontFamily:'monospace',fontSize:9,color:C.textSec}}>
-                  {' · '}{Math.round(e.stretchIn*10)/10}&quot; stretch
+                  {e.attachHeightIn != null ? ` · ${Math.round(e.stretchIn*10)/10}" stretch` : ''}
                   {e.doubled ? ' · doubled' : ''}
                   {e.belowRated ? ' · below rated span' : ''}
                   {e.aboveRated ? ' · above rated span' : ''}
@@ -4225,11 +4262,16 @@ export default function App() {
           const entries = await loadLogFromFirestore(u.uid)
           const cloudFoldFlag = `rbts_foldMigration_cloud_${u.uid}`
           const mig = migrateFoldOnce(entries, cloudFoldFlag)
-          if (mig.changedDates.length) {
-            const touched = mig.entries.filter(e => mig.changedDates.includes(e.date))
+          if (mig.touchedDates.length) {
+            // touchedDates, not changedDates: an entry that gained only the
+            // foldMigrated marker must reach Firestore too, or the next
+            // device to sign in re-migrates it.
+            const touched = mig.entries.filter(e => mig.touchedDates.includes(e.date))
             try {
               await Promise.all(touched.map(e => saveEntryToFirestore(u.uid, e)))
-              localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
+              // Verified write. Throwing here lands in the catch below, which
+              // sets NEITHER flag -- the same discipline as a partial cloud write.
+              if (!writeLogVerified(mig.entries)) throw new Error('rbts_log write did not verify')
               localStorage.setItem(cloudFoldFlag, FOLD_CUTOFF)
               /* Mark the LOCAL flag too, not just cloud. This is safe (not just
                  convenient): 'rbts_log' was just overwritten, above, with
@@ -4242,9 +4284,10 @@ export default function App() {
                  happen once more. */
               localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
             } catch (err) {
-              /* Do NOT set either flag. A partial cloud write must be
-                 retried on the next sign-in, not recorded as done. */
-              logCloudWriteFailure('fold migration', mig.changedDates, err)
+              /* Do NOT set either flag. A partial cloud write, or a local
+                 write that did not verify, must be retried on the next
+                 sign-in, not recorded as done. */
+              logCloudWriteFailure('fold migration', mig.touchedDates, err)
             }
           }
           setLog(mig.entries)
@@ -4346,15 +4389,15 @@ export default function App() {
         try {
           const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
           const mig = migrateFoldOnce(local, 'rbts_foldMigration')
-          if (mig.changedDates.length) {
-            try {
-              localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
-              localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
-            } catch (e) {
-              // Write failed (quota, private mode) -- do NOT set the flag: a
-              // flag set over an unwritten log would strand the old encoding
-              // forever with nothing reporting it.
-              console.error('[fold migration] localStorage write failed, will retry next load:', e)
+          if (mig.touchedDates.length) {
+            // Write failed or did not verify (quota, private mode, a store
+            // that truncates rather than throwing) -- do NOT set the flag: a
+            // flag set over an unwritten log would strand the old encoding
+            // forever with nothing reporting it.
+            if (writeLogVerified(mig.entries)) {
+              try { localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF) } catch { /* retry next load */ }
+            } else {
+              console.error('[fold migration] localStorage write failed or did not verify, will retry next load')
             }
           }
           setLog(mig.entries)
@@ -4381,12 +4424,11 @@ export default function App() {
     try {
       const local = JSON.parse(localStorage.getItem('rbts_log')||'[]')
       const mig = migrateFoldOnce(local, 'rbts_foldMigration')
-      if (mig.changedDates.length) {
-        try {
-          localStorage.setItem('rbts_log', JSON.stringify(mig.entries))
-          localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF)
-        } catch (e) {
-          console.error('[fold migration] localStorage write failed, will retry next load:', e)
+      if (mig.touchedDates.length) {
+        if (writeLogVerified(mig.entries)) {
+          try { localStorage.setItem('rbts_foldMigration', FOLD_CUTOFF) } catch { /* retry next load */ }
+        } else {
+          console.error('[fold migration] localStorage write failed or did not verify, will retry next load')
         }
       }
       setLog(mig.entries)
@@ -4426,6 +4468,13 @@ export default function App() {
     // reconcile (this is what was previously dropping re-imported corrections).
     const now = Date.now()
     incoming = incoming.map(e => ({ ...e, updatedAt: now }))
+    // A backup written before 2026-08-04 carries the duplicate-id fold
+    // encoding. Run the migration UNCONDITIONALLY (flagKey null): a flag says
+    // this device has migrated ITS log, which tells you nothing about a file
+    // written weeks ago, and without this an import re-introduces the old
+    // encoding permanently. Already-migrated entries carry foldMigrated and
+    // are skipped.
+    incoming = migrateFoldOnce(incoming, null).entries
     const dropDates = new Set(incoming.map(e => e.date))
     setLog(prev => {
       const kept = prev.filter(e => !dropDates.has(e.date))
