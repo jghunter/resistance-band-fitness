@@ -32,7 +32,7 @@ import {
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
 import { extractInventory } from './backup.js'
-import { unwrapMeta, reconcileMeta } from './metaReconcile.js'
+import { unwrapMeta, reconcileBandGeom, reconcileProfiles } from './metaReconcile.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
@@ -3862,22 +3862,40 @@ function BandCalibration({ myBands, user }) {
   const pool = myBands.length ? BANDS.filter(b => myBands.indexOf(b.id) >= 0) : []
   const uid = user ? user.uid : null
 
+  /* `geom` is what this panel RENDERS; it is never what an edit is computed
+     from. Both setters rebuild the whole map, and they read it through
+     getLocalBandGeom at the moment of the edit (bandGeomRestEdit /
+     bandGeomPointEdit take the reader, not a map, so a snapshot cannot be
+     passed by accident). The sign-in reconcile writes localStorage without
+     touching component state, and it runs last in a long serial await chain
+     — so on a cold start there is a window in which adopted calibration is
+     in storage and not in this component. Computing an edit from `geom`
+     there wrote the pre-adopt map back over every other band, locally and
+     to Firestore. */
   function setRest(id, raw) {
-    const next = { ...geom, [id]: RBTS_REPORTS.applyBandRestLengthEdit(geom[id], raw) }
+    const next = RBTS_REPORTS.bandGeomRestEdit(getLocalBandGeom, id, raw)
     saveLocalBandGeom(next, uid)
     setGeom(next)
   }
   function setPoint(id, i, field, raw) {
-    const pts = (geom[id] || {}).measured || []
-    const nextPts = RBTS_REPORTS.applyBandMeasuredPointEdit(pts, i, field, raw)
-    const next = { ...geom, [id]: { ...(geom[id] || {}), measured: nextPts } }
+    const next = RBTS_REPORTS.bandGeomPointEdit(getLocalBandGeom, id, i, field, raw)
     saveLocalBandGeom(next, uid)
     setGeom(next)
   }
+  /* ...and re-read on sign-in/out so the panel SHOWS adopted calibration
+     rather than the values it happened to mount with. The data itself is
+     safe without this (the setters read fresh); this is so the numbers on
+     screen are the numbers in storage. */
+  useEffect(() => { setGeom(getLocalBandGeom()) }, [uid])
 
   return (
     <div style={widget}>
-      <div onClick={() => setOpen(!open)}
+      {/* Re-read on OPEN as well as on sign-in: the uid effect fires when the
+          user object changes, which is before the async reconcile that may
+          adopt remote calibration has finished. Opening the panel is the
+          deliberate action that follows, so it is the reliable moment to
+          show what is actually in storage. */}
+      <div onClick={() => { if (!open) setGeom(getLocalBandGeom()); setOpen(!open) }}
         style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
         <span style={lbl}>BAND CALIBRATION</span>
         <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
@@ -4360,7 +4378,7 @@ export default function App() {
         try {
           const remote = unwrapMeta(await loadBandGeomFromFirestore(u.uid))
           const local  = { data: getLocalBandGeom(), updatedAt: localBandGeomUpdatedAt() }
-          const decision = reconcileMeta(local, remote, d => !d || Object.keys(d).length === 0)
+          const decision = reconcileBandGeom(local, remote)
           if (decision.action === 'adopt-remote') {
             localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(decision.data))
             localStorage.setItem(BAND_GEOM_TS_KEY, String(decision.updatedAt))
@@ -4369,13 +4387,17 @@ export default function App() {
             await saveBandGeomToFirestore(u.uid, { data: decision.data, updatedAt: decision.updatedAt })
           }
         } catch (e) { console.error('Band calibration sync failed:', e) }
-        // Profile (RIR target, set seeding, volume model, split): identical
-        // whole-document rule as band calibration, just an array instead of
-        // a map for the "is there anything here" test.
+        // Profile (RIR target, set seeding, volume model, split): the same
+        // whole-document rule as band calibration with ONE difference, which
+        // reconcileProfiles owns and documents — an unstamped local profile
+        // is treated as empty, because phase1.migrateToProfiles manufactures
+        // one at module load on any device that has none. Without that, a
+        // fresh install pushed a machine-generated default over every other
+        // device's real profile.
         try {
           const remote = unwrapMeta(await loadProfileFromFirestore(u.uid))
           const local  = { data: getLocalProfiles(), updatedAt: localProfilesUpdatedAt() }
-          const decision = reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0)
+          const decision = reconcileProfiles(local, remote)
           if (decision.action === 'adopt-remote') {
             localStorage.setItem('rbts_profiles', JSON.stringify(decision.data))
             localStorage.setItem(PROFILES_TS_KEY, String(decision.updatedAt))

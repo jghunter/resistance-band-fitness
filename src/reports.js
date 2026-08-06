@@ -447,6 +447,39 @@
     return pts;
   }
 
+  /* The two whole-map calibration edits. Editing ONE band rebuilds the WHOLE
+     rbts_bandGeom map, so where that map is read from decides what happens to
+     every OTHER band -- and that is not a detail either app should be free to
+     answer for itself.
+
+     Both take a READER rather than a map. That is the point: a caller cannot
+     hand over a stale copy it captured earlier, because it has nothing to
+     hand over but a way to fetch the current one. The PWA's BandCalibration
+     held the map in useState from mount and rebuilt from that snapshot, while
+     the sign-in reconcile writes localStorage only -- last in a long serial
+     await chain, so on a cold start there are seconds where adopted
+     calibration is in storage and not in the panel. One rest-length edit in
+     that window wrote the pre-adopt map back over every other band, locally
+     and to Firestore. fitness_app.html never had it: its setters always read
+     getBandGeom() fresh. This is that behaviour, made shared and testable.
+
+     Neither mutates what the reader returns -- the caller decides what to
+     save, and a rejected edit must not have already changed storage. */
+  function bandGeomRestEdit(readGeom, id, raw) {
+    var g = assign(readGeom() || {}, {});
+    g[id] = applyBandRestLengthEdit(g[id], raw);
+    return g;
+  }
+
+  function bandGeomPointEdit(readGeom, id, index, field, raw) {
+    var g = assign(readGeom() || {}, {});
+    var pts = (g[id] || {}).measured || [];
+    g[id] = assign(g[id] || {}, {
+      measured: applyBandMeasuredPointEdit(pts, index, field, raw)
+    });
+    return g;
+  }
+
   /* Total inches this gear set adds to (+) or removes from (-) the stretch the
      band must cover. Mirrors gearPathDeltaIn in fitness_app.html; kept here so
      the module stays self-contained and testable. */
@@ -3491,6 +3524,8 @@
     bandCalibrationLabel: bandCalibrationLabel,
     applyBandRestLengthEdit: applyBandRestLengthEdit,
     applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
+    bandGeomRestEdit: bandGeomRestEdit,
+    bandGeomPointEdit: bandGeomPointEdit,
     gearPathDelta: gearPathDelta,
     BODY_LANDMARKS: BODY_LANDMARKS,
     beltPlateOf: beltPlateOf,

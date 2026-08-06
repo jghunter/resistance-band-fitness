@@ -61,9 +61,16 @@ export function unwrapMeta(payload) {
  * has to favor what is actually sitting on the device over a bare cloud
  * placeholder, or real measurements would be silently discarded the first
  * time that device ever signs in.
+ *
+ * @param {{unstampedIsSeed?:boolean}} [opts] `unstampedIsSeed` says that
+ *   unstamped local data on this device is NOT evidence a user ever entered
+ *   anything -- some other code path may have manufactured it. Such data is
+ *   treated exactly as if it were empty: never pushed, always outranked. Use
+ *   it only for a key that has an automatic seeder (see reconcileProfiles);
+ *   for a key without one it would throw away real work.
  */
-export function reconcileMeta(local, remote, isEmpty, now = Date.now) {
-  const localEmpty  = isEmpty(local.data)
+export function reconcileMeta(local, remote, isEmpty, now = Date.now, opts = {}) {
+  const localEmpty  = isEmpty(local.data) || (!!opts.unstampedIsSeed && !local.updatedAt)
   const remoteEmpty = !remote || remote.data == null || isEmpty(remote.data)
 
   if (remoteEmpty && localEmpty) return { action: 'noop' }
@@ -74,4 +81,33 @@ export function reconcileMeta(local, remote, isEmpty, now = Date.now) {
     return { action: 'adopt-remote', data: remote.data, updatedAt: remote.updatedAt }
   }
   return { action: 'push-local', data: local.data, updatedAt: local.updatedAt || now() }
+}
+
+/** rbts_bandGeom: a bare {bandId: {...}} map, empty at {}.
+ *  Plain last-write-wins. Nothing ever manufactures band calibration, so an
+ *  unstamped local map is real work someone did with a tape measure and a
+ *  Tension Master, and it pushes -- deliberately NOT the profile rule below. */
+export function reconcileBandGeom(local, remote, now = Date.now) {
+  return reconcileMeta(local, remote, d => !d || Object.keys(d).length === 0, now)
+}
+
+/** rbts_profiles: an array, empty at [].
+ *  Unlike band calibration this key HAS an automatic seeder --
+ *  phase1.migrateToProfiles runs at module load on any device that has none
+ *  and writes a default profile without stamping rbts_profilesUpdatedAt. That
+ *  array is non-empty, so under the plain rule a fresh install pushed a
+ *  machine-generated default to the cloud stamped now(), and every other
+ *  device whose real profile predated the feature (updatedAt 0) lost the
+ *  comparison and adopted it -- silently replacing rirTarget, volumeModel,
+ *  defaultSets, splitId and ownedBands. rirTarget feeds progressionState, so
+ *  that also changed READY / STALLED verdicts.
+ *
+ *  Unstamped therefore means "possibly the seed" here, and is treated as
+ *  empty. Nothing is lost by that: the PWA has no profile editor, so a
+ *  PWA-local profile is only ever an import or an adopt (both stamped) or the
+ *  seed (never stamped). Edit profiles in fitness_app.html and bring them
+ *  over in a backup file, which is the only route that exists. */
+export function reconcileProfiles(local, remote, now = Date.now) {
+  return reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0, now,
+                       { unstampedIsSeed: true })
 }
