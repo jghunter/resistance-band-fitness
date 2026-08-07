@@ -1635,7 +1635,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               peak, at the hardest point of the rep
               {e.romBlind ? ' — computed without a range of motion' : ''}
             </div>
-            {RBTS_REPORTS.stampPredatesPlateGeom(entryDate, gear, gearOf) && (
+            {RBTS_REPORTS.stampPredatesPlateGeom(entryDate, gear, gearOf, id) && (
               <div style={{fontSize:9,color:C.amber}}>
                 stamped before the plate-geometry fix
               </div>

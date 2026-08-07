@@ -763,12 +763,25 @@
      and no write path to get wrong. */
   var PLATE_GEOM_CUTOFF = "2026-08-06";
 
-  function stampPredatesPlateGeom(dateISO, gearIds, gearOf) {
+  function stampPredatesPlateGeom(dateISO, gearIds, gearOf, exId) {
     if (!dateISO || String(dateISO) >= PLATE_GEOM_CUTOFF) return false;
     /* Only rigs this work actually reprices. A belt rig took the absolute
        stretch path already, and a rig with no plate still does not. */
     if (!beltPlateOf(gearIds, gearOf)) return false;
-    return !beltBeltPresent(gearIds, gearOf);
+    if (beltBeltPresent(gearIds, gearOf)) return false;
+    /* Mirrors effectiveLoad's `knownAttach` gate: a plain footplate, or a
+       footplate+handles rig on an exercise absent from PLATE_GRIP_DEFAULT, is
+       STILL on the reference-strain path today, exactly as it was before this
+       cutoff -- recomputing it gives the identical number. A footplate is
+       also the ordinary elevation gear gearPathDelta has always treated it
+       as (a riser under an unrelated lift), so flagging every plate-carrying
+       entry would mislabel a large share of history with a reprice that
+       never happens. Body measurements are deliberately NOT checked here --
+       whether or not the profile currently has them, a rig with a known
+       avenue is a genuinely different code path than before, even if it now
+       degrades to a "body not set" RATED instead of a computed number. */
+    var top = plateTopSpan(gearIds, gearOf);
+    return top.kind === "bar" || PLATE_GRIP_DEFAULT[String(exId)] != null;
   }
 
   /* The exercise card (item q + this task) surfaces three things about a
@@ -798,7 +811,7 @@
         if (!ld || typeof ld !== "object") return;
         if (ld.romBlind) sawRomBlind = true;
         if (ld.era === "pre-fold") sawPreFold = true;
-        if (stampPredatesPlateGeom(e.date, (e.gear || {})[exId], gearOf)) {
+        if (stampPredatesPlateGeom(e.date, (e.gear || {})[exId], gearOf, exId)) {
           sawPrePlate = true;
         }
       });
@@ -1342,8 +1355,8 @@
                    setup.
 
      Returns { exId: { lb, rated, ratio, provenance, deltaIn | stretchIn,
-     doubled, attachIn, belowRated } }, one entry per exercise that logged at
-     least one band. The band stack can differ set to set, so the stamp uses
+     doubled, attachIn, belowRated, romBlind } }, one entry per exercise that
+     logged at least one band. The band stack can differ set to set, so the stamp uses
      the HEAVIEST set -- the same set setTopLoad already reports. Returns
      undefined when there is nothing to stamp (no usable ctx, or no exercise
      logged any bands).
@@ -1386,7 +1399,8 @@
                     stretchIn: isBelt ? best.stretchIn : undefined,
                     doubled: best.doubled || undefined,
                     attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
-                    belowRated: best.belowRated || undefined };
+                    belowRated: best.belowRated || undefined,
+                    romBlind: best.romBlind || undefined };
     });
     return any ? out : undefined;
   }
