@@ -539,6 +539,46 @@
     });
   }
 
+  /* What the band's TOP end wraps around. This is the last term in beltReach's
+     `consumed`, and it is consulted ONLY when the band is singled -- doubled,
+     the top end is the FOLD and encircles nothing.
+
+       belt     the lifter. bodyWidthIn, the original rule, unchanged.
+       bar      the bar's attachSpanIn. Greg 2026-08-06: a singled band is
+                hooked at TWO POINTS ACROSS the bar, so it spans the bar's
+                attach width -- not the lifter, and not the bar's girth. Those
+                three readings give 42 / 31 / 15 lb on the same rig, which is
+                why this is recorded rather than inferred.
+       handles  NOT MODELLED, deliberately. On handle exercises the handles
+                travel AWAY FROM THE BODY through the rep, so the span between
+                them is not constant and no single number describes it. A
+                handle carries seriesIn and gripDiaIn, never an attachSpanIn.
+                Guessing would produce a plausible number, which is the exact
+                failure this model exists to remove.
+       none     nothing recorded that the band could terminate in.
+
+     A belt wins outright: a belt rig is priced by the belt rule whatever else
+     is in the setup, which is what keeps the belt path bit-identical. */
+  function plateTopSpan(gearIds, gearOf) {
+    var none = { kind: "none", spanIn: null };
+    if (!gearIds || !gearIds.length || !gearOf) return none;
+    var bar = null, handles = false;
+    for (var i = 0; i < gearIds.length; i++) {
+      var g = gearOf(gearIds[i]);
+      if (!g) continue;
+      if (g.type === "belt") return { kind: "belt", spanIn: null };
+      if (g.type === "bar" && !bar) bar = g;
+      if (g.type === "handle") handles = true;
+    }
+    if (bar) {
+      var dims = resolveGearDims(bar) || {};
+      return { kind: "bar",
+               spanIn: finitePos(dims.attachSpanIn) ? dims.attachSpanIn : null };
+    }
+    if (handles) return { kind: "handles", spanIn: null };
+    return none;
+  }
+
   /* How far the band's own end reaches above the TOP of the plate, unstretched.
 
        usableC  = 2 * restLength / d      the loop circumference in play; a
@@ -553,14 +593,15 @@
      `plate` is a RESOLVED dims object (resolveGearDims output), not a gear
      item. Returns null when the band is too short to be rigged this way --
      never a negative reach, and never a fabricated load. */
-  function beltReach(band, geom, plate, doubled, body) {
+  function beltReach(band, geom, plate, doubled, body, topSpanIn) {
     if (!band || !plate || !body) return null;
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
       ? geom.restLengthIn : (band.lengthIn || 0);
     if (!rest) return null;
     var d = doubled ? 2 : 1;
     var usableC = 2 * rest / d;
-    var width = doubled ? 0 : (body.bodyWidthIn || 0);
+    var width = doubled ? 0
+              : (finitePos(topSpanIn) ? topSpanIn : (body.bodyWidthIn || 0));
     var consumed = (plate.bandSpanIn || plate.lengthIn || 0)
                  + 2 * (plate.thicknessIn || 0)
                  + (plate.channelIn || 0)
@@ -675,6 +716,61 @@
     return BELT_EXTENDERS[(g.brand || "") + "|" + (g.name || "")] === true;
   }
 
+  /* Where the rep ENDS on a plate rig, keyed by EXERCISE id.
+
+     BELT_ATTACH_DEFAULT keys off the belt because the landmark is a property of
+     the belt. This keys off the exercise, because with a bar or handles it is
+     the movement pattern that decides where the hands finish.
+
+     Greg, 2026-08-06: for a deadlift and a Romanian deadlift the point of
+     maximum stretch sits between MID-THIGH and HIP, closer to mid-thigh, one
+     third of the way up. 117 and 119 share that endpoint.
+
+     201 is the same hinge plus a shrug. `plusIn` is the height the HANDS rise
+     -- 1.5in, confirmed directly. Greg also said the shrug "effectively adds
+     3in", and that is the LOOP PATH, not this field: beltReach already halves
+     for the two strands, so a 1.5in rise produces 3in of path on its own.
+     Putting 3 here would double the real change. Same class as the belt defect
+     that started this work, where a 40in waist circumference was consumed as an
+     inline length.
+
+     An exercise ABSENT from this table gets NO default and the height stays
+     blank. A wrong default is silent -- it yields a plausible number instead of
+     a degradation -- so nothing here is guessed. */
+  var PLATE_GRIP_DEFAULT = {
+    37:  { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
+    117: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
+    119: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
+    185: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
+    201: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3, plusIn: 1.5 }
+  };
+
+  function plateGripDefault(exId, body) {
+    if (!body) return null;
+    var rule = PLATE_GRIP_DEFAULT[String(exId)];
+    if (!rule) return null;
+    var from = body[rule.from], to = body[rule.to];
+    if (!finitePos(from) || !finitePos(to)) return null;
+    var h = from + (to - from) * rule.frac + (rule.plusIn || 0);
+    return finitePos(h) ? h : null;
+  }
+
+  /* The day the plate/grip path shipped. Stamps are frozen at save time, so a
+     workout logged before this carries a number the current model would not
+     produce -- exactly like era:"pre-fold", except that nothing needs
+     REWRITING here, so this is derived from the entry's own date and NOTHING
+     is written to the log. Strictly less machinery than migrateFoldEncoding,
+     and no write path to get wrong. */
+  var PLATE_GEOM_CUTOFF = "2026-08-06";
+
+  function stampPredatesPlateGeom(dateISO, gearIds, gearOf) {
+    if (!dateISO || String(dateISO) >= PLATE_GEOM_CUTOFF) return false;
+    /* Only rigs this work actually reprices. A belt rig took the absolute
+       stretch path already, and a rig with no plate still does not. */
+    if (!beltPlateOf(gearIds, gearOf)) return false;
+    return !beltBeltPresent(gearIds, gearOf);
+  }
+
   function beltAttachDefault(gearIds, gearOf) {
     if (!gearIds || !gearIds.length || !gearOf) return null;
     /* A belt with no footplate is not a belt setup, and effectiveLoad would not
@@ -762,21 +858,38 @@
      MODELED / RATED and callers MUST surface it - the number means something
      different in each case.
 
-     Two paths, and a footplate + belt COMMITS to the first one:
-       - ABSOLUTE-STRETCH (belt path): taken whenever the exercise has both a
-         footplate and a belt. The band's geometry fixes where it reaches; the
-         attachment height fixes the gap. REF_STRAIN is never consulted here
-         and gearPathDelta is never called - this stretch is real, not a nudge
-         off an assumption. Missing ctx.body, a missing/non-finite
-         opts.attachHeightIn, a missing ctx.body.bodyWidthIn on a SINGLED set
-         (where the loop must span the lifter, so a missing width silently
-         halves the stretch), or a footplate whose dimensions cannot be
-         resolved all degrade to RATED with a `basis` naming the reason. They
-         do NOT fall through to the reference-strain path: that path subtracts
-         a belt's whole waist circumference as inline series length and
-         reports a confident 0 lb, which is the defect this path replaces.
-       - REFERENCE-STRAIN (every other exercise): unchanged from before this
-         path existed, with one addition (2026-08-02): if series gear (a rope,
+     Two paths. A footplate COMMITS to the first one whenever there is also a
+     KNOWN AVENUE to a termination height (2026-08-06 -- used to require a
+     belt specifically; see below):
+       - ABSOLUTE-STRETCH (plate/belt path): taken when the exercise has a
+         footplate AND (a belt, OR a bar, OR an `opts.exId` whose
+         PLATE_GRIP_DEFAULT resolves against ctx.body). A plate consumes band
+         identically whatever sits at the top -- a bar, handles, a belt, or
+         nothing -- but a BARE footplate with none of those three is still
+         the ordinary reference-strain elevation gear it has always been (a
+         riser under an unrelated exercise), so it is deliberately left on
+         the second path rather than forced here to degrade for lack of a
+         height nobody was ever going to supply. The band's geometry fixes
+         where it reaches; the attachment/grip height fixes the gap.
+         REF_STRAIN is never consulted here and gearPathDelta is never
+         called - this stretch is real, not a nudge off an assumption.
+         Wording only distinguishes a belt rig from a plain plate rig
+         ("belt setup: " vs "plate setup: " in `basis`); the arithmetic is
+         one path. Missing ctx.body, a missing/non-finite height (a belt's
+         from opts, a plain plate's from `plateGripDefault` unless opts
+         overrides it), a missing top-end term on a SINGLED set (a belt
+         needs ctx.body.bodyWidthIn; a bar needs its own attachSpanIn; bare
+         handles or nothing at all are refused outright, each with its own
+         reason), or a footplate whose dimensions cannot be resolved all
+         degrade to RATED with a `basis` naming the reason. They do NOT fall
+         through to the reference-strain path: that path returns the SAME
+         number at any grip height and on either plate, which is the defect
+         this path replaces -- for a belt specifically it used to subtract
+         the belt's whole waist circumference as inline series length and
+         report a confident 0 lb.
+       - REFERENCE-STRAIN (every exercise with no footplate, plus a footplate
+         with no known avenue to a height): unchanged from before this path
+         existed, with one addition (2026-08-02): if series gear (a rope,
          handle, or anchor pair) is long enough to push any one band's
          modelled stretch to zero or below, that is the SAME confident-zero
          failure mode as the belt bug, arriving by a different route -- the
@@ -802,48 +915,110 @@
     var out = { lb: rated, rated: rated, ratio: 1, provenance: "RATED",
                 stretchIn: null, basis: "vendor midpoint",
                 doubled: !!o.doubled, attachHeightIn: null,
-                belowRated: false, aboveRated: false };
+                belowRated: false, aboveRated: false, romBlind: false };
     if (!ids.length) return out;
 
-    /* ---- absolute-stretch path: footplate + belt + attachment height ----
-       The band's own geometry fixes where it reaches; the attachment height
-       fixes the gap. REF_STRAIN is never consulted here and gearPathDelta is
-       never called -- this stretch is real, not a nudge off an assumption. */
+    /* ---- absolute-stretch path: footplate (+ optionally a belt) ---------
+       The band's own geometry fixes where it reaches; the attachment/grip
+       height fixes the gap. REF_STRAIN is never consulted here and
+       gearPathDelta is never called -- this stretch is real, not a nudge
+       off an assumption. */
     var plateItem = beltPlateOf(gearIds, ctx.gearOf);
     var beltOn = beltBeltPresent(gearIds, ctx.gearOf);
-    if (plateItem && beltOn) {
-      /* A footplate AND a belt means this IS a belt setup, and there is no
-         second opinion to fall back on. The reference-strain path treats the
-         belt as inline series length and subtracts its whole waist
-         circumference, which is exactly the bug this path exists to remove --
-         so a belt setup that cannot be computed degrades to RATED and SAYS
-         WHY. It must never reach gearPathDelta. */
+    /* A footplate takes this path since 2026-08-06 whenever there is some
+       KNOWN AVENUE to a termination height, not only a belt rig -- a plate
+       consumes band identically whatever sits at the top, and the old gate
+       sent a plate-and-bar rig to REF_STRAIN, which returns the same number
+       at any grip height and on either plate. See the spec, section 4a:
+       "footplate AND a known termination height."
+
+       "Known avenue" is deliberately narrower than "a footplate is present."
+       A footplate is ALSO the ordinary reference-strain elevation gear it has
+       always been (gearPathDelta adds its thickness+channel to the path for
+       an exercise that merely stands on a riser) -- an exercise carrying a
+       plain footplate and nothing else, with no belt, no bar, no exercise
+       rule and no explicit height, is that case, and MUST still take the
+       reference-strain path or a large, unrelated, pre-existing feature goes
+       dark: it would report "plate setup: body measurements not set" for
+       every ordinary lift ever logged while standing on something.
+
+       The avenue is known when: it's a belt (unchanged), this exercise has a
+       table default (`exId` was given AND it resolves), or a bar is present
+       -- a bar carries its own attachSpanIn concept, so a footplate+bar rig
+       is recognisably a plate/grip rig even for an exercise absent from the
+       table, and is reported as missing a height rather than silently
+       priced ROM-blind. An explicit `opts.attachHeightIn` on its own is
+       deliberately NOT a gate trigger: without a belt, a bar, or a resolving
+       exercise id there is still no known TOP-END TERMINATION for the band
+       (see beltReach's `width` term), so a bare height number does not by
+       itself make this a describable rig -- it still gets consumed as an
+       override once some other avenue commits to this path. Handles are
+       likewise NOT in this list on their own: the spec rules singled-on-
+       handles unmodelled, and a footplate+handles rig with no known exercise
+       stays on the reference-strain path exactly as before -- it only moves
+       once a caller identifies the exercise (a resolving `exId`) or the rig
+       is a belt. */
+    if (plateItem) {
+      var top = plateTopSpan(gearIds, ctx.gearOf);
+      var gripDefault = beltOn ? null : plateGripDefault(o.exId, ctx.body);
+      var knownAttach = beltOn || gripDefault != null || top.kind === "bar";
+      if (knownAttach) {
+      /* Wording only. The arithmetic below is one path; a reader looking at a
+         degraded deadlift should not be told about a "belt setup". */
+      var pfx = beltOn ? "belt setup: " : "plate setup: ";
       if (!ctx.body) {
-        out.basis = "belt setup: body measurements not set";
+        out.basis = pfx + "body measurements not set";
         return out;
       }
+      /* An explicit height always wins: a choice the user made is never
+         overridden by a table. The default applies to plate rigs only --
+         a belt's landmark comes from BELT_ATTACH_DEFAULT via the picker. */
+      var heightIn = finitePos(o.attachHeightIn) ? o.attachHeightIn
+                    : (beltOn ? null : gripDefault);
       /* finitePos, NOT isFinite: isFinite(null) and isFinite("") are both
          true, so the bare check let a missing or half-entered height through
-         to beltStretch, which refused it further down and returned RATED with
-         a `basis` blaming the BAND ("no band in this stack can be rigged on
-         this footplate") for a field the user simply never filled in. The
-         number was never wrong; the stated reason was, which is the same
-         failure in a smaller coat. */
-      if (!finitePos(o.attachHeightIn)) {
-        out.basis = "belt setup: no attachment height recorded";
+         further down, which refused it and returned RATED with a `basis`
+         blaming the BAND ("no band in this stack can be rigged on this
+         footplate") for a field the user simply never filled in. The number
+         was never wrong; the stated reason was, which is the same failure
+         in a smaller coat. A rig can reach here via the bar-present avenue
+         with no resolving `exId`, so heightIn can still be unset even though
+         knownAttach was true -- the avenue existed, the value didn't. */
+      if (!finitePos(heightIn)) {
+        out.basis = pfx + (beltOn ? "no attachment height recorded"
+                                  : "no grip height recorded");
         return out;
       }
-      /* SINGLED ONLY, because beltReach genuinely does not use the width when
-         the band is doubled. Singled it is load-bearing: `body.bodyWidthIn ||
-         0` turned an unmeasured width into a real 0, which SHORTENS `consumed`
-         and so LENGTHENS `reach` -- the same 41in band at the same hip
-         landmark reports 16.44in / 8.02 lb with the width set and 7.56in /
-         3.69 lb without it, 54% light, provenance still MODELED and nothing on
-         screen saying so. bodyMeasureComplete() gates the PICKER, not the
-         engine, so a history re-edit on a half-filled profile reached here. */
-      if (!o.doubled && !finitePos(ctx.body.bodyWidthIn)) {
-        out.basis = "belt setup: body width not measured (a singled band spans it)";
-        return out;
+      /* SINGLED ONLY -- beltReach genuinely does not consult the top span when
+         the band is doubled, because the top end is the fold. Each branch names
+         the input that is missing, so nobody re-measures a band that was fine. */
+      var topSpanIn = null;
+      if (!o.doubled) {
+        if (top.kind === "belt") {
+          /* Load-bearing: `body.bodyWidthIn || 0` turned an unmeasured width
+             into a real 0, which SHORTENS `consumed` and so LENGTHENS `reach`
+             -- the same 41in band at the same hip landmark reports 16.44in /
+             8.02 lb with the width set and 7.56in / 3.69 lb without it, 54%
+             light, provenance still MODELED and nothing on screen saying so.
+             bodyMeasureComplete() gates the PICKER, not the engine, so a
+             history re-edit on a half-filled profile reached here. */
+          if (!finitePos(ctx.body.bodyWidthIn)) {
+            out.basis = "belt setup: body width not measured (a singled band spans it)";
+            return out;
+          }
+        } else if (top.kind === "bar") {
+          if (!finitePos(top.spanIn)) {
+            out.basis = "plate setup: the bar's attach span is unknown";
+            return out;
+          }
+          topSpanIn = top.spanIn;
+        } else if (top.kind === "handles") {
+          out.basis = "plate setup: a singled band on handles is not modelled";
+          return out;
+        } else {
+          out.basis = "plate setup: nothing recorded for the band to terminate in";
+          return out;
+        }
       }
       /* resolveGearDims never returns falsy for a real item -- an unknown
          brand|name comes back as a bare unverified estimate with no
@@ -854,7 +1029,7 @@
       if (!plate || (!isFinite(plate.thicknessIn) &&
                      !isFinite(plate.bandSpanIn) &&
                      !isFinite(plate.lengthIn))) {
-        out.basis = "belt setup: the footplate's dimensions are unknown";
+        out.basis = pfx + "the footplate's dimensions are unknown";
         return out;
       }
       var lbB = 0, refB = 0, anyB = false, allMeasured = true, minStrain = Infinity,
@@ -863,8 +1038,8 @@
         var b = ctx.bandOf ? ctx.bandOf(id) : null;
         if (!b) return;
         var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
-        var reach = beltReach(b, geom, plate, o.doubled, ctx.body);
-        var s = beltStretch(reach, o.attachHeightIn);
+        var reach = beltReach(b, geom, plate, o.doubled, ctx.body, topSpanIn);
+        var s = beltStretch(reach, heightIn);
         if (s == null) return;                    // this band cannot be rigged so
         anyB = true;
         if (firstStretch == null) firstStretch = s;
@@ -894,7 +1069,7 @@
         out.rated = refB;
         out.ratio = refB ? (lbB / refB) : 1;
         out.stretchIn = firstStretch;
-        out.attachHeightIn = o.attachHeightIn;
+        out.attachHeightIn = heightIn;
         out.belowRated = minStrain < LOAD_MODEL.STRAIN_AT_RATED_MIN;
         out.aboveRated = maxStrain > LOAD_MODEL.STRAIN_AT_RATED_MAX;
         var gearOK = gearDimsVerified(gearIds, ctx.gearOf);
@@ -927,8 +1102,12 @@
         return out;
       }
       /* Nothing riggable: stays RATED, and still never falls through. */
-      out.basis = "belt setup: no band in this stack can be rigged on this footplate";
+      out.basis = pfx + "no band in this stack can be rigged on this footplate";
       return out;
+      }
+      /* knownAttach was false: no belt, no explicit height, no resolving
+         exId, no bar. This footplate is ordinary reference-strain elevation
+         gear (or an as-yet-unidentified exercise) -- fall through, unchanged. */
     }
 
     /* ---- reference-strain path: unchanged for every other exercise ------ */
@@ -1003,6 +1182,14 @@
       return out;
     }
 
+    /* This figure could not see the range of motion: it is REF_STRAIN * rest
+       plus a gear delta, identical at any grip height. Since 2026-08-06 a
+       footplate rig gets real geometry instead, so ROM-aware and ROM-blind
+       loads now sit side by side on the same screen and MUST NOT look equally
+       authoritative. Degraded RATED results do not carry this -- they computed
+       nothing to be blind with. */
+    out.romBlind = true;
+
     if (!anyGeom && !anyMeasured) return out;      // nothing to improve on
 
     out.lb = lb;
@@ -1041,10 +1228,16 @@
        gearIds        [gearId, ...] -- gear used for this exercise (same for
                       every set; gear doesn't change set to set the way band
                       resistance does)
-       attachHeightIn a bare number -- the belt attachment height for this
-                      exercise, or undefined/omitted when not a belt exercise.
+       attachHeightIn a bare number -- an explicit attachment/grip height for
+                      this exercise, or undefined/omitted to let a plain
+                      plate rig fall back to `plateGripDefault(exId, body)`.
        ctx            needs bandOf, and optionally gearOf / bandGeomOf / body
                       -- exactly what effectiveLoad needs.
+       exId           optional -- the exercise id, threaded through to
+                      effectiveLoad so a plate rig with no explicit height
+                      can resolve the table default. Omitted by any caller
+                      that doesn't have it, which is safe: no default is
+                      exactly the pre-2026-08-06 behaviour.
 
      Returns the effectiveLoad result for the heaviest set, or null when no
      set in the list logged any bands.
@@ -1062,14 +1255,15 @@
      its own basis rather than a number borrowed from a different model.
      MEASURED and MODELED share a tier: both are real loads on the same scale,
      and picking by provenance there would report a lighter set as the top. */
-  function bestSetLoad(ctx, sets, gearIds, attachHeightIn) {
+  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
         ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
       if (!bands.length) return;
       var e = effectiveLoad(ctx, bands, gearIds,
-                            { doubled: !!s.doubled, attachHeightIn: attachHeightIn });
+                            { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
+                              exId: exId });
       var tier = e.provenance === "RATED" ? 0 : 1;
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
@@ -1130,7 +1324,7 @@
          save, including as {} or with a null per exercise, so isFinite would
          have passed null straight through to effectiveLoad as a "height". */
       var attachIn = (attachMap && finitePos(attachMap[exId])) ? attachMap[exId] : undefined;
-      var best = bestSetLoad(ctx, sets, gearIds, attachIn);
+      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId);
       if (!best) return;
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
@@ -3530,12 +3724,17 @@
     BODY_LANDMARKS: BODY_LANDMARKS,
     beltPlateOf: beltPlateOf,
     beltBeltPresent: beltBeltPresent,
+    plateTopSpan: plateTopSpan,
     beltReach: beltReach,
     beltStretch: beltStretch,
     beltAttachOptions: beltAttachOptions,
     beltAttachAt: beltAttachAt,
     beltAttachDefault: beltAttachDefault,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
+    PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
+    plateGripDefault: plateGripDefault,
+    PLATE_GEOM_CUTOFF: PLATE_GEOM_CUTOFF,
+    stampPredatesPlateGeom: stampPredatesPlateGeom,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
     GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,

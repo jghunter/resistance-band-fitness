@@ -1007,7 +1007,7 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1032,13 +1032,20 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
      2026-08-03's split squat in the HTML app. Only ever fills an EMPTY value,
      so it cannot undo a height the user picked. In an effect, not in render,
      because it calls back up into the log. */
+  /* 2026-08-06: when the belt has no opinion (no belt on the rig at all, or a
+     withdrawn default), a PLAIN plate rig still has a default -- the per-
+     exercise grip height from plateGripDefault. Same "only ever fills an
+     EMPTY value" discipline as the belt branch above. */
   const selKey = sel.slice().sort().join(',')
   useEffect(() => {
     if (attachHeightIn != null) return
     if (!RBTS_REPORTS.beltAttachDefault) return
-    const lm = RBTS_REPORTS.beltAttachDefault(sel, id => byId[id])
-    if (!lm) return
-    const h = bodyMeasureNum(BODY_MEASURE[lm])
+    const gearOf = id => byId[id]
+    const lm = RBTS_REPORTS.beltAttachDefault(sel, gearOf)
+    const h = lm
+      ? bodyMeasureNum(BODY_MEASURE[lm])
+      : (RBTS_REPORTS.beltPlateOf(sel, gearOf)
+          ? RBTS_REPORTS.plateGripDefault(exId, BODY_MEASURE) : null)
     if (h == null) return                      // not measured: stay blank, say so
     ;(onAttachChange || (()=>{}))(h)
   }, [selKey, attachHeightIn])
@@ -1118,12 +1125,16 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
       {(() => {
         const gearOf = (id) => byId[id]
         const plate = RBTS_REPORTS.beltPlateOf(sel, gearOf)
-        if (!plate || !RBTS_REPORTS.beltBeltPresent(sel, gearOf)) return null
+        if (!plate) return null
+        const beltOn = RBTS_REPORTS.beltBeltPresent(sel, gearOf)
         /* No guess when a measurement is missing: the belt path degrades to
-           RATED and says so, rather than inventing a hip height. */
+           RATED and says so, rather than inventing a hip height. A plain
+           plate rig (no belt) needs the same body measurements to compute
+           beltReach's width term, so the gate is unchanged -- only WHICH
+           rigs reach it has widened. */
         if (!bodyMeasureComplete()) return (
           <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
-            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → TRAINING STYLE) TO COMPUTE BELT LOAD
+            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → TRAINING STYLE) TO COMPUTE {beltOn ? 'BELT' : 'PLATE'} LOAD
           </div>
         )
         const bandId = (bands || [])[0]
@@ -1273,7 +1284,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, loadStamp }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, loadStamp, entryDate }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -1428,7 +1439,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
-          <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})}
+          <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})} exId={id}
             bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
             attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}/>
         </div>
@@ -1562,8 +1573,14 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // stampLoad's fourth is a MAP, effectiveLoad's is an options object)
         // or the card would show a RATED figure while the save stamped a
         // belt-path one, and the two would silently disagree.
+        //
+        // `id` goes in as the fifth argument (exId) -- bestSetLoad needs it to
+        // resolve a per-exercise PLATE_GRIP_DEFAULT. Without it this live card
+        // recomputed range-of-motion-blind while the saved stamp (stampLoad,
+        // which always passes exId) did not, so the number on screen
+        // mid-workout could silently disagree with what got saved.
         const e = RBTS_REPORTS.bestSetLoad(
-          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn)
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id)
         if (!e || e.lb == null) return null
         // The chip is not decoration: RATED is a vendor midpoint at an
         // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
@@ -1577,6 +1594,10 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // was actually saved. Surface the stamp so that disagreement is
         // never invisible. Nothing here reads or writes the stamp otherwise.
         const preFoldLb = (loadStamp && loadStamp.era === 'pre-fold' && loadStamp.lb != null) ? loadStamp.lb : null
+        // stampPredatesPlateGeom needs a gearOf lookup over the FULL inventory
+        // (gearInv), not just this exercise's selected ids (gear).
+        const invById = {}; (gearInv || []).forEach(g => { invById[g.id] = g })
+        const gearOf = gid => invById[gid]
         return (
           <div>
             <div style={{display:'flex',alignItems:'baseline',gap:6,marginTop:4,flexWrap:'wrap'}}>
@@ -1603,6 +1624,22 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                 </span>
               )}
             </div>
+            {/* The figure is a PEAK, not an average across the rep -- the
+                omission that let a perceived average across 20 reps get
+                compared against a computed peak and read as an overshoot.
+                romBlind marks a figure the reference-strain path computed
+                with no knowledge of the actual range of motion (it holds
+                path length at twice the band's rest length always -- see
+                OPEN_load_model_limitations.md). */}
+            <div style={{fontSize:9,color:C.dimGray}}>
+              peak, at the hardest point of the rep
+              {e.romBlind ? ' — computed without a range of motion' : ''}
+            </div>
+            {RBTS_REPORTS.stampPredatesPlateGeom(entryDate, gear, gearOf) && (
+              <div style={{fontSize:9,color:C.amber}}>
+                stamped before the plate-geometry fix
+              </div>
+            )}
             {preFoldLb != null && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:2}}
                 title="This set was logged when a folded band was recorded as two separate bands. The stamp is frozen at what the app believed that day; the figure above is what the current model computes.">
@@ -1695,6 +1732,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         onGearChange={ids=>updateExGear(id,ids)}
         attachHeightIn={(attach||{})[String(id)]}
         onAttachChange={h=>updateAttach(id,h)}
+        entryDate={todayDate}
         loadStamp={savedLoad[String(id)]}/>
     )
   }
@@ -1725,6 +1763,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           onGearChange={ids=>updateExGear(id,ids)}
           attachHeightIn={(attach||{})[String(id)]}
           onAttachChange={h=>updateAttach(id,h)}
+          entryDate={todayDate}
           loadStamp={savedLoad[String(id)]}/>
       </div>
     )
@@ -3384,7 +3423,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:6}}>
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
-            <GearPicker inv={gearInv} selected={gr[id]||[]}
+            <GearPicker inv={gearInv} selected={gr[id]||[]} exId={id}
               onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}
               bands={setBandsOf(refSetOf(id))} doubled={!!refSetOf(id).doubled}
               attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}/>
