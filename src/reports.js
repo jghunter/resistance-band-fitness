@@ -771,6 +771,55 @@
     return !beltBeltPresent(gearIds, gearOf);
   }
 
+  /* The exercise card (item q + this task) surfaces three things about a
+     load figure that a printed report was silently omitting: it is a PEAK,
+     not an average; some figures were computed with no range of motion at
+     all (romBlind); and some frozen stamps predate a model fix, either
+     era:"pre-fold" or a plate/bar rig stamped before PLATE_GEOM_CUTOFF.
+     Shared by buildSetupDoc, buildHistoryDoc and analyze() so the three
+     doc models cannot drift on the wording -- exactly the reason this
+     module exists (rendered by renderMarkdown/renderPrintHTML from one
+     doc model each).
+
+     The PEAK note is unconditional -- true of every effective-load figure.
+     The other three fire only when an entry actually being reported carries
+     the condition: a caveat that always appears is a caveat nobody reads. */
+  function loadCaveatNotes(entries, gearOf) {
+    var notes = [];
+    notes.push("Every effective-load figure is a PEAK: the load at the hardest " +
+      "point of the rep, never an average over the range of motion. A band is " +
+      "near-slack at the bottom of a hinge and hardest at lockout, so a set can " +
+      "feel far lighter than its peak.");
+    var sawRomBlind = false, sawPreFold = false, sawPrePlate = false;
+    (entries || []).forEach(function (e) {
+      if (!e) return;
+      Object.keys(e.load || {}).forEach(function (exId) {
+        var ld = e.load[exId];
+        if (!ld || typeof ld !== "object") return;
+        if (ld.romBlind) sawRomBlind = true;
+        if (ld.era === "pre-fold") sawPreFold = true;
+        if (stampPredatesPlateGeom(e.date, (e.gear || {})[exId], gearOf)) {
+          sawPrePlate = true;
+        }
+      });
+    });
+    if (sawRomBlind) {
+      notes.push("Some figures here were computed WITHOUT A RANGE OF MOTION: " +
+        "a rig with no footplate still prices the band at a fixed reference " +
+        "stretch, so its load is the same whatever the lifter's actual ROM.");
+    }
+    if (sawPreFold) {
+      notes.push("Some stamps here were frozen before the fold fix and describe " +
+        "a band list that no longer matches them.");
+    }
+    if (sawPrePlate) {
+      notes.push("Some stamps here were frozen before the plate-geometry fix " +
+        "(" + PLATE_GEOM_CUTOFF + ") and came from a path that could not see " +
+        "the grip height. The current model would price those sets lower.");
+    }
+    return notes;
+  }
+
   function beltAttachDefault(gearIds, gearOf) {
     if (!gearIds || !gearIds.length || !gearOf) return null;
     /* A belt with no footplate is not a belt setup, and effectiveLoad would not
@@ -2079,12 +2128,17 @@
       .concat(ctx.orderSlots(session.primary || {}, opts.focusLabel))
       .concat(ctx.orderSlots(session.accessories || {}, opts.focusLabel));
 
-    var exRows = [], perEx = [], n = 0;
+    var exRows = [], perEx = [], rawEntries = [], n = 0;
     slots.forEach(function (pair) {
       var slot = pair[0], id = pair[1];
       if (id == null) return;
       n++;
       var lu = lastUse(ctx.log, id, opts.date, ctx.deloadOf);
+      /* Same last-used entry lastUse() derives from, kept whole (not the
+         stripped {date,sets,gear,isDeload} shape) so loadCaveatNotes below
+         can read its .load stamp. */
+      var rawLu = entriesFor(ctx.log, id, opts.date)[0];
+      if (rawLu) rawEntries.push(rawLu);
       var ps = progressionState(ctx, id, opts.date);
       var bandIds = lu ? setBands(lu.sets[0]) : [];
       var gearIds = lu ? (lu.gear || []) : [];
@@ -2163,13 +2217,19 @@
       meta.push({ label: "DELOAD", value: "yes - all work at 50% intensity or less" });
     }
 
+    /* Item q + Task 6: same caveats the exercise card shows, scanned over the
+       same last-used entries this sheet already pulled bands/gear from. */
+    var loadNotes = { heading: "LOAD METHOD NOTES", type: "notes",
+      rows: loadCaveatNotes(rawEntries, ctx.gearOf) };
+
     return {
       kind: "setup",
       title: "WORKOUT SETUP SHEET",
       meta: meta,
       sections: [
         { heading: "PULL LIST", type: "kv", rows: pullRows },
-        { heading: "EXERCISES", type: "exercises", rows: exRows }
+        { heading: "EXERCISES", type: "exercises", rows: exRows },
+        loadNotes
       ],
       generatedAt: new Date().toISOString()
     };
@@ -2362,6 +2422,13 @@
       sections.push({ heading: "PROGRESSION ACROSS RANGE", type: "table",
         cols: tbl.cols, rows: tbl.rows, pageBreak: true });
     }
+
+    /* Item q + Task 6: same caveats the exercise card and the ANALYZE tab
+       show, scanned over the entries this report already walked. A distinct
+       heading from the per-session "NOTES" above (that one is the lifter's
+       own note text for a session). */
+    sections.push({ heading: "LOAD METHOD NOTES", type: "notes",
+      rows: loadCaveatNotes(entries, ctx.gearOf) });
 
     return { kind: "history", title: title, meta: meta, sections: sections,
              generatedAt: new Date().toISOString() };
@@ -3099,6 +3166,11 @@
       "spans +/-45% around its midpoint. Use these numbers to compare a lift " +
       "against itself over time; do not read them as pounds, and do not compare " +
       "them across brands.");
+    /* Item q + Task 6: the exercise card already surfaces a PEAK-not-average
+       warning, romBlind and era:"pre-fold" on the load figure itself; the
+       report said none of it, so a printed number could silently predate a
+       model fix. Scans the same entries this report already walked. */
+    loadCaveatNotes(win.entries, ctx.gearOf).forEach(function (n) { notes.push(n); });
     notes.push(ctx.volumeModel === "hit"
       ? "VOLUME MODEL: HIT. Your profile trains one set to muscular failure, so " +
         "the weekly working-set landmarks (CHEST 10, BICEPS 6, ...) are NOT " +
