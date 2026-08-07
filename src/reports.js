@@ -489,6 +489,16 @@
       var g = gearOf(id);
       if (!g) return a;
       var d = resolveGearDims(g) || {}, t = g.type;
+      /* Some gear is never in the load path AT ALL -- the Harambe Foam Block
+         is somewhere to rest a bar during setup, and Greg's ruling is that it
+         must never figure in any calculation of any kind. This is deliberately
+         a FLAG rather than a `type` and rather than a deleted measurement: the
+         block really is 6in thick and the GEAR tab should still say so, and
+         the catch-all branch at the bottom would otherwise read that thickness
+         as an elevation and add +12in for anyone who logged it. Checked FIRST,
+         before every branch, so one field settles the next such item instead
+         of another special case in the sum. */
+      if (d.neverInPath) return a;
       /* An ADJUSTABLE item's inline length is whichever stamped position was
          hooked. With no position chosen this contributes NOTHING -- which is
          a silent zero, and a silent zero on a 26in strap is the belt bug in a
@@ -3575,7 +3585,15 @@
                                   note: "no dimension is an input to load: the band's attachment is modelled by beltReach/beltStretch. seriesIn 40in (removed 2026-08-02) was the WAIST CIRCUMFERENCE and reported 0 lb on every belt lift." },
     "Harambe|Wedges":           { thicknessIn: 1.375, source: "measured", verified: true,
                                   note: "RAMP, not a slab: 2.5in at the high end, 0.25in at the low end, 8.75in of ramp. 1.375 is the mean; used both directions depending on the lift." },
+    /* The measurements are real and stay; the FLAG is what keeps them out of
+       the band path. Greg, 2026-08-01: the Foam Block has nothing to do with
+       any exercise at all and must never figure in any calculation of any
+       kind -- it is somewhere to rest a bar while setting up. Without the flag
+       its 6in thickness fell through to the `other` branch below and was read
+       as an ELEVATION, adding +12in of band path to any exercise it was logged
+       against. ASSERTED in test_gear_geometry.cjs. */
     "Harambe|Foam Block":       { thicknessIn: 6, lengthIn: 9, widthIn: 3.5,
+                                  neverInPath: true,
                                   source: "measured", verified: true,
                                   note: "a place to rest a bar during setup — not in the load path" },
     // ---- X3 Bar ----------------------------------------------------------
@@ -3725,19 +3743,52 @@
   }
 
   /* THE resolution order, shared by both apps.
-       1. userEdited      -> always wins; a number the user typed is the
-                             measurement, and no table revision may overwrite it
-       2. current seedRev -> the stored copy is up to date, use it
-       3. table lookup    -> by brand|name. THIS is what makes the PWA work:
+       1. userEditedKeys  -> the fields the user actually typed win, and ONLY
+                             those; every other field re-resolves from the
+                             table below on every read
+       2. userEdited      -> LEGACY, no key list: the whole stored object wins
+       3. current seedRev -> the stored copy is up to date, use it
+       4. table lookup    -> by brand|name. THIS is what makes the PWA work:
                              it deliberately never seeds gear (multi-user - no
                              one inherits anyone else's inventory), so its items
                              arrive from Firestore with no dims at all.
-       4. nothing         -> an unverified estimate; contributes 0 to the path
+       5. nothing         -> an unverified estimate; contributes 0 to the path
                              and leaves the load at RATED. Never throws, never
-                             invents a number. */
+                             invents a number.
+
+     Step 1 is the 2026-08-07 fix for final-review finding 4. `userEdited: true`
+     was stamped on the whole RESOLVED object -- a snapshot of that day's table
+     the user never typed -- and this function then returned that snapshot
+     forever regardless of seedRev. Editing any one field therefore opted the
+     item out of every future table correction silently: anyone who had touched
+     a belt field before the belt fix would never have received it.
+
+     Step 2 has to stay, and it is not dead weight. Inventories stored before
+     this change carry a bare `userEdited: true` with no key list, and those
+     numbers are real measurements. Re-resolving them per-field would mean
+     deciding on the user's behalf which of their own values to discard, which
+     is the data loss this finding is about, through the other door. There is
+     no migration; legacy items simply keep the old rule until they are next
+     edited, at which point they gain a key list naturally. */
   function resolveGearDims(it) {
     if (!it) return { source: "estimated", verified: false };
     var d = it.dims;
+    if (d && Array.isArray(d.userEditedKeys)) {
+      var base = assign(seedDimsFor(it.brand, it.name), {});
+      d.userEditedKeys.forEach(function (k) {
+        if (Object.prototype.hasOwnProperty.call(d, k)) base[k] = d[k];
+        else delete base[k];
+      });
+      /* A pinned field is something the user measured, so the object says so.
+         With every pin cleared there is nothing left that anyone measured, and
+         the table's own provenance is the honest answer. */
+      if (d.userEditedKeys.length) {
+        base.source = "measured"; base.verified = true;
+      }
+      base.userEdited = true;
+      base.userEditedKeys = d.userEditedKeys.slice();
+      return base;
+    }
     if (d && d.userEdited) return d;
     if (d && d.seedRev === GEAR_DIMS_REV) return d;
     return seedDimsFor(it.brand, it.name);
@@ -3756,24 +3807,45 @@
      raw === "" means the field was cleared: the key is DELETED (never stored
      as undefined/NaN), and clearing still counts as an edit -- the user
      telling the app "this number is wrong" is itself information, so the
-     provenance flags are still stamped.
+     provenance flags are still stamped. Clearing also UNPINS the field, which
+     is what makes CLAUDE.md's documented escape hatch ("clear the field in the
+     GEAR tab to fall back to the table") actually work; it never did while
+     pinning was wholesale. To say "my unit genuinely has no channel", type 0 --
+     zero is a legitimate dimension (Harambe|Rods carries seriesIn: 0).
 
      A non-empty raw that is not a finite number is REJECTED: the edit is
      not applied, and the input's contents come back unchanged (still a new
      object, still no mutation, but no provenance flags are stamped either --
-     nothing was actually edited). */
+     nothing was actually edited). A NEGATIVE number is rejected the same way
+     (finding 5): both band editors already refuse <= 0, and a negative length
+     stamped source:"measured", verified:true is a physical impossibility
+     presented as a measurement. Zero stays accepted.
+
+     `userEditedKeys` is the set of fields the user has actually touched. It is
+     what resolveGearDims pins -- see the resolution order above for why the
+     whole object must not be. */
   function applyGearDimEdit(dims, key, raw) {
     var d = dims || {};
+    var pinned = Array.isArray(d.userEditedKeys) ? d.userEditedKeys.slice() : [];
+    function withPin(o, on) {
+      var i = pinned.indexOf(key);
+      if (on && i < 0) pinned.push(key);
+      if (!on && i >= 0) pinned.splice(i, 1);
+      o.userEditedKeys = pinned;
+      return o;
+    }
     if (raw === "") {
       var cleared = assign(d, {});
       delete cleared[key];
-      return assign(cleared, { source: "measured", verified: true, userEdited: true });
+      return withPin(
+        assign(cleared, { source: "measured", verified: true, userEdited: true }), false);
     }
     var v = Number(raw);
-    if (!isFinite(v)) return assign(d, {});
+    if (!isFinite(v) || v < 0) return assign(d, {});
     var edited = assign(d, {});
     edited[key] = v;
-    return assign(edited, { source: "measured", verified: true, userEdited: true });
+    return withPin(
+      assign(edited, { source: "measured", verified: true, userEdited: true }), true);
   }
 
   /* ====================================================================
