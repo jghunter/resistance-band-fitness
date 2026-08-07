@@ -15,6 +15,8 @@ import {
   SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
   saveCustomProgram, deleteCustomProgram, getCustomPrograms, mergeCustomPrograms,
+  setCustomPrograms, getCustomProgramTombstones, setCustomProgramTombstones,
+  resolveProgIdx,
   getSessionEx, effSplitId, progNativeSplitId, splitsReg,
   splitScheduleCheck, weekdayMapFor,
   focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
@@ -32,7 +34,8 @@ import {
 import RBTS_PHASE1 from './phase1.js'
 import RBTS_REPORTS from './reports.js'
 import { extractInventory } from './backup.js'
-import { unwrapMeta, reconcileBandGeom, reconcileProfiles } from './metaReconcile.js'
+import { unwrapMeta, reconcileBandGeom, reconcileProfiles,
+         unwrapCustomPrograms, reconcileCustomPrograms } from './metaReconcile.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL DATE HELPER — avoid toISOString() (UTC), which rolls the date forward
@@ -529,6 +532,17 @@ async function loadCustomExFromFirestore(uid) {
 async function saveCustomExToFirestore(uid, payload) {
   await setDoc(doc(db, 'users', uid, 'meta', 'customExercises'), payload)
 }
+/* Custom programs. NOT last-write-wins like the three keys around it -- union
+   by id with tombstones, because a whole-document rule silently deletes a
+   program authored on the other device between syncs. reconcileCustomPrograms
+   in metaReconcile.js owns and documents that policy. */
+async function loadCustomProgramsFromFirestore(uid) {
+  const d = await getDoc(doc(db, 'users', uid, 'meta', 'customPrograms'))
+  return d.exists() ? d.data() : null   // { data:{list,tombstones}, updatedAt }
+}
+async function saveCustomProgramsToFirestore(uid, payload) {
+  await setDoc(doc(db, 'users', uid, 'meta', 'customPrograms'), payload)
+}
 
 /* Band calibration and the training profile were localStorage-only, so a
    measurement typed on the iPad never reached the iPhone. Same
@@ -607,6 +621,28 @@ function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON
 const BAND_GEOM_KEY    = 'rbts_bandGeom'
 const BAND_GEOM_TS_KEY = 'rbts_bandGeomUpdatedAt'
 const PROFILES_TS_KEY  = 'rbts_profilesUpdatedAt'
+const CUSTOM_PROG_TS_KEY = 'rbts_customProgramsUpdatedAt'
+function localCustomProgramsUpdatedAt() {
+  try { return Number(localStorage.getItem(CUSTOM_PROG_TS_KEY) || 0) } catch { return 0 }
+}
+function stampCustomPrograms(ts) {
+  try { localStorage.setItem(CUSTOM_PROG_TS_KEY, String(ts)) } catch {}
+}
+/* Local edit -> stamp -> push, BEST EFFORT. Offline, the localStorage write
+   and the stamp have already happened by the time this runs, and the push is
+   retried by the sign-in reconcile. A failed push must never block the UI or
+   lose the local edit. */
+async function pushCustomPrograms(uid) {
+  const ts = Date.now()
+  stampCustomPrograms(ts)
+  if (!uid) return
+  try {
+    await saveCustomProgramsToFirestore(uid, {
+      data: { list: getCustomPrograms(), tombstones: getCustomProgramTombstones() },
+      updatedAt: ts,
+    })
+  } catch (e) { console.error('Custom program push failed:', e) }
+}
 /* Profiles travel in the backup file too — see the export builder. Read fresh
    rather than cached: a profile imported mid-session must be exportable. */
 function getLocalProfiles() {
@@ -2801,7 +2837,7 @@ function ProgramBuilder({ onSaved, onCancel }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PROGRAMS TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function ProgramsTab() {
+function ProgramsTab({ onProgramsChanged }) {
   const [pi, setPi]     = useState(0)
   const [week, setWeek] = useState(1)
   const [sKey, setSKey] = useState('C')
@@ -2813,11 +2849,17 @@ function ProgramsTab() {
   const removeCustom = () => {
     if (!prog.custom) return
     deleteCustomProgram(prog.id)
+    /* The tombstone is what makes the deletion PROPAGATE. Without it the other
+       device still holds the program, the union puts it back, and deleting is
+       an operation that silently undoes itself. */
+    setCustomProgramTombstones({ ...getCustomProgramTombstones(), [String(prog.id)]: Date.now() })
+    onProgramsChanged && onProgramsChanged()
     setPi(0); setWeek(1); setSKey(progSplitDays(PROGRAMS[0])[0]); setVer(v=>v+1)
   }
   if (building) {
     return <ProgramBuilder onCancel={()=>setBuilding(false)}
       onSaved={()=>{ setBuilding(false); const i = PROGRAMS.length-1
+        onProgramsChanged && onProgramsChanged()
         setPi(i); setWeek(1); setSKey(progSplitDays(PROGRAMS[i])[0]); setVer(v=>v+1) }} />
   }
 
@@ -3645,7 +3687,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user }) {
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user, onProgramsChanged }) {
   const uid = user ? user.uid : null
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
@@ -3750,6 +3792,10 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
            reload is needed before a newly arrived program appears in the
            picker; same posture as the profile below. */
         const mergedProgs = mergeCustomPrograms(state && state.rbts_customPrograms)
+        /* An imported program has to reach the cloud too, or it lives on this
+           device only and the next reconcile from another device merges it
+           away as absent. */
+        if (mergedProgs && onProgramsChanged) onProgramsChanged()
         // Inventory (gear + MY BANDS) is independent of the log merge.
         const invMsg = onImportInventory ? await onImportInventory(state) : ''
         /* Measurements ride along too — the two apps do not share an origin,
@@ -4398,6 +4444,11 @@ export default function App() {
   const [myBands, setMyBands]         = useState([])
   const [settings, setSettings]       = useState(() => getLocalSettings())
   const [customEx, setCustomEx]       = useState(() => getLocalCustomEx())
+  /* Set when a cloud adopt found the SELECTED program gone -- deleted on
+     another device. The index falls back to 0, and this is what stops that
+     being silent: a workout quietly derived from a different program is the
+     class of wrong answer this project keeps rooting out. */
+  const [programLostNotice, setProgramLostNotice] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
   const [logLoading, setLogLoading]   = useState(false)
   const [invLoaded, setInvLoaded]     = useState(false)
@@ -4487,6 +4538,41 @@ export default function App() {
           setMyBands(fsBands)
         } catch (e) { console.error('Error loading my bands:', e); setMyBands(getLocalMyBands()) }
         setInvLoaded(true)
+        /* Custom programs — union by id with tombstones (metaReconcile.js).
+           DELIBERATELY BEFORE the settings reconcile below: rbts_progIdx is a
+           bare array INDEX into PROGRAMS and custom programs sit at that
+           array's tail, so a progIdx arriving from the cloud must land against
+           a PROGRAMS that already reflects the cloud's program list. Running
+           settings first points the index at this device's old tail. */
+        try {
+          const remote = unwrapCustomPrograms(await loadCustomProgramsFromFirestore(u.uid))
+          const local  = { data: { list: getCustomPrograms(),
+                                   tombstones: getCustomProgramTombstones() },
+                           updatedAt: localCustomProgramsUpdatedAt() }
+          const decision = reconcileCustomPrograms(local, remote)
+          if (decision.action !== 'noop') {
+            /* Capture the ACTIVE program's identity before the rebuild, and
+               restore it after. Without this an adopt reorders the tail and
+               today's workout silently comes from a different program. */
+            const before = PROGRAMS.slice()
+            const beforeIdx = Number(getLocalSettings().progIdx) || 0
+            if (decision.action !== 'push-local') {
+              setCustomPrograms(decision.data.list)
+              setCustomProgramTombstones(decision.data.tombstones)
+            }
+            stampCustomPrograms(decision.updatedAt)
+            /* 'merged' means the result matches NEITHER side, so it has to be
+               written locally AND pushed -- adopting without pushing would
+               leave the other device permanently missing a program. */
+            if (decision.action === 'push-local' || decision.action === 'merged') {
+              await saveCustomProgramsToFirestore(u.uid,
+                { data: decision.data, updatedAt: decision.updatedAt })
+            }
+            const r = resolveProgIdx(before, PROGRAMS, beforeIdx)
+            if (r.lost && beforeIdx !== 0) setProgramLostNotice(true)
+            if (r.idx !== beforeIdx) persistSettings({ ...getLocalSettings(), progIdx: r.idx }, null)
+          }
+        } catch (e) { console.error('Custom program sync failed:', e) }
         // Settings (start date / schedule / program): last-write-wins vs cloud.
         try {
           const localS = getLocalSettings()
@@ -4770,6 +4856,13 @@ export default function App() {
       .catch(e => console.error('Save custom exercises failed:', e))
   }, [user])
 
+  /* Authoring or deleting a custom program: stamp locally, then push
+     best-effort. Signed out, the stamp alone is enough -- the next sign-in
+     reconcile sees a local list newer than the cloud's and pushes it. */
+  const handleProgramsChanged = useCallback(() => {
+    pushCustomPrograms(user?.uid)
+  }, [user])
+
   const handleAddCustomEx = useCallback((ex) => {
     const item = { ...ex, id: nextCustomExId(customEx), custom: true }
     const next = [...customEx, item]
@@ -4886,11 +4979,23 @@ export default function App() {
             Syncing workouts from cloud…
           </div>
         )}
+        {programLostNotice && (
+          <div style={{fontFamily:'monospace',fontSize:11,color:C.amber,marginBottom:12,
+            padding:'8px 12px',border:`1px solid ${C.amber}55`,borderRadius:4,
+            display:'flex',alignItems:'center',gap:10}}>
+            <span style={{flex:1}}>
+              THE PROGRAM YOU HAD SELECTED WAS DELETED ON ANOTHER DEVICE — SWITCHED TO THE FIRST PROGRAM.
+              CHECK THE PROGRAMS TAB BEFORE YOU TRAIN.
+            </span>
+            <button onClick={()=>setProgramLostNotice(false)}
+              style={{...btn(false,C.amber),fontSize:9,padding:'3px 8px'}}>DISMISS</button>
+          </div>
+        )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user}/>}
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user} onProgramsChanged={handleProgramsChanged}/>}
         {tab==='strength' && <StrengthTab log={log}/>}
         {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
-        {tab==='programs' && <ProgramsTab/>}
+        {tab==='programs' && <ProgramsTab onProgramsChanged={handleProgramsChanged}/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
         {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear} user={user}/>}
       </div>

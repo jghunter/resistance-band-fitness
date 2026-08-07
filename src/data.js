@@ -1400,14 +1400,73 @@ export function setCustomPrograms(arr) {
   list.forEach(p => PROGRAMS.push(p));
   return list;
 }
+/* Deletion tombstones: { programId: deletedAtMs }. A GLOBAL key like the list
+   itself. Written on delete so a deletion can PROPAGATE between devices
+   instead of being undone by whichever one still holds the program -- see
+   reconcileCustomPrograms in metaReconcile.js for the full policy. */
+const CUSTOM_PROG_TOMB_KEY = "rbts_customProgramsTombstones";
+export function getCustomProgramTombstones() {
+  try { return JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem(CUSTOM_PROG_TOMB_KEY)) || "{}"); }
+  catch (e) { return {}; }
+}
+export function setCustomProgramTombstones(map) {
+  const m = (map && typeof map === "object") ? map : {};
+  try { localStorage.setItem(CUSTOM_PROG_TOMB_KEY, JSON.stringify(m)); } catch (e) {}
+  return m;
+}
+
 /* Additive: keep what this device has, add what the file brings, FILE WINS on
-   a shared id. Adding a definition can never destroy one, so no confirm. */
+   a shared id. Adding a definition can never destroy one, so no confirm.
+
+   TOMBSTONE-AWARE since 2026-08-07. Without this, importing a backup taken
+   BEFORE a deletion resurrects the deleted program -- the exact failure the
+   tombstone exists to prevent, arriving through the other door. The import
+   path and the sync path have to agree about what "deleted" means. */
 export function mergeCustomPrograms(incoming) {
   if (!Array.isArray(incoming) || !incoming.length) return null;
+  const tombs = getCustomProgramTombstones();
+  const fresh = incoming.filter(p => p && p.id != null && !(String(p.id) in tombs));
+  if (!fresh.length) return null;
   const byId = {};
   getCustomPrograms().forEach(p => { if (p && p.id != null) byId[p.id] = p; });
-  incoming.forEach(p => { if (p && p.id != null) byId[p.id] = p; });
+  fresh.forEach(p => { byId[p.id] = p; });
   return setCustomPrograms(Object.keys(byId).map(k => byId[k]));
+}
+
+/* WHICH PROGRAM IS ACTIVE, across a rebuild of PROGRAMS.
+
+   rbts_progIdx is a BARE ARRAY INDEX into PROGRAMS (`PROGRAMS[safePi]`) and
+   custom programs are appended to that array's tail at load. The index is
+   already synced through the settings document while the list it indexes was
+   not, so adopting a different custom list silently re-points it -- the
+   scheduler then derives sessions from a different program with nothing on
+   screen saying so.
+
+   Chosen fix (Option 1 of the spec): re-resolve by ID across the rebuild.
+   Storing the active program by id instead of index is the correct end state
+   and matches the band-id stability rule, but rbts_progIdx is read in BOTH
+   apps, rides the HTML export payload and is already synced -- so it is a
+   settings-schema migration with a mixed-version window, deferred to its own
+   work. This function is where that later change would land, in ONE place
+   rather than five call sites.
+
+   Returns { idx, lost }. `lost` true means the program that was selected is
+   GONE (deleted on another device); the caller falls back to index 0 and must
+   SAY so rather than silently switching. Every hostile input degrades to
+   { idx: 0, lost: true }; nothing here throws. */
+export function resolveProgIdx(prevPrograms, nextPrograms, prevIdx) {
+  const bad = { idx: 0, lost: true };
+  if (!Array.isArray(prevPrograms) || !Array.isArray(nextPrograms)) return bad;
+  /* Number, not a coerced string: an imported or synced settings document
+     hands back "2", and the same finitePos discipline the load model uses
+     applies -- a value that is not really a number is not really a choice. */
+  if (typeof prevIdx !== "number" || !isFinite(prevIdx) ||
+      prevIdx < 0 || prevIdx >= prevPrograms.length) return bad;
+  const active = prevPrograms[prevIdx];
+  if (!active || active.id == null) return bad;
+  const at = nextPrograms.findIndex(p => p && String(p.id) === String(active.id));
+  if (at < 0) return bad;
+  return { idx: at, lost: false };
 }
 export function deleteCustomProgram(id) {
   const kept = getCustomPrograms().filter(p => p.id !== id);

@@ -111,3 +111,116 @@ export function reconcileProfiles(local, remote, now = Date.now) {
   return reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0, now,
                        { unstampedIsSeed: true })
 }
+
+/* ====================================================================
+   CUSTOM PROGRAMS: union by id, with tombstones  (2026-08-07)
+   ====================================================================
+   Spec: docs/superpowers/specs/2026-08-07-custom-programs-firestore-sync-design.md
+
+   The three keys above are whole-document last-write-wins. This one is NOT,
+   and the difference is deliberate. Greg's own failure case, which killed the
+   simpler policy:
+
+     Author *5 on the desktop. Author *6 on the phone while the desktop is
+     closed. The phone's stamp is newer, so its list -- which never contained
+     *5 -- becomes the cloud's, and *5 is gone from BOTH on the desktop's next
+     sync.
+
+   That is silent data loss on a key whose only other copy is a backup file
+   someone has to remember to take. rbts_customPrograms had no backup path at
+   all until 2026-08-07; adopting a policy that can delete an entry would give
+   back with one hand what that change took away with the other.
+
+   WHY THIS NEEDS NO PER-PROGRAM TIMESTAMPS. Union-by-id normally has to
+   settle "both sides hold id X with different content". That case cannot
+   arise here, and it is a fact about the current code rather than an
+   assumption about behaviour:
+
+     - ids are `"c" + Date.now()` in both apps, assigned once at creation
+     - there is NO EDIT PATH. saveCustomProgram only ever appends;
+       deleteCustomProgram only ever removes. Nothing rewrites a program.
+
+   So a given id's content is IMMUTABLE once written, and a tombstone can win
+   for its id unconditionally. If an edit path is ever added, this comment is
+   the thing that has to change first: per-program stamps become required. */
+
+/** Normalize a customPrograms document into { data:{list,tombstones}, updatedAt }.
+ *  Accepts the same three shapes unwrapMeta does, plus a wrapped document
+ *  written before tombstones existed -- whose missing map must read as EMPTY
+ *  at timestamp 0, never as undefined, or a legacy document outranks freshly
+ *  stamped work exactly as it would for the keys above. */
+export function unwrapCustomPrograms(payload) {
+  const m = unwrapMeta(payload)
+  const d = m.data
+  const list = Array.isArray(d) ? d : (Array.isArray(d && d.list) ? d.list : [])
+  const tomb = (d && !Array.isArray(d) && d.tombstones && typeof d.tombstones === 'object')
+    ? d.tombstones : {}
+  return { data: { list, tombstones: tomb }, updatedAt: m.updatedAt || 0 }
+}
+
+/** Union both lists by id, drop anything either side has tombstoned, union the
+ *  tombstones keeping the later timestamp per id.
+ *
+ *  Returns the same decision shape as reconcileMeta -- 'noop' / 'push-local' /
+ *  'adopt-remote' -- PLUS a fourth action this policy needs and that one does
+ *  not: 'merged'. A union can produce a result matching NEITHER side, and that
+ *  result has to be both written locally AND pushed. Returning 'adopt-remote'
+ *  for it would silently skip the push and leave the other device permanently
+ *  missing a program, which is the precise failure this whole policy exists to
+ *  prevent.
+ *
+ *  now() is called ONLY for 'merged'. Re-stamping a result that equals one
+ *  side intact would make every sign-in look like an edit, and two devices
+ *  doing that to each other never settle. */
+export function reconcileCustomPrograms(local, remote, now = Date.now) {
+  const L = unwrapCustomPrograms(local)
+  const R = unwrapCustomPrograms(remote)
+
+  const tombstones = {}
+  for (const src of [L.data.tombstones, R.data.tombstones]) {
+    for (const id of Object.keys(src || {})) {
+      const t = src[id]
+      if (!(id in tombstones) || t > tombstones[id]) tombstones[id] = t
+    }
+  }
+
+  /* Object.create(null): a program id is user-influenced data that arrives
+     from Firestore and from imported backups, so "constructor" or "__proto__"
+     must be answered by THIS map and not by Object.prototype. */
+  const byId = Object.create(null)
+  const order = []
+  for (const src of [L.data.list, R.data.list]) {
+    for (const p of (src || [])) {
+      if (!p || p.id == null) continue
+      const id = String(p.id)
+      if (id in tombstones) continue          // deleted anywhere = deleted
+      if (!(id in byId)) order.push(id)
+      byId[id] = p                            // content is immutable per id
+    }
+  }
+  const list = order.map(id => byId[id])
+  const data = { list, tombstones }
+
+  const same = (a, b) =>
+    JSON.stringify((a.list || []).map(p => p.id).slice().sort()) ===
+      JSON.stringify((b.list || []).map(p => p.id).slice().sort()) &&
+    JSON.stringify(a.tombstones || {}) === JSON.stringify(b.tombstones || {})
+
+  const matchesLocal  = same(data, L.data)
+  const matchesRemote = same(data, R.data)
+
+  if (matchesLocal && matchesRemote) {
+    /* Both sides already agree. Nothing to write anywhere -- and critically,
+       no re-stamp: an unconditional now() here is how two devices would push
+       to each other forever. */
+    if (!list.length && !Object.keys(tombstones).length) return { action: 'noop' }
+    return { action: 'noop' }
+  }
+  if (matchesRemote) {
+    return { action: 'adopt-remote', data, updatedAt: R.updatedAt }
+  }
+  if (matchesLocal) {
+    return { action: 'push-local', data, updatedAt: L.updatedAt || now() }
+  }
+  return { action: 'merged', data, updatedAt: now() }
+}
