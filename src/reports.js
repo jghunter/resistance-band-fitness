@@ -483,12 +483,20 @@
   /* Total inches this gear set adds to (+) or removes from (-) the stretch the
      band must cover. Mirrors gearPathDeltaIn in fitness_app.html; kept here so
      the module stays self-contained and testable. */
-  function gearPathDelta(gearIds, gearOf) {
+  function gearPathDelta(gearIds, gearOf, opening) {
     if (!gearIds || !gearIds.length || !gearOf) return 0;
     return gearIds.reduce(function (a, id) {
       var g = gearOf(id);
       if (!g) return a;
       var d = resolveGearDims(g) || {}, t = g.type;
+      /* An ADJUSTABLE item's inline length is whichever stamped position was
+         hooked. With no position chosen this contributes NOTHING -- which is
+         a silent zero, and a silent zero on a 26in strap is the belt bug in a
+         smaller coat. This function stays a pure sum on purpose; it is
+         effectiveLoad that REFUSES, via gearAdjustableUnset, before it ever
+         gets here. Do not "fix" the zero by picking a representative value. */
+      var adj = gearOpeningSeriesIn(g, opening);
+      if (adj != null) return a - adj;
       if (t === "footplate") return a + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
       if (t === "bar")       return a - (d.hookOffsetIn || 0);
       if (t === "handle" || t === "anchor") return a - (d.seriesIn || 0);
@@ -499,6 +507,83 @@
       if (t === "belt")      return a;
       return a + 2 * (d.thicknessIn || 0) - (d.seriesIn || 0);
     }, 0);
+  }
+
+  /* ---- adjustable gear ---------------------------------------------------
+     Some gear has no single inline length: the HeavyDutyBar X Straps carry
+     SEVEN stamped positions spanning 3.94in to 26.38in, and which one is
+     hooked is a per-exercise choice, not a property of the item. A table can
+     hold the options; only the log can hold the answer.
+
+     The whole discipline here is that an UNANSWERED choice degrades the load
+     rather than defaulting. A missing dimension that quietly reads as zero is
+     precisely how a belt's 40in waist circumference produced a confident 0 lb
+     on every belt lift for three weeks. */
+
+  /* The positions an item offers, numbered 1..n AS STAMPED on the item --
+     not 0-based, because the number the user reads off the strap is the
+     number they will look for on screen. Empty for everything else.
+
+     Reads through resolveGearDims, so a PWA item that arrived from Firestore
+     with no `dims` at all resolves its options from the table by brand|name
+     exactly as a seeded HTML item does. */
+  function gearOpeningOptions(it) {
+    if (!it) return [];
+    var d = resolveGearDims(it) || {};
+    var inch = d.seriesOptionsIn;
+    if (!Array.isArray(inch) || !inch.length) return [];
+    var cm = Array.isArray(d.seriesOptionsCm) ? d.seriesOptionsCm : [];
+    var out = [];
+    for (var i = 0; i < inch.length; i++) {
+      if (!finitePos(inch[i])) continue;
+      out.push({ n: i + 1, seriesIn: inch[i],
+                 seriesCm: finitePos(cm[i]) ? cm[i] : null });
+    }
+    return out;
+  }
+
+  function gearIsAdjustable(it) {
+    return gearOpeningOptions(it).length > 0;
+  }
+
+  /* The inline length of ONE chosen position, or null.
+
+     Strict === against the option's own `n` is doing real work: it refuses
+     the "3" an imported log hands back (isFinite("3") is true), a fractional
+     3.5, a 0 and an out-of-range 9 -- all without a separate guard. A
+     non-adjustable item has no position to price and returns null, which is
+     what lets gearPathDelta ask every item unconditionally. */
+  function gearOpeningSeriesIn(it, n) {
+    var opts = gearOpeningOptions(it);
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].n === n) return opts[i].seriesIn;
+    }
+    return null;
+  }
+
+  /* The first item in this rig that is adjustable and has NO usable position
+     chosen, returned BY IDENTITY so a caller can name it on screen. null when
+     every adjustable item has an answer, or when there are none.
+
+     This is the gate effectiveLoad degrades on. It is deliberately separate
+     from gearPathDelta: the sum must stay a sum, and the refusal must be a
+     refusal, or the two get confused the way a zero-length belt once was. */
+  function gearAdjustableUnset(gearIds, gearOf, opening) {
+    if (!gearIds || !gearIds.length || !gearOf) return null;
+    for (var i = 0; i < gearIds.length; i++) {
+      var g = gearOf(gearIds[i]);
+      if (!g || !gearIsAdjustable(g)) continue;
+      if (gearOpeningSeriesIn(g, opening) == null) return g;
+    }
+    return null;
+  }
+
+  /* Is there anything adjustable in this rig at all? -- i.e. should a picker
+     be shown, and can an opening mean anything here. Expressed through
+     gearAdjustableUnset with NO opening supplied, so the two can never
+     disagree about what counts as adjustable. */
+  function gearHasAdjustable(gearIds, gearOf) {
+    return gearAdjustableUnset(gearIds, gearOf, undefined) !== null;
   }
 
   /* ---- belt / footplate band path ---------------------------------------
@@ -753,6 +838,29 @@
     if (!finitePos(from) || !finitePos(to)) return null;
     var h = from + (to - from) * rule.frac + (rule.plusIn || 0);
     return finitePos(h) ? h : null;
+  }
+
+  /* The same default, WITHDRAWN when something hangs inline below the grip.
+
+     beltAttachDefault has withdrawn the Harambe HIP landmark since 2026-08-03
+     whenever a BELT_EXTENDERS item is in the rig, because a rope or strap
+     hangs the attachment lower by an adjustable amount no fixed landmark can
+     express. The plate/grip default has exactly the same exposure and had no
+     such guard: a table height that is silently wrong yields a plausible
+     number instead of a degradation, which is the failure mode this whole
+     model exists to remove.
+
+     Greg's ruling 2026-08-07. Both apps' pickers and effectiveLoad call THIS,
+     never plateGripDefault directly, so the engine and the seeded field can
+     never disagree about whether a default applies. plateGripDefault stays
+     exported: it is the pure exercise+body rule, and the tests pin it. */
+  function plateGripDefaultFor(exId, body, gearIds, gearOf) {
+    if (gearIds && gearIds.length && gearOf) {
+      for (var i = 0; i < gearIds.length; i++) {
+        if (beltSlackens(gearOf(gearIds[i]))) return null;
+      }
+    }
+    return plateGripDefault(exId, body);
   }
 
   /* The day the plate/grip path shipped. Stamps are frozen at save time, so a
@@ -1022,7 +1130,12 @@
        is a belt. */
     if (plateItem) {
       var top = plateTopSpan(gearIds, ctx.gearOf);
-      var gripDefault = beltOn ? null : plateGripDefault(o.exId, ctx.body);
+      /* plateGripDefaultFor, not plateGripDefault: an inline extender hangs
+         the grip lower than any table height describes, so the default is
+         withdrawn and the user types the height instead. Same rule
+         beltAttachDefault already applies on the belt side. */
+      var gripDefault = beltOn ? null
+                        : plateGripDefaultFor(o.exId, ctx.body, gearIds, ctx.gearOf);
       var knownAttach = beltOn || gripDefault != null || top.kind === "bar";
       if (knownAttach) {
       /* Wording only. The arithmetic below is one path; a reader looking at a
@@ -1173,7 +1286,24 @@
     }
 
     /* ---- reference-strain path: unchanged for every other exercise ------ */
-    var delta = gearPathDelta(gearIds, ctx.gearOf);
+    /* An ADJUSTABLE item with no position chosen (2026-08-07). This path is
+       the only one that consults gearPathDelta, and there an unanswered
+       choice contributes a silent 0 -- on the X Straps, up to 26.38in of
+       inline length priced as none at all. The absolute-stretch path above
+       deliberately does NOT check this: it never calls gearPathDelta, and the
+       height the user typed already accounts for whatever hangs inline (the
+       model terminates AT THE BAND -- Greg, 2026-08-02).
+
+       Degrades the WHOLE stack, like every other refusal in this function: a
+       partial sum over the bands whose geometry IS describable would still
+       stamp a provenance on a setup the model cannot describe. */
+    var unsetAdj = gearAdjustableUnset(gearIds, ctx.gearOf, o.opening);
+    if (unsetAdj) {
+      out.basis = "adjustable gear with no opening set: " +
+                  ((unsetAdj.brand ? unsetAdj.brand + " " : "") + (unsetAdj.name || "item"));
+      return out;
+    }
+    var delta = gearPathDelta(gearIds, ctx.gearOf, o.opening);
     var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0, slack = false;
     var minStrainR = Infinity, maxStrainR = 0;
 
@@ -1317,7 +1447,7 @@
      its own basis rather than a number borrowed from a different model.
      MEASURED and MODELED share a tier: both are real loads on the same scale,
      and picking by provenance there would report a lighter set as the top. */
-  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId) {
+  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
@@ -1325,7 +1455,7 @@
       if (!bands.length) return;
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
-                              exId: exId });
+                              exId: exId, opening: opening });
       var tier = e.provenance === "RATED" ? 0 : 1;
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
@@ -1376,7 +1506,7 @@
      Note the persisted stamp writes `attachIn`, while the live effectiveLoad
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
-  function stampLoad(exercises, gearMap, ctx, attachMap) {
+  function stampLoad(exercises, gearMap, ctx, attachMap, openingMap) {
     if (!ctx || typeof ctx.bandOf !== "function") return undefined;
     var out = {}, any = false;
     Object.keys(exercises || {}).forEach(function (exId) {
@@ -1386,12 +1516,22 @@
          save, including as {} or with a null per exercise, so isFinite would
          have passed null straight through to effectiveLoad as a "height". */
       var attachIn = (attachMap && finitePos(attachMap[exId])) ? attachMap[exId] : undefined;
-      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId);
+      /* Passed through RAW, not guarded here: gearOpeningSeriesIn's strict
+         === already refuses a "3", a 3.5 and an out-of-range 9, and a value
+         this rejects must DEGRADE loudly rather than be quietly dropped to
+         undefined and degrade for a different stated reason. */
+      var openingN = openingMap ? openingMap[exId] : undefined;
+      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN);
       if (!best) return;
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
          both under the same name. See the note above. */
       var isBelt = best.attachHeightIn != null;
+      /* Frozen only when it actually PRICED something: a value naming no real
+         position, or a rig with nothing adjustable in it, must not leave a
+         number on the permanent record implying an opening was in play. */
+      var openingUsed = gearHasAdjustable(gearIds, ctx.gearOf) &&
+                        gearAdjustableUnset(gearIds, ctx.gearOf, openingN) === null;
       out[exId] = { lb: Math.round(best.lb * 10) / 10, rated: Math.round(best.rated * 10) / 10,
                     ratio: Math.round(best.ratio * 1000) / 1000,
                     provenance: best.provenance,
@@ -1399,6 +1539,7 @@
                     stretchIn: isBelt ? best.stretchIn : undefined,
                     doubled: best.doubled || undefined,
                     attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
+                    openingN: openingUsed ? openingN : undefined,
                     belowRated: best.belowRated || undefined,
                     romBlind: best.romBlind || undefined };
     });
@@ -1516,8 +1657,24 @@
       return out;
     }
 
-    var da = gearPathDelta(prevGearIds, ctx.gearOf);
-    var db = gearPathDelta(nowGearIds, ctx.gearOf);
+    /* An adjustable item with no position chosen on EITHER side. gearPathDelta
+       would price it at zero inline length and the banner would quote a
+       confident number for a strap that spans 3.94in to 26.38in depending on
+       one unanswered question. The banner's existing discipline applies: say
+       the setup changed, refuse to quantify it, name the reason. */
+    var adjPrev = gearAdjustableUnset(prevGearIds, ctx.gearOf, o.opening);
+    var adjNow  = gearAdjustableUnset(nowGearIds, ctx.gearOf, o.opening);
+    var adjBad = adjPrev || adjNow;
+    if (adjBad) {
+      out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      out.reason = "no opening is set for the " +
+                   ((adjBad.brand ? adjBad.brand + " " : "") + (adjBad.name || "item")) +
+                   ", so its inline length is unknown";
+      return out;
+    }
+
+    var da = gearPathDelta(prevGearIds, ctx.gearOf, o.opening);
+    var db = gearPathDelta(nowGearIds, ctx.gearOf, o.opening);
     out.mode = "path";
     out.deltaIn = db - da;
     /* Positive delta = more stretch = heavier at the same body position. */
@@ -3471,6 +3628,33 @@
     "HeavyDutyBar|Travel Platform": { thicknessIn: 1.625, lengthIn: 19.75, widthIn: 11.1875,
                                   channelIn: 0.875, bandSpanIn: 20,
                                   source: "measured", verified: true },
+    /* ADJUSTABLE. A pair, 76cm overall, a hook at one end and SEVEN numbered
+       positions stamped on the strap, #1 nearest the hook. Which position you
+       hook is a CHOICE, so there is deliberately no plain `seriesIn`: one
+       representative value would be confidently wrong for six of the seven
+       positions, and wrong in the direction that understates stretch and so
+       understates load.
+
+       `openingsFromTopCm` is Greg's raw tape reading at each stamp and
+       `seriesOptionsCm[i]` is exactly `76 - openingsFromTopCm[i]`. The gaps
+       are 10/9/9/9/9/11, NOT the even 9 they nearly are -- the measurements
+       were KEPT rather than normalised, and test_adjustable_gear.cjs pins
+       that so nobody tidies them later.
+
+       HeavyDutyBar is a Netherlands metric vendor, so cm is the measured
+       truth and inches are the conversion, same posture as the bands' resKg.
+
+       NOT additive with a rope or a handle in series. Nothing has measured a
+       strap+rope assembly, and the Harambe rods precedent (6in rod + 5in rope
+       measures 2.75in, not 11in) says an assumed sum would overstate the
+       shortening badly. Greg's ruling 2026-08-07: record what was measured,
+       refuse to invent the rest. */
+    "HeavyDutyBar|X Straps":    { overallCm: 76,
+                                  openingsFromTopCm: [66, 55, 46, 37, 28, 19, 9],
+                                  seriesOptionsCm: [10, 21, 30, 39, 48, 57, 67],
+                                  seriesOptionsIn: [3.94, 8.27, 11.81, 15.35, 18.90, 22.44, 26.38],
+                                  source: "measured", verified: true,
+                                  note: "a pair; 7 stamped positions, #1 nearest the hook. Inline length = 76cm - opening. Usable with the belt, a bar, handles or a footplate, and in combination. NOT additive with a rope or handle -- no combination has been measured." },
     "HeavyDutyBar|Elevators":   { thicknessIn: 0.4375, source: "measured", verified: true,
                                   maxStackIn: 4,
                                   note: "7/16in each, NOT the 2in that was estimated — the panel's '+18% for a 2in elevator' does not apply to these. Used on top of the Qdeck. They stack, but Greg caps a stack at 4in total (that is a limit, not the height of two)." },
@@ -3514,9 +3698,28 @@
     return out;
   }
 
+  /* Does this item resolve to any real dimension figure?
+
+     THROUGH resolveGearDims, not `it.dims` (fixed 2026-08-07). Both apps
+     carried their own copy reading the raw field, so a hand-added item whose
+     brand|name matches a table key showed NO DIMS in the GEAR tab while the
+     engine cheerfully resolved real dimensions off that same key and priced
+     loads with them. Exactly the divergence class that got gearPathDeltaIn
+     deleted: a second reader of the same fact, disagreeing in silence.
+
+     An adjustable item counts, even with no scalar field of its own -- seven
+     stamped positions ARE its dimensions. */
+  function gearHasDims(it) {
+    if (!it) return false;
+    var d = resolveGearDims(it);
+    if (!d) return false;
+    if (Array.isArray(d.seriesOptionsIn) && d.seriesOptionsIn.length) return true;
+    return GEAR_DIM_FIELDS.some(function (f) { return typeof d[f.k] === "number"; });
+  }
+
   function gearDimSource(it) {
-    var d = it && it.dims;
-    if (!d) return "none";
+    if (!it || !gearHasDims(it)) return "none";
+    var d = resolveGearDims(it);
     if (d.verified) return "measured";
     return d.source || "estimated";
   }
@@ -3807,6 +4010,11 @@
     bandGeomRestEdit: bandGeomRestEdit,
     bandGeomPointEdit: bandGeomPointEdit,
     gearPathDelta: gearPathDelta,
+    gearOpeningOptions: gearOpeningOptions,
+    gearIsAdjustable: gearIsAdjustable,
+    gearOpeningSeriesIn: gearOpeningSeriesIn,
+    gearAdjustableUnset: gearAdjustableUnset,
+    gearHasAdjustable: gearHasAdjustable,
     BODY_LANDMARKS: BODY_LANDMARKS,
     beltPlateOf: beltPlateOf,
     beltBeltPresent: beltBeltPresent,
@@ -3819,6 +4027,9 @@
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     plateGripDefault: plateGripDefault,
+    plateGripDefaultFor: plateGripDefaultFor,
+    beltSlackens: beltSlackens,
+    BELT_EXTENDERS: BELT_EXTENDERS,
     PLATE_GEOM_CUTOFF: PLATE_GEOM_CUTOFF,
     stampPredatesPlateGeom: stampPredatesPlateGeom,
     GEAR_DIMS: GEAR_DIMS,
@@ -3827,6 +4038,7 @@
     gearDimFieldsFor: gearDimFieldsFor,
     seedDimsFor: seedDimsFor,
     gearDimSource: gearDimSource,
+    gearHasDims: gearHasDims,
     resolveGearDims: resolveGearDims,
     applyGearDimEdit: applyGearDimEdit,
     gearDimsVerified: gearDimsVerified,

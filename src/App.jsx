@@ -14,7 +14,7 @@ import {
   sessionForIdx, weekForIdx, wpw,
   SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
-  saveCustomProgram, deleteCustomProgram,
+  saveCustomProgram, deleteCustomProgram, getCustomPrograms, mergeCustomPrograms,
   getSessionEx, effSplitId, progNativeSplitId, splitsReg,
   splitScheduleCheck, weekdayMapFor,
   focusForWeekSession, focusMuscleOf, orderSlotsByFocus,
@@ -1007,7 +1007,7 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1042,10 +1042,16 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
     if (!RBTS_REPORTS.beltAttachDefault) return
     const gearOf = id => byId[id]
     const lm = RBTS_REPORTS.beltAttachDefault(sel, gearOf)
+    /* plateGripDefaultFor, not plateGripDefault: something hanging inline
+       below the grip (a rope, the X Straps) puts the attachment at a height
+       no table entry describes, so the default is WITHDRAWN and the field
+       stays blank for the user to fill. Exactly what beltAttachDefault has
+       done on the belt side since 2026-08-03. The engine calls the same
+       function, so the seeded value and the computed one cannot disagree. */
     const h = lm
       ? bodyMeasureNum(BODY_MEASURE[lm])
       : (RBTS_REPORTS.beltPlateOf(sel, gearOf)
-          ? RBTS_REPORTS.plateGripDefault(exId, BODY_MEASURE) : null)
+          ? RBTS_REPORTS.plateGripDefaultFor(exId, BODY_MEASURE, sel, gearOf) : null)
     if (h == null) return                      // not measured: stay blank, say so
     ;(onAttachChange || (()=>{}))(h)
   }, [selKey, attachHeightIn])
@@ -1221,6 +1227,58 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
           </div>
         )
       })()}
+      {/* ── OPENING ─────────────────────────────────────────────────────────
+          Adjustable gear: an item whose inline length is a CHOICE. The
+          HeavyDutyBar X Straps carry seven numbered positions stamped on the
+          strap, #1 nearest the hook, spanning 3.94in to 26.38in — so no single
+          recorded length describes them and leaving it blank would price 26
+          inches of strap as zero.
+
+          Per EXERCISE, like ATTACH AT and for the same reason: the band and
+          the fold change between sets, where you hooked the strap does not.
+
+          Shown only when something adjustable is actually selected. With
+          nothing chosen the engine degrades to RATED and names the item, so
+          an unanswered picker is loud rather than silent. */}
+      {(() => {
+        const gearOf = id => byId[id]
+        if (!RBTS_REPORTS.gearHasAdjustable(sel, gearOf)) return null
+        const setOpening = onOpeningChange || (()=>{})
+        return (
+          <div style={{marginTop:6}}>
+            {sel.map(id => {
+              const g = byId[id]
+              const opts = g ? RBTS_REPORTS.gearOpeningOptions(g) : []
+              if (!opts.length) return null
+              return (
+                <div key={'op'+id}>
+                  <div style={lbl}>{g.name.toUpperCase()} · OPENING</div>
+                  <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
+                    {opts.map(o => (
+                      <button key={o.n}
+                        title={`Position ${o.n} — ${o.seriesIn} in (${o.seriesCm} cm) of inline length. Longer inline length means less band stretch, so a LIGHTER load.`}
+                        onClick={()=>setOpening(o.n)}
+                        style={{...btn(opening === o.n),fontSize:9,padding:'4px 8px'}}>
+                        #{o.n} · {o.seriesIn}&quot;
+                      </button>
+                    ))}
+                    {opening != null && (
+                      <button title="Clear the opening — the load falls back to the vendor midpoint"
+                        onClick={()=>setOpening(undefined)}
+                        style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            {RBTS_REPORTS.gearAdjustableUnset(sel, gearOf, opening) && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:3}}>
+                PICK THE POSITION YOU HOOKED — WITHOUT IT THE LOAD STAYS AT THE VENDOR MIDPOINT
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {open && (
         <div style={{
           position:'absolute',zIndex:300,top:'100%',left:0,marginTop:4,
@@ -1284,7 +1342,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, loadStamp, entryDate }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, loadStamp, entryDate }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -1441,7 +1499,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
           <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})} exId={id}
             bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
-            attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}/>
+            attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}
+            opening={opening} onOpeningChange={onOpeningChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -1580,7 +1639,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // which always passes exId) did not, so the number on screen
         // mid-workout could silently disagree with what got saved.
         const e = RBTS_REPORTS.bestSetLoad(
-          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id)
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id, opening)
         if (!e || e.lb == null) return null
         // The chip is not decoration: RATED is a vendor midpoint at an
         // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
@@ -1656,7 +1715,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange }) {
   const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
@@ -1682,6 +1741,10 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     if (attach && attach[String(id)] != null && onAttachChange) {
       const a = {...attach}; delete a[String(id)]; onAttachChange(a)
     }
+    // And the adjustable-gear opening.
+    if (opening && opening[String(id)] != null && onOpeningChange) {
+      const o = {...opening}; delete o[String(id)]; onOpeningChange(o)
+    }
   }
   function updateExGear(id, ids) {
     if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
@@ -1694,6 +1757,14 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     const next = {...(attach||{})}
     if (h == null) delete next[String(id)]; else next[String(id)] = h
     onAttachChange(next)
+  }
+  /* Which stamped position an adjustable item is hooked at — same shape and
+     lifecycle as the attach map above. */
+  function updateOpening(id, n) {
+    if (!onOpeningChange) return
+    const next = {...(opening||{})}
+    if (n == null) delete next[String(id)]; else next[String(id)] = n
+    onOpeningChange(next)
   }
 
   function getPrevSets(exerciseId) {
@@ -1732,6 +1803,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         onGearChange={ids=>updateExGear(id,ids)}
         attachHeightIn={(attach||{})[String(id)]}
         onAttachChange={h=>updateAttach(id,h)}
+        opening={(opening||{})[String(id)]}
+        onOpeningChange={n=>updateOpening(id,n)}
         entryDate={todayDate}
         loadStamp={savedLoad[String(id)]}/>
     )
@@ -1763,6 +1836,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           onGearChange={ids=>updateExGear(id,ids)}
           attachHeightIn={(attach||{})[String(id)]}
           onAttachChange={h=>updateAttach(id,h)}
+          opening={(opening||{})[String(id)]}
+          onOpeningChange={n=>updateOpening(id,n)}
           entryDate={todayDate}
           loadStamp={savedLoad[String(id)]}/>
       </div>
@@ -3061,6 +3136,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const [exLogs, setExLogs]       = useState({})
   const [gearLogs, setGearLogs]   = useState({})   // per-exercise equipment {exId: [gearItemId,...]}
   const [attachLogs, setAttachLogs] = useState({}) // per-exercise belt attach height {exId: heightIn}
+  const [openingLogs, setOpeningLogs] = useState({}) // per-exercise adjustable-gear position {exId: n}
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
@@ -3078,6 +3154,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          workout comes back with the picker blank and the next save stamps
          RATED over a belt-path figure. */
       setAttachLogs(existing?.attach ?? {})
+      setOpeningLogs(existing?.opening ?? {})
       setSaved(!!(existing?.completedAt))
     }
   }, [info.session, todayISO, log])
@@ -3104,12 +3181,18 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const h = (attachLogs||{})[id]
       if (h != null && isFinite(h)) cleanAttach[id] = h
     })
+    /* The adjustable-gear opening, scoped and guarded identically. */
+    const cleanOpening = {}
+    Object.keys(cleanEx).forEach(id => {
+      const n = (openingLogs||{})[id]
+      if (n != null && isFinite(n)) cleanOpening[id] = n
+    })
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
       splitId:effSplitId(info.prog),          // P4: which split produced this key
       schemaVersion:2,
-      exercises:cleanEx, gear:cleanGear, attach: cleanAttach,
+      exercises:cleanEx, gear:cleanGear, attach: cleanAttach, opening: cleanOpening,
       completedAt:new Date().toISOString(),
     }
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
@@ -3119,7 +3202,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
        bare number, effectiveLoad's is an options object -- three deliberately
        different shapes). */
     const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
-                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach)
+                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
+                           cleanOpening)
     if (load) entry.load = load
     onSaveEntry(entry)
     setSaved(true)
@@ -3226,6 +3310,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               gearInv={gearInv} gear={gearLogs}
               onGearChange={g=>{setGearLogs(g);setSaved(false);}}
               attach={attachLogs}
+              opening={openingLogs}
+              onOpeningChange={o=>{setOpeningLogs(o); setSaved(false)}}
               onAttachChange={a=>{setAttachLogs(a);setSaved(false);}}
               todayDate={todayISO} log={log}/>
           </div>
@@ -3285,6 +3371,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
      heights would still sit in the entry (they ride in via the spread below)
      while the load beside them said something else. */
   const [at, setAt] = useState(() => JSON.parse(JSON.stringify(entry.attach || {})))
+  /* The adjustable-gear opening, seeded from the entry for the same reason:
+     without its own state an edit would re-stamp every strap exercise as the
+     degraded RATED while the opening still sat in the entry beside it. */
+  const [op, setOp] = useState(() => JSON.parse(JSON.stringify(entry.opening || {})))
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
@@ -3380,6 +3470,12 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       const h = at[id]
       if (h != null && isFinite(h)) cleanAttach[id] = h
     })
+    /* The adjustable-gear opening, scoped identically. */
+    const cleanOpening = {}
+    Object.keys(ex).forEach(id => {
+      const n = op[id]
+      if (n != null && isFinite(n)) cleanOpening[id] = n
+    })
     /* Re-stamp load from the sets actually being saved. The freeze-at-save
        rule exists so a later band re-measurement can't rewrite what a past
        workout meant -- it does not apply here, because the user is
@@ -3388,10 +3484,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        the new sets can no longer produce a stamp (e.g. every band was
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
-                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach)
+                           makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
+                           cleanOpening)
     const updated = RBTS_REPORTS.applyLoadStamp(
       { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
-        editedAt: new Date().toISOString() },
+        opening: cleanOpening, editedAt: new Date().toISOString() },
       loadStamp)
     onSave(updated)
     onDone(true)
@@ -3426,7 +3523,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
             <GearPicker inv={gearInv} selected={gr[id]||[]} exId={id}
               onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}
               bands={setBandsOf(refSetOf(id))} doubled={!!refSetOf(id).doubled}
-              attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}/>
+              attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}
+              opening={op[id]}
+              onOpeningChange={n=>setOp(prev=>{const x={...prev}; if(n==null) delete x[id]; else x[id]=n; return x})}/>
           </div>
           {(sets||[]).map((s,i) => {
             const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
@@ -3592,6 +3691,18 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
       exportedAt: new Date().toISOString(),
       rbts_log: log,
       rbts_customExercises: getLocalCustomEx(),   // definitions travel with the log
+      /* A GLOBAL key that reached NO backup of any kind until 2026-08-07 --
+         not Firestore, not either app's export. Each app held its own copy on
+         its own origin, so clearing site data or iOS evicting PWA storage
+         destroyed the program builder's output with nothing to restore from,
+         and re-entering it by hand in both apps was the symptom.
+
+         Unconditional, unlike the omit-when-empty fields above: an empty
+         array here is harmless because the MERGE path is additive and never
+         clears. (rbts_customBands and rbts_hiddenBrands are deliberately
+         absent -- this app has no custom-band form and no brand manager, so
+         exporting them would write keys nothing here ever reads.) */
+      rbts_customPrograms: getCustomPrograms(),
       // Inventory only once it has actually loaded — an export taken during the
       // initial cloud sync would otherwise carry empty arrays, which import as
       // a deliberate inventory wipe on another device.
@@ -3634,6 +3745,11 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         // entries referencing ids ≥1000 (or 216/217) resolve to names.
         const customs = Array.isArray(state && state.rbts_customExercises) ? state.rbts_customExercises : []
         const addedEx = customs.length && onImportCustomEx ? onImportCustomEx(customs) : 0
+        /* Custom PROGRAMS merge by id, file wins — additive, so nothing this
+           device authored can be lost. PROGRAMS is read at module load, so a
+           reload is needed before a newly arrived program appears in the
+           picker; same posture as the profile below. */
+        const mergedProgs = mergeCustomPrograms(state && state.rbts_customPrograms)
         // Inventory (gear + MY BANDS) is independent of the log merge.
         const invMsg = onImportInventory ? await onImportInventory(state) : ''
         /* Measurements ride along too — the two apps do not share an origin,
@@ -3666,7 +3782,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           } catch { /* storage full: the rest of the import still stands */ }
         }
         if (!incoming) {
-          if (customs.length || invMsg || measMsg) {
+          if (customs.length || invMsg || measMsg || mergedProgs) {
             alert('No rbts_log in file.' +
               (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
               invMsg + measMsg)
@@ -3677,6 +3793,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         const res = await onMergeImport(incoming)
         alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
           (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
+          (mergedProgs ? ` Custom programs: ${mergedProgs.length} total — RELOAD to see them.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
           invMsg + measMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }

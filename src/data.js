@@ -1386,6 +1386,29 @@ export function saveCustomProgram(p) {
   try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(all)); } catch (e) {}
   PROGRAMS.push(p); return p;
 }
+/* Wholesale replace, live catalog rebuilt to match -- the import path's
+   entry point. rbts_customPrograms is a GLOBAL key that reached NO backup of
+   any kind until 2026-08-07: no Firestore copy and no line in either app's
+   export, so each app held its own copy on its own origin and clearing site
+   data destroyed it. Rebuilds rather than appends, so importing the same file
+   twice cannot leave two programs sharing an id. Mirrors fitness_app.html. */
+export function setCustomPrograms(arr) {
+  const list = Array.isArray(arr) ? arr : [];
+  try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(list)); } catch (e) {}
+  for (let i = PROGRAMS.length - 1; i >= 0; i--)
+    if (PROGRAMS[i].custom) PROGRAMS.splice(i, 1);
+  list.forEach(p => PROGRAMS.push(p));
+  return list;
+}
+/* Additive: keep what this device has, add what the file brings, FILE WINS on
+   a shared id. Adding a definition can never destroy one, so no confirm. */
+export function mergeCustomPrograms(incoming) {
+  if (!Array.isArray(incoming) || !incoming.length) return null;
+  const byId = {};
+  getCustomPrograms().forEach(p => { if (p && p.id != null) byId[p.id] = p; });
+  incoming.forEach(p => { if (p && p.id != null) byId[p.id] = p; });
+  return setCustomPrograms(Object.keys(byId).map(k => byId[k]));
+}
 export function deleteCustomProgram(id) {
   const kept = getCustomPrograms().filter(p => p.id !== id);
   try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(kept)); } catch (e) {}
