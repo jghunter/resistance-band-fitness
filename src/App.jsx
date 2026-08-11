@@ -1105,7 +1105,16 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
       const derCleared = clearedDerRef.current != null && clearedDerRef.current === derNow.heightIn
       const mayFill = !derCleared && (attachHeightIn == null ||
                       (lastDer.current != null && attachHeightIn === lastDer.current))
-      if (mayFill && attachHeightIn !== derNow.heightIn) setH(derNow.heightIn)
+      /* Resetting the cleared marker ON A WRITE is what stops a clear from
+         outliving the strap position it was made at. Without it: clear at #3,
+         move to #5 (fills H5), move back to #3 -- the marker still holds H3,
+         so the field KEEPS H5 while the strap sits at #3, a plausible number
+         describing the wrong rig. A clear itself never writes, so this cannot
+         undo one; a typed height still fails the lastDer test regardless. */
+      if (mayFill && attachHeightIn !== derNow.heightIn) {
+        setH(derNow.heightIn)
+        clearedDerRef.current = null
+      }
       lastDer.current = derNow.heightIn
       return
     }
@@ -1288,10 +1297,14 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
               </span>
               {attachHeightIn != null && (
                 <button title={derNow && attachHeightIn === derNow.heightIn
-                  ? "Clear the attachment height — the load falls back to the vendor midpoint. Stays cleared until the strap opening changes (a new derivation withdraws this one)."
+                  ? "Clear the attachment height — the load falls back to the vendor midpoint. Stays cleared while the strap stays where it is."
                   : "Clear the attachment height — the load falls back to the vendor midpoint"}
                   onClick={()=>{
-                    clearedDerRef.current = derNow ? derNow.heightIn : "none"
+                    /* null, not a sentinel: the marker is only ever read inside
+                       the derived branch, where it is compared against a real
+                       height, so a "nothing was derived" marker has no reader
+                       and would only imply a behaviour that does not exist. */
+                    clearedDerRef.current = derNow ? derNow.heightIn : null
                     setAttach(undefined)
                   }}
                   style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
