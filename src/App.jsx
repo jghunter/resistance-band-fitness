@@ -1085,40 +1085,31 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   /* A user pressing CLEAR on a DERIVABLE rig is a deliberate choice -- "an
      explicit height always wins: a choice the user made is never overridden
      by a table" applies to clearing as much as to typing. Without this ref,
-     the field goes empty for exactly one tick before mayFill (above) sees an
-     empty field and refills it on the same render -- CLEAR is inert. Records
-     the height that was derived AT THE MOMENT of the clear (or a sentinel
-     when nothing was derived yet); the effect below refuses to refill while
-     the live derivation still matches what was cleared. When the opening (or
-     strap) changes, the derivation no longer matches the recorded value and
-     seeding resumes on its own -- no separate "resume" logic needed. */
+     the field goes empty for exactly one tick before the seeding effect sees
+     an empty field and refills it on the same render -- CLEAR is inert.
+     Records the height that was derived AND actually cleared; the effect below
+     refuses to refill while the live derivation still matches it. When the
+     opening (or strap) changes, the derivation no longer matches the recorded
+     value and seeding resumes on its own -- no separate "resume" logic. */
   const clearedDerRef = useRef(null)
   useEffect(() => {
     if (!RBTS_REPORTS.beltAttachDefault) return
     const setH = onAttachChange || (()=>{})
-    /* A DERIVED height must follow a strap change and must never overwrite a
-       height the user typed. Resolved statelessly: we may write when the field
-       is empty, or when it still holds exactly the number we last derived. No
-       "was this derived" flag is stored, so there is no write path to get
-       wrong and nothing to migrate. */
-    if (derNow) {
-      const derCleared = clearedDerRef.current != null && clearedDerRef.current === derNow.heightIn
-      const mayFill = !derCleared && (attachHeightIn == null ||
-                      (lastDer.current != null && attachHeightIn === lastDer.current))
-      /* Resetting the cleared marker ON A WRITE is what stops a clear from
-         outliving the strap position it was made at. Without it: clear at #3,
-         move to #5 (fills H5), move back to #3 -- the marker still holds H3,
-         so the field KEEPS H5 while the strap sits at #3, a plausible number
-         describing the wrong rig. A clear itself never writes, so this cannot
-         undo one; a typed height still fails the lastDer test regardless. */
-      if (mayFill && attachHeightIn !== derNow.heightIn) {
-        setH(derNow.heightIn)
-        clearedDerRef.current = null
-      }
-      lastDer.current = derNow.heightIn
-      return
-    }
-    lastDer.current = null
+    /* The whole derived-path decision lives in attachSeedDecision, in
+       rbts_reports.js, where node can run it -- this component holds only the
+       refs and the setter. Logic left in here is untestable: the harness cannot
+       render React, and regex over source text proves nothing about a state
+       machine. That is how the CLEAR ordering defect survived a green suite. */
+    const dec = RBTS_REPORTS.attachSeedDecision({
+      attachIn: attachHeightIn,
+      derivedIn: derNow ? derNow.heightIn : null,
+      lastDerivedIn: lastDer.current,
+      clearedDerivedIn: clearedDerRef.current
+    })
+    lastDer.current = dec.lastDerivedIn
+    clearedDerRef.current = dec.clearedDerivedIn
+    if (dec.write != null) setH(dec.write)
+    if (derNow) return
     if (attachHeightIn != null) return
     const lm = RBTS_REPORTS.beltAttachDefault(sel, gearOf)
     /* plateGripDefaultFor, not plateGripDefault: something hanging inline
@@ -1300,11 +1291,12 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                   ? "Clear the attachment height — the load falls back to the vendor midpoint. Stays cleared while the strap stays where it is."
                   : "Clear the attachment height — the load falls back to the vendor midpoint"}
                   onClick={()=>{
-                    /* null, not a sentinel: the marker is only ever read inside
-                       the derived branch, where it is compared against a real
-                       height, so a "nothing was derived" marker has no reader
-                       and would only imply a behaviour that does not exist. */
-                    clearedDerRef.current = derNow ? derNow.heightIn : null
+                    /* Conditioned on what is ACTUALLY in the box, which is the
+                       same branch the tooltip above uses. Marking the derivation
+                       refused when the field held some OTHER height stranded it
+                       blank -- see attachClearMarker. */
+                    clearedDerRef.current = RBTS_REPORTS.attachClearMarker(
+                      attachHeightIn, derNow ? derNow.heightIn : null)
                     setAttach(undefined)
                   }}
                   style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>

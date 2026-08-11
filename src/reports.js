@@ -1081,6 +1081,88 @@
              seriesIn: seriesIn };
   }
 
+  /* WHICH HEIGHT THE ATTACH AT FIELD SHOULD HOLD -- the whole decision both
+     apps' seeding effects make on the derived path, in one place that node can
+     run. It lived inside two React components until 2026-08-10, where the only
+     coverage possible was regex over source text: six such assertions said the
+     wiring existed and could say nothing about the state machine, which is
+     exactly where a defect was sitting (see attachClearMarker below).
+
+     Three rules, and they are in tension, which is why the decision is worth
+     a name:
+
+       - a DERIVED height must FOLLOW the strap: move the strap and the number
+         moves with it, or the field describes the wrong rig;
+       - a height the USER typed is never overwritten -- "an explicit height
+         always wins: a choice the user made is never overridden by a table";
+       - a deliberate CLEAR sticks, and resumes when the strap moves.
+
+     Resolved statelessly, with no "was this derived" flag stored anywhere: we
+     may write when the field is EMPTY, or when it still holds exactly the
+     number we last derived. So there is no write path to get wrong and nothing
+     to migrate.
+
+     st: { attachIn, derivedIn, lastDerivedIn, clearedDerivedIn }
+     -> { write, lastDerivedIn, clearedDerivedIn }
+
+     `write` is the height to set, or null for "leave the field alone". null is
+     unambiguous here: derivedIn is a finitePos height whenever there is one at
+     all, so a real write is never null. The two returned markers are what the
+     caller stores back into its refs -- returning them rather than mutating
+     anything is what keeps this pure. */
+  function attachSeedDecision(st) {
+    var s = st || {};
+    var attachIn = s.attachIn;
+    var derivedIn = (s.derivedIn === undefined) ? null : s.derivedIn;
+    var lastDerivedIn = (s.lastDerivedIn === undefined) ? null : s.lastDerivedIn;
+    var clearedDerivedIn = (s.clearedDerivedIn === undefined) ? null : s.clearedDerivedIn;
+
+    /* Nothing derivable on this rig. There is no derivation to follow, so the
+       last-derived marker is dropped: leaving a stale one behind would let a
+       later, unrelated derivation treat a height the user typed in the interim
+       as one of ours and overwrite it. The CLEARED marker is left ALONE -- it
+       is only ever read against a live derivation, and expiring it here would
+       mean a clear silently lapsed because the strap was briefly unselected. */
+    if (derivedIn == null) {
+      return { write: null, lastDerivedIn: null, clearedDerivedIn: clearedDerivedIn };
+    }
+
+    var derCleared = clearedDerivedIn != null && clearedDerivedIn === derivedIn;
+    var mayFill = !derCleared && (attachIn == null ||
+                  (lastDerivedIn != null && attachIn === lastDerivedIn));
+    var write = (mayFill && attachIn !== derivedIn) ? derivedIn : null;
+
+    /* Clearing the marker ON A WRITE is what stops a clear from outliving the
+       strap position it was made at. Without it: clear at #3, move to #5 (which
+       fills #5's height), move back to #3 -- the marker still holds #3, so the
+       field KEEPS #5's height while the strap sits at #3, a plausible number
+       describing the wrong rig. A clear itself never writes, so this can never
+       undo one; a typed height still fails the lastDerivedIn test regardless. */
+    return { write: write,
+             lastDerivedIn: derivedIn,
+             clearedDerivedIn: (write == null) ? clearedDerivedIn : null };
+  }
+
+  /* What CLEAR records, so attachSeedDecision knows whether to refill.
+
+     Conditioned on what was ACTUALLY in the box, not merely on what the rig
+     could derive. Until 2026-08-10 both apps recorded the derivable height
+     unconditionally, which made CLEAR order-dependent: on a rig holding a
+     STALE height (a saved 36.5 reopened in HISTORY, then a strap position
+     chosen), pressing CLEAR marked the derivation refused and the field
+     stranded BLANK -- degrading the entry to RATED, the opposite of what the
+     press asked for. Pressing CLEAR first, before choosing the position,
+     worked. A field whose behaviour depends on the order two unrelated
+     controls were touched is a field nobody can reason about, and the spec's
+     own remedy for the entries that motivated this work is "re-editable in
+     HISTORY" -- in the natural order, that re-edit did not work.
+
+     Returns null when the box held something else: nothing derived was
+     refused, so nothing is recorded and seeding proceeds normally. */
+  function attachClearMarker(attachIn, derivedIn) {
+    return (derivedIn != null && attachIn === derivedIn) ? derivedIn : null;
+  }
+
   /* One arbitrary attachment height, priced EXACTLY as beltAttachOptions prices
      a landmark, so CUSTOM 28 and MID-THIGH 28 can never disagree about the same
      rig. Returns null when the height is unusable or sits at or below the band's
@@ -4257,6 +4339,8 @@
     beltAttachAt: beltAttachAt,
     beltAttachDefault: beltAttachDefault,
     beltAttachDerived: beltAttachDerived,
+    attachSeedDecision: attachSeedDecision,
+    attachClearMarker: attachClearMarker,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     plateGripDefault: plateGripDefault,
