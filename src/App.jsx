@@ -1082,6 +1082,17 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
     ? RBTS_REPORTS.beltAttachDerived(sel, gearOf, BODY_MEASURE, opening)
     : null
   const lastDer = useRef(null)
+  /* A user pressing CLEAR on a DERIVABLE rig is a deliberate choice -- "an
+     explicit height always wins: a choice the user made is never overridden
+     by a table" applies to clearing as much as to typing. Without this ref,
+     the field goes empty for exactly one tick before mayFill (above) sees an
+     empty field and refills it on the same render -- CLEAR is inert. Records
+     the height that was derived AT THE MOMENT of the clear (or a sentinel
+     when nothing was derived yet); the effect below refuses to refill while
+     the live derivation still matches what was cleared. When the opening (or
+     strap) changes, the derivation no longer matches the recorded value and
+     seeding resumes on its own -- no separate "resume" logic needed. */
+  const clearedDerRef = useRef(null)
   useEffect(() => {
     if (!RBTS_REPORTS.beltAttachDefault) return
     const setH = onAttachChange || (()=>{})
@@ -1091,8 +1102,9 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
        "was this derived" flag is stored, so there is no write path to get
        wrong and nothing to migrate. */
     if (derNow) {
-      const mayFill = attachHeightIn == null ||
-                      (lastDer.current != null && attachHeightIn === lastDer.current)
+      const derCleared = clearedDerRef.current != null && clearedDerRef.current === derNow.heightIn
+      const mayFill = !derCleared && (attachHeightIn == null ||
+                      (lastDer.current != null && attachHeightIn === lastDer.current))
       if (mayFill && attachHeightIn !== derNow.heightIn) setH(derNow.heightIn)
       lastDer.current = derNow.heightIn
       return
@@ -1275,8 +1287,13 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                 )}
               </span>
               {attachHeightIn != null && (
-                <button title="Clear the attachment height — the load falls back to the vendor midpoint"
-                  onClick={()=>setAttach(undefined)}
+                <button title={derNow && attachHeightIn === derNow.heightIn
+                  ? "Clear the attachment height — the load falls back to the vendor midpoint. Stays cleared until the strap opening changes (a new derivation withdraws this one)."
+                  : "Clear the attachment height — the load falls back to the vendor midpoint"}
+                  onClick={()=>{
+                    clearedDerRef.current = derNow ? derNow.heightIn : "none"
+                    setAttach(undefined)
+                  }}
                   style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
               )}
             </div>
