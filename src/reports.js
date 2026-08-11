@@ -480,6 +480,75 @@
     return g;
   }
 
+  /* MERGE IMPORT for band calibration. Both apps call this and neither keeps
+     its own rule.
+
+     Before this existed, `rbts_bandGeom` was empty in EVERY export on disk:
+     fitness_app.html carried the key only on REPLACE ALL, so there was no
+     additive path at all, and the PWA's MERGE IMPORT replaced the whole map
+     wholesale -- then pushed the truncated result to Firestore, so a file
+     naming 25 bands deleted every other band's calibration on every signed-in
+     device. Calibration is the one kind of data here that accumulates band by
+     band across many sessions, and it was the one kind with no way to add to
+     it.
+
+     PER FIELD, file wins on what it carries. A band id absent from `incoming`
+     is untouched. Within a band, a field absent from the incoming entry keeps
+     its local value. That is the whole point: a rest-length-only file must
+     never destroy a `measured[]` force curve that cost a Tension Master
+     session to produce -- the shape of the customPrograms loss rejected on
+     2026-08-07, arriving through a different door.
+
+     Clearing a field stays REPLACE ALL's job. MERGE IMPORT is additive by
+     definition, there is no way to express a deletion through it, and it does
+     not pretend to offer one.
+
+     Numbers go through finitePos, matching stampLoad and the attach map:
+     isFinite(null) and isFinite("36.5") are both true, so a bare isFinite
+     guard would accept an empty input box and a string that came back from an
+     import -- which is how a half-entered reading once stored a fake 0-lb
+     point in a force curve. `measured` is taken only as an array, and replaces
+     wholesale rather than unioning: two readings at the same stretch from
+     different sessions have no timestamp to break the tie with.
+
+     Never mutates either argument. */
+  function mergeBandGeom(local, incoming) {
+    var own = Object.prototype.hasOwnProperty;
+    var out = {}, k;
+    var base = (local && typeof local === "object") ? local : {};
+    for (k in base) {
+      if (own.call(base, k)) out[k] = assign(base[k] || {}, {});
+    }
+    var added = 0, updated = 0, fields = 0;
+    if (!incoming || typeof incoming !== "object") {
+      return { map: out, added: 0, updated: 0, fields: 0 };
+    }
+    var NUM = ["restLengthIn", "widthIn", "thicknessIn"];
+    for (k in incoming) {
+      if (!own.call(incoming, k)) continue;
+      var inc = incoming[k];
+      /* A number or a string where an entry belongs is not a calibration --
+         storing it would put a shape into the map that every reader of
+         geom.restLengthIn would then have to defend against. */
+      if (!inc || typeof inc !== "object") continue;
+      var existed = own.call(out, k);
+      var e = out[k] || {};
+      var wrote = 0, i;
+      for (i = 0; i < NUM.length; i++) {
+        if (finitePos(inc[NUM[i]])) { e[NUM[i]] = inc[NUM[i]]; wrote++; }
+      }
+      if (Array.isArray(inc.measured)) { e.measured = inc.measured.slice(); wrote++; }
+      if (typeof inc.note === "string" && inc.note) { e.note = inc.note; wrote++; }
+      /* Nothing usable arrived for this band. Leave the local entry exactly as
+         it was, and do not conjure an empty one for a band that had none. */
+      if (!wrote) continue;
+      out[k] = e;
+      fields += wrote;
+      if (existed) updated++; else added++;
+    }
+    return { map: out, added: added, updated: updated, fields: fields };
+  }
+
   /* Total inches this gear set adds to (+) or removes from (-) the stretch the
      band must cover. Mirrors gearPathDeltaIn in fitness_app.html; kept here so
      the module stays self-contained and testable. */
@@ -4321,6 +4390,7 @@
     applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
     bandGeomRestEdit: bandGeomRestEdit,
     bandGeomPointEdit: bandGeomPointEdit,
+    mergeBandGeom: mergeBandGeom,
     gearPathDelta: gearPathDelta,
     gearOpeningOptions: gearOpeningOptions,
     gearIsAdjustable: gearIsAdjustable,
