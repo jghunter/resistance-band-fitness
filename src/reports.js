@@ -609,13 +609,33 @@
      above the plate; the one supplied number is how high the attachment sits.
      See docs/superpowers/specs/2026-08-02-belt-footplate-band-path-design.md */
 
-  /* Body landmarks, in ascending order. The picker offers these; each is a
-     plain floor-to-landmark measurement on the profile. */
+  /* Body landmarks, in ascending order. Each is a plain floor-to-landmark
+     measurement on the profile.
+
+     SHOULDER is MID-shoulder, where a racked bar bears -- not the top of the
+     shoulder, which is ~2in higher. It is added 2026-08-10 for the racked-squat
+     family and is deliberately NOT offered on a belt rig: a belt never sits
+     there, and one fixed list served both paths until this change, which is why
+     a front squat was offered three landmarks and none of them the answer. */
   var BODY_LANDMARKS = [
     { k: "kneeHeightIn",     l: "KNEE" },
     { k: "midThighHeightIn", l: "MID-THIGH" },
-    { k: "hipHeightIn",      l: "HIP" }
+    { k: "hipHeightIn",      l: "HIP" },
+    { k: "shoulderHeightIn", l: "SHOULDER" }
   ];
+
+  /* What a BELT rig may attach at, and the default for every caller that does
+     not say otherwise -- so adding the shoulder above moved no existing call. */
+  var BELT_LANDMARK_KEYS = ["kneeHeightIn", "midThighHeightIn", "hipHeightIn"];
+
+  /* Which landmarks a rig may attach at, from what sits at the band's TOP end
+     (plateTopSpan's `kind`). A bar gets all four ON PURPOSE: a deadlift on a bar
+     terminates at the hip and a front squat on the same bar at the shoulder, so
+     the EXERCISE decides via PLATE_GRIP_DEFAULT, not the gear. */
+  function attachLandmarkKeys(topKind) {
+    if (topKind === "bar") return BELT_LANDMARK_KEYS.concat(["shoulderHeightIn"]);
+    return BELT_LANDMARK_KEYS;
+  }
 
   function beltPlateOf(gearIds, gearOf) {
     if (!gearIds || !gearIds.length || !gearOf) return null;
@@ -726,15 +746,17 @@
      Sub-rated options are MARKED, not hidden: a singled 41in band on a
      footplate never reaches strain 0.5 at any landmark up to the hip, so
      hiding them would leave the picker empty. */
-  function beltAttachOptions(band, geom, plate, doubled, body) {
+  function beltAttachOptions(band, geom, plate, doubled, body, keys) {
     var reach = beltReach(band, geom, plate, doubled, body);
     if (reach == null) return [];
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
       ? geom.restLengthIn : (band.lengthIn || 0);
     var d = doubled ? 2 : 1;
     var effRest = rest / d;
+    var allow = keys || BELT_LANDMARK_KEYS;
     var out = [];
     BODY_LANDMARKS.forEach(function (lm) {
+      if (allow.indexOf(lm.k) < 0) return;
       var h = body[lm.k];
       if (!isFinite(h)) return;
       var s = beltStretch(reach, h);
@@ -837,13 +859,36 @@
     117: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
     119: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
     185: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
-    201: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3, plusIn: 1.5 }
+    201: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3, plusIn: 1.5 },
+    /* The RACKED-SQUAT family, added 2026-08-10. The bar rides on the
+       shoulders for the whole rep, so the band's top end at the hardest point
+       is mid-shoulder -- one landmark, not an interpolation, hence `at`.
+       Confirmed by Greg for exactly these four. 114 Box Squat was offered and
+       NOT taken; nothing is guessed for an exercise absent from this table. */
+    97:  { at: "shoulderHeightIn" },   // Band Squat
+    98:  { at: "shoulderHeightIn" },   // Front Squat (Band)
+    101: { at: "shoulderHeightIn" },   // Narrow-Stance Band Squat
+    113: { at: "shoulderHeightIn" }    // Cyclist Squat (Heels Elevated)
   };
 
   function plateGripDefault(exId, body) {
     if (!body) return null;
     var rule = PLATE_GRIP_DEFAULT[String(exId)];
     if (!rule) return null;
+    /* Two forms, both guarded through finitePos so an empty input box, a null
+       and an imported "55.5" are all refused rather than coerced.
+
+       `at`   -- the rep ends at ONE landmark. A racked squat terminates at the
+                 shoulder and nowhere else; writing that as frac:0 between two
+                 copies of the same field would be a lie about the movement.
+       `from/to/frac` -- interpolates, for the hinge family where the hands
+                 finish somewhere between two landmarks. */
+    if (rule.at) {
+      var at = body[rule.at];
+      if (!finitePos(at)) return null;
+      var ha = at + (rule.plusIn || 0);
+      return finitePos(ha) ? ha : null;
+    }
     var from = body[rule.from], to = body[rule.to];
     if (!finitePos(from) || !finitePos(to)) return null;
     var h = from + (to - from) * rule.frac + (rule.plusIn || 0);
@@ -968,6 +1013,72 @@
       return beltSlackens(gearOf(id));
     })) return null;
     return rule.landmark;
+  }
+
+  /* The band's top-end height, DERIVED rather than asked for.
+
+     Greg, 2026-08-10: "I thought all we would ask for on this one would be the
+     height of opening on the strap." The Harambe belt's landmark is HIP, a
+     property of the belt, and the X Straps hang STRAIGHT DOWN from it by an
+     amount that is now measured -- seven stamped positions. Asking for the
+     opening AND the height is asking the same question twice.
+
+     Returns the height AND the arithmetic that produced it, so the picker can
+     show its work instead of presenting a number from nowhere. */
+  function beltAttachDerived(gearIds, gearOf, body, opening) {
+    if (!gearIds || !gearIds.length || !gearOf || !body) return null;
+    /* Not a belt setup without a footplate -- effectiveLoad would price it by
+       another route entirely, and a height here would describe nothing. */
+    if (!beltPlateOf(gearIds, gearOf)) return null;
+
+    var rule = null, i;
+    for (i = 0; i < gearIds.length; i++) {
+      var g = gearOf(gearIds[i]);
+      if (g && g.type === "belt" && !rule) {
+        rule = BELT_ATTACH_DEFAULT[(g.brand || "") + "|" + (g.name || "")] || null;
+      }
+    }
+    if (!rule) return null;
+    /* A FIXED landmark cannot be moved by other gear: the X3 bar hooks off the
+       belt with one leg in front and one behind and meets the hamstring on the
+       ascent, whatever hangs there. There is nothing to derive -- the default
+       already answers, and was never withdrawn. */
+    if (rule.fixed) return null;
+
+    var lmH = body[rule.landmark];
+    if (!finitePos(lmH)) return null;
+
+    /* EXACTLY ONE extender. Nothing has measured a strap-plus-rope assembly,
+       and the Harambe rods precedent -- a 6in rod plus a 5in rope measures
+       2.75in, not 11in -- says an assumed sum would be badly wrong. */
+    var ext = [];
+    for (i = 0; i < gearIds.length; i++) {
+      var e = gearOf(gearIds[i]);
+      if (beltSlackens(e)) ext.push(e);
+    }
+    if (ext.length !== 1) return null;
+
+    /* Only an ADJUSTABLE extender. A Harambe rope carries a measured seriesIn,
+       but that is not a vertical drop below a belt: the ropes hang in the
+       DIRECTION OF THE PULL, and their working length is always LESS than the
+       rated figure because the rope comes off the ends of RODS, which come in
+       different lengths (Greg, 2026-08-10). Subtracting it would put the band's
+       top end too low, understating stretch and so understating load. */
+    var item = ext[0];
+    if (!gearIsAdjustable(item)) return null;
+    var seriesIn = gearOpeningSeriesIn(item, opening);
+    if (!finitePos(seriesIn)) return null;
+
+    var h = lmH - seriesIn;
+    if (!finitePos(h)) return null;          // refuses zero and negative alike
+
+    var label = "";
+    for (i = 0; i < BODY_LANDMARKS.length; i++) {
+      if (BODY_LANDMARKS[i].k === rule.landmark) label = BODY_LANDMARKS[i].l;
+    }
+    return { heightIn: h, landmarkKey: rule.landmark, landmarkLabel: label,
+             landmarkHeightIn: lmH, item: item, openingN: opening,
+             seriesIn: seriesIn };
   }
 
   /* One arbitrary attachment height, priced EXACTLY as beltAttachOptions prices
@@ -3574,13 +3685,13 @@
        Black 5", Yellow 6", White 12.5", Blue 29". NONE of these is additive with
        a rod — see the Rods entry. */
     "Harambe|Black Ropes":      { seriesIn: 5, source: "measured", verified: true,
-                                  note: "set of 4, 5in. Adjusted with stackable 1/2in spacers. NOT additive with a rod." },
+                                  note: "set of 4, 5in. Adjusted with stackable 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Yellow Ropes":     { seriesIn: 6, source: "measured", verified: true,
-                                  note: "set of 4, 6in. NOT additive with a rod." },
+                                  note: "set of 4, 6in. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Blue Ropes":       { seriesIn: 29, source: "measured", verified: true,
-                                  note: "29in. NOT OWNED YET — seeded inbound so the figure is ready when it arrives." },
+                                  note: "29in. NOT OWNED YET — seeded inbound so the figure is ready when it arrives. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|White Ropes":      { seriesIn: 12.5, source: "measured", verified: true,
-                                  note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod." },
+                                  note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Split Squat Belt": { source: "measured", verified: true,
                                   note: "no dimension is an input to load: the band's attachment is modelled by beltReach/beltStretch. seriesIn 40in (removed 2026-08-02) was the WAIST CIRCUMFERENCE and reported 0 lb on every belt lift." },
     "Harambe|Wedges":           { thicknessIn: 1.375, source: "measured", verified: true,
@@ -4135,6 +4246,8 @@
     gearAdjustableUnset: gearAdjustableUnset,
     gearHasAdjustable: gearHasAdjustable,
     BODY_LANDMARKS: BODY_LANDMARKS,
+    BELT_LANDMARK_KEYS: BELT_LANDMARK_KEYS,
+    attachLandmarkKeys: attachLandmarkKeys,
     beltPlateOf: beltPlateOf,
     beltBeltPresent: beltBeltPresent,
     plateTopSpan: plateTopSpan,
@@ -4143,6 +4256,7 @@
     beltAttachOptions: beltAttachOptions,
     beltAttachAt: beltAttachAt,
     beltAttachDefault: beltAttachDefault,
+    beltAttachDerived: beltAttachDerived,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     plateGripDefault: plateGripDefault,
