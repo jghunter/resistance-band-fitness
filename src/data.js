@@ -2294,7 +2294,8 @@ export function bodyMeasureNum(v) {
 }
 
 export const BODY_MEASURE = (() => {
-  const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null, bodyWidthIn: null }
+  const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
+                   shoulderHeightIn: null, bodyWidthIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2305,6 +2306,7 @@ export const BODY_MEASURE = (() => {
       kneeHeightIn:     num(p.kneeHeightIn),
       midThighHeightIn: num(p.midThighHeightIn),
       hipHeightIn:      num(p.hipHeightIn),
+      shoulderHeightIn: num(p.shoulderHeightIn),
       bodyWidthIn:      num(p.bodyWidthIn),
     }
   } catch (e) { return empty }
