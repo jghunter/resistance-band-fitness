@@ -1072,25 +1072,49 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
      withdrawn default), a PLAIN plate rig still has a default -- the per-
      exercise grip height from plateGripDefault. Same "only ever fills an
      EMPTY value" discipline as the belt branch above. */
+  /* 2026-08-10: a belt whose landmark is withdrawn by ONE adjustable extender
+     is not unknowable -- the strap hangs straight down from the landmark by a
+     measured amount, so beltAttachDerived COMPUTES the height instead of asking
+     for it. Tried first, because where it answers there is nothing to default. */
   const selKey = sel.slice().sort().join(',')
+  const gearOf = id => byId[id]
+  const derNow = RBTS_REPORTS.beltAttachDerived
+    ? RBTS_REPORTS.beltAttachDerived(sel, gearOf, BODY_MEASURE, opening)
+    : null
+  const lastDer = useRef(null)
   useEffect(() => {
-    if (attachHeightIn != null) return
     if (!RBTS_REPORTS.beltAttachDefault) return
-    const gearOf = id => byId[id]
+    const setH = onAttachChange || (()=>{})
+    /* A DERIVED height must follow a strap change and must never overwrite a
+       height the user typed. Resolved statelessly: we may write when the field
+       is empty, or when it still holds exactly the number we last derived. No
+       "was this derived" flag is stored, so there is no write path to get
+       wrong and nothing to migrate. */
+    if (derNow) {
+      const mayFill = attachHeightIn == null ||
+                      (lastDer.current != null && attachHeightIn === lastDer.current)
+      if (mayFill && attachHeightIn !== derNow.heightIn) setH(derNow.heightIn)
+      lastDer.current = derNow.heightIn
+      return
+    }
+    lastDer.current = null
+    if (attachHeightIn != null) return
     const lm = RBTS_REPORTS.beltAttachDefault(sel, gearOf)
     /* plateGripDefaultFor, not plateGripDefault: something hanging inline
        below the grip (a rope, the X Straps) puts the attachment at a height
        no table entry describes, so the default is WITHDRAWN and the field
        stays blank for the user to fill. Exactly what beltAttachDefault has
-       done on the belt side since 2026-08-03. The engine calls the same
-       function, so the seeded value and the computed one cannot disagree. */
+       done on the belt side since 2026-08-03. The derivation above is the one
+       case where that length is KNOWN; where it is not, this still withdraws.
+       The engine calls the same functions, so the seeded value and the
+       computed one cannot disagree. */
     const h = lm
       ? bodyMeasureNum(BODY_MEASURE[lm])
       : (RBTS_REPORTS.beltPlateOf(sel, gearOf)
           ? RBTS_REPORTS.plateGripDefaultFor(exId, BODY_MEASURE, sel, gearOf) : null)
     if (h == null) return                      // not measured: stay blank, say so
-    ;(onAttachChange || (()=>{}))(h)
-  }, [selKey, attachHeightIn])
+    setH(h)
+  }, [selKey, attachHeightIn, opening])
 
   const typeCounts = {}
   sel.forEach(id => {
@@ -1188,10 +1212,21 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         )
         /* beltAttachOptions wants a RESOLVED dims object, not the gear item —
            resolveGearDims is what turns a PWA-shaped item with no stored dims
-           into the table lookup. Passing the raw item fabricates a reach. */
+           into the table lookup. Passing the raw item fabricates a reach.
+
+           The landmark list comes from what sits at the band's TOP end: a
+           racked bar can terminate at the shoulder, a belt never does. One
+           fixed list served both rigs until 2026-08-10, which is why a front
+           squat was offered three landmarks and none of them the answer.
+           Guarded: reports.js is generated and lags rbts_reports.js between
+           syncs, and an absent list falls back to the belt keys, not a throw. */
+        const top = RBTS_REPORTS.plateTopSpan(sel, gearOf)
+        const lmKeys = RBTS_REPORTS.attachLandmarkKeys
+          ? RBTS_REPORTS.attachLandmarkKeys(top.kind) : undefined
         const opts = RBTS_REPORTS.beltAttachOptions(
           band, getLocalBandGeom()[band.id] || null,
-          RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE)
+          RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE,
+          lmKeys)
         const setAttach = onAttachChange || (()=>{})
         /* CUSTOM, added 2026-08-03 in place of a MID-SHIN landmark: a Harambe
            belt fed through a rope or strap hangs at a VARIABLE height that no
@@ -1245,6 +1280,15 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                   style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
               )}
             </div>
+            {/* Shows its work rather than presenting a number from nowhere.
+                Rendered only while the field STILL holds the derived value, so
+                it vanishes the moment the user types over it — the line must
+                never claim provenance for a figure it did not produce. */}
+            {derNow && attachHeightIn === derNow.heightIn && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:3}}>
+                DERIVED: {derNow.landmarkLabel} {derNow.landmarkHeightIn}in − {(derNow.item.name||'').toUpperCase()} #{derNow.openingN} ({derNow.seriesIn}in)
+              </div>
+            )}
             {attachHeightIn != null && !isLm && !custom && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:3}}>
                 THAT HEIGHT IS AT OR BELOW THE BAND&apos;S OWN REACH — THE BAND WOULD BE SLACK
