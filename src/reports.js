@@ -3647,15 +3647,23 @@
                                   channelIn: 0.875, bandSpanIn: 20,
                                   source: "measured", verified: true },
     /* ADJUSTABLE. A pair, 76cm overall, a hook at one end and SEVEN numbered
-       positions stamped on the strap, #1 nearest the hook. Which position you
-       hook is a CHOICE, so there is deliberately no plain `seriesIn`: one
-       representative value would be confidently wrong for six of the seven
-       positions, and wrong in the direction that understates stretch and so
-       understates load.
+       positions stamped on the strap. Which position you hook is a CHOICE, so
+       there is deliberately no plain `seriesIn`: one representative value
+       would be confidently wrong for six of the seven positions, and wrong in
+       the direction that understates stretch and so understates load.
+
+       ALL THREE ARRAYS ARE INDEXED BY STAMPED POSITION, and `gearOpeningOptions`
+       numbers them `i + 1` -- so the array ORDER *is* the numbering printed on
+       the strap, and reversing it relabels every button in both pickers.
+       **#1 is the opening FURTHEST from the hook: the LONGEST inline length,
+       67cm.** Greg confirmed the direction 2026-08-10 with the strap in his
+       hands. The 2026-08-03 handoff took his seven readings correctly and then
+       numbered them from the wrong end; the arrays were reversed on 2026-08-10
+       and the readings themselves are unchanged.
 
        `openingsFromTopCm` is Greg's raw tape reading at each stamp and
        `seriesOptionsCm[i]` is exactly `76 - openingsFromTopCm[i]`. The gaps
-       are 10/9/9/9/9/11, NOT the even 9 they nearly are -- the measurements
+       are 11/9/9/9/9/10, NOT the even 9 they nearly are -- the measurements
        were KEPT rather than normalised, and test_adjustable_gear.cjs pins
        that so nobody tidies them later.
 
@@ -3668,11 +3676,11 @@
        shortening badly. Greg's ruling 2026-08-07: record what was measured,
        refuse to invent the rest. */
     "HeavyDutyBar|X Straps":    { overallCm: 76,
-                                  openingsFromTopCm: [66, 55, 46, 37, 28, 19, 9],
-                                  seriesOptionsCm: [10, 21, 30, 39, 48, 57, 67],
-                                  seriesOptionsIn: [3.94, 8.27, 11.81, 15.35, 18.90, 22.44, 26.38],
+                                  openingsFromTopCm: [9, 19, 28, 37, 46, 55, 66],
+                                  seriesOptionsCm: [67, 57, 48, 39, 30, 21, 10],
+                                  seriesOptionsIn: [26.38, 22.44, 18.90, 15.35, 11.81, 8.27, 3.94],
                                   source: "measured", verified: true,
-                                  note: "a pair; 7 stamped positions, #1 nearest the hook. Inline length = 76cm - opening. Usable with the belt, a bar, handles or a footplate, and in combination. NOT additive with a rope or handle -- no combination has been measured." },
+                                  note: "a pair; 7 stamped positions, #1 FURTHEST from the hook and the LONGEST (67cm inline), #7 nearest the hook and the shortest (10cm). Inline length = 76cm - opening. Usable with the belt, a bar, handles or a footplate, and in combination. NOT additive with a rope or handle -- no combination has been measured." },
     "HeavyDutyBar|Elevators":   { thicknessIn: 0.4375, source: "measured", verified: true,
                                   maxStackIn: 4,
                                   note: "7/16in each, NOT the 2in that was estimated — the panel's '+18% for a 2in elevator' does not apply to these. Used on top of the Qdeck. They stack, but Greg caps a stack at 4in total (that is a limit, not the height of two)." },
@@ -3690,7 +3698,15 @@
     { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
     { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","other"] },
   ];
-  var GEAR_DIMS_REV = "2026-08-02-belt-path-r1";
+  /* Bumped 2026-08-10. A stored `dims` copy carrying an older rev is discarded
+     in favour of a fresh table lookup, so this string is the ONLY way a table
+     correction reaches an inventory that already exists in a browser. Both of
+     2026-08-07's corrections were made WITHOUT bumping it and therefore reached
+     nobody: `Harambe|Foam Block`'s `neverInPath` (so the block was still adding
+     +12in of band path to every exercise it was logged against) and the X
+     Straps' seven positions. Adding or correcting a GEAR_DIMS entry means
+     bumping this. */
+  var GEAR_DIMS_REV = "2026-08-10-x-straps-r1";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */
@@ -3790,8 +3806,39 @@
       return base;
     }
     if (d && d.userEdited) return d;
-    if (d && d.seedRev === GEAR_DIMS_REV) return d;
+    /* A stored copy at the current rev wins -- but ONLY if it actually carries
+       a figure. `seedDimsFor` stamps an item the table has never heard of with
+       a bare {source:"estimated", verified:false, seedRev}, and that stub says
+       nothing about the item; letting it outrank a table entry that has real
+       dimensions is how the X Straps' seven stamped positions stayed invisible
+       to the one person who owns them. He added the item on 2026-08-03, before
+       the table knew the straps existed; the table learned on 2026-08-07; his
+       empty stub kept winning, so gearHasAdjustable stayed false and the
+       OPENING row never rendered in either app.
+
+       Falling through costs nothing when the table is also silent -- the
+       lookup returns an equivalent stub -- and this is deliberately NOT a
+       substitute for a GEAR_DIMS_REV bump: a stored copy that carries real
+       figures still wins here, and only the rev refreshes those. */
+    if (d && d.seedRev === GEAR_DIMS_REV && dimsCarryFigures(d)) return d;
     return seedDimsFor(it.brand, it.name);
+  }
+
+  /* Does this dims object state any actual DIMENSION? Numbers and non-empty
+     arrays are figures; `source`, `note`, `seedRev`, `hookSide`, `verified`
+     and the boolean flags are bookkeeping about figures that may not be there.
+     Deliberately broader than GEAR_DIM_FIELDS, which lists only the fields the
+     GEAR tab offers an input for -- bandSpanIn, gripDiaIn and overallCm are
+     real measurements that no editor exposes. */
+  function dimsCarryFigures(d) {
+    if (!d) return false;
+    for (var k in d) {
+      if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
+      if (k === "seedRev") continue;
+      if (typeof d[k] === "number") return true;
+      if (Array.isArray(d[k]) && d[k].length) return true;
+    }
+    return false;
   }
 
   /* A value the user types IS the measurement -- shared by both apps'

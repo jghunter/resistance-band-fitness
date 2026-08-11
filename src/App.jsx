@@ -1266,9 +1266,9 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
       {/* ── OPENING ─────────────────────────────────────────────────────────
           Adjustable gear: an item whose inline length is a CHOICE. The
           HeavyDutyBar X Straps carry seven numbered positions stamped on the
-          strap, #1 nearest the hook, spanning 3.94in to 26.38in — so no single
-          recorded length describes them and leaving it blank would price 26
-          inches of strap as zero.
+          strap, #1 FURTHEST from the hook and the longest, spanning 26.38in
+          down to 3.94in — so no single recorded length describes them and
+          leaving it blank would price 26 inches of strap as zero.
 
           Per EXERCISE, like ATTACH AT and for the same reason: the band and
           the fold change between sets, where you hooked the strap does not.
