@@ -3871,9 +3871,18 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
            saveLocalBandGeom stamps updatedAt and, when signed in, pushes to
            Firestore (best-effort) — same as an in-app edit in BandCalibration. */
         let measMsg = ''
+        /* PER FIELD, file wins on what it carries. This was a wholesale
+           replace until 2026-08-10: a file naming 25 bands left rbts_bandGeom
+           holding exactly those 25 keys, so every other band lost its entire
+           entry -- rest length, width, thickness, the measured[] force curve
+           and the note. saveLocalBandGeom then pushed that truncated map to
+           Firestore, so the loss propagated to the other device rather than
+           staying here. Nothing on screen would have reported it: a band with
+           no geometry reads exactly like one that was never measured. */
         if (state && state.rbts_bandGeom && typeof state.rbts_bandGeom === 'object') {
-          saveLocalBandGeom(state.rbts_bandGeom, uid)
-          measMsg += ` Band calibration for ${Object.keys(state.rbts_bandGeom).length} band(s).`
+          const bg = RBTS_REPORTS.mergeBandGeom(getLocalBandGeom(), state.rbts_bandGeom)
+          saveLocalBandGeom(bg.map, uid)
+          measMsg += ` Band calibration: ${bg.added} new, ${bg.updated} updated.`
         }
         if (Array.isArray(state && state.rbts_bodyweight) && state.rbts_bodyweight.length) {
           saveLocalBodyweight(state.rbts_bodyweight)
