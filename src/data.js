@@ -116,6 +116,17 @@ export const EXERCISE_NAMES = {
   220:"Band Side Plank Row", 221:"Band V-Up", 222:"Banded Bird Dog",
   223:"Band Lying Y-Raise", 224:"Seated Band Trunk Rotation",
   225:"Close-Grip Band Pulldown",
+  // Authored by Greg in the Library tab as customs 1000-1008 and promoted to
+  // built-ins 2026-08-12. They were RENUMBERED into the built-in range: ids
+  // >=1000 mean "custom" (nextCustomExId hands out 1000 on any device with an
+  // empty rbts_customExercises), so leaving them at 1000-1008 would have let
+  // the next "+ ADD EXERCISE" overwrite one and a later delete strip it from
+  // the catalog. 233 replaces 223 in the workbook programs' upperB shoulderIso
+  // slot; 223 is KEPT so any history that ever referenced it still resolves.
+  226:"Low Bar Squat (Shallow Squat)", 227:"Cross Block", 228:"Rowboat",
+  229:"Copenhagen Plank", 230:"Hourglass Laterals",
+  231:"Resisted Dorsiflexion", 232:"Posterior Tibialis",
+  233:"Band Lying Y-Raise", 234:"Forearm Twist",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,15 +319,15 @@ export const VIDEOS = {
   155:"https://www.youtube.com/watch?v=FX7AIEkqkNk",
   156:"https://www.youtube.com/watch?v=NWEKKTJEo8s",
   157:"https://www.youtube.com/watch?v=Z64A_Q2aG3U",
-  158:"https://www.youtube.com/watch?v=xyHLejrielo",
-  159:"https://www.youtube.com/watch?v=5YNRp21YXw0",
-  160:"https://www.youtube.com/watch?v=5YNRp21YXw0",
-  161:"https://www.youtube.com/watch?v=yFsmmyJ9TmM",
-  162:"https://www.youtube.com/watch?v=yFsmmyJ9TmM",
-  163:"https://www.youtube.com/watch?v=wugNi3uEFUs",
-  164:"https://www.youtube.com/watch?v=wugNi3uEFUs",
-  165:"https://www.youtube.com/watch?v=xyHLejrielo",
-  166:"https://www.youtube.com/watch?v=Z1DrxG0nSOU",
+  158: {url:"https://www.youtube.com/watch?v=xyHLejrielo", start:84, end:123},
+  159:"https://www.youtube.com/shorts/-XCBQ5tHGmA",
+  160:"https://www.youtube.com/shorts/-XCBQ5tHGmA",
+  161:"https://www.youtube.com/shorts/u2z7Gp83rzQ",
+  162:"https://www.youtube.com/shorts/u2z7Gp83rzQ",
+  163:"https://www.youtube.com/shorts/AfOBx3v0dJc",
+  164:"https://www.youtube.com/watch?v=W8ZSxeNDRx0",
+  165: {url:"https://www.youtube.com/watch?v=5YNRp21YXw0", start:170, end:220},
+  166:"https://www.youtube.com/watch?v=lhUtyniZD4M",
   167:"https://www.youtube.com/watch?v=t3IXE5JFPvI",
   168:"https://www.youtube.com/watch?v=jkH3WP_a_8E",
   169:"https://www.youtube.com/watch?v=6FONB2sSNQA",
@@ -368,6 +379,19 @@ export const VIDEOS = {
   215:"https://www.youtube.com/watch?v=c2JIMZpTtoA",
   216:{url:"https://www.youtube.com/watch?v=Q-lnd6SWR5A", start:117, end:162},  // pec crossover 1:57–2:42
   217:{url:"https://www.youtube.com/shorts/K6rSbbyAVTo", start:11},             // split squat w/ belt — 3rd move, ~0:11 in
+  // Promoted from customs 1000-1008 (2026-08-12). 226 is not a YouTube link:
+  // resolveVideo returns it with embedUrl null and never appends a timestamp,
+  // so start/end are carried but inert — kept because they record where in
+  // that page's player the movement sits.
+  226:{url:"https://programs.jaquishbiomedical.com/x3-hypertrophy/legs-lower-back", start:403, end:608},
+  227:{url:"https://www.youtube.com/shorts/K_4VBD7csp0", start:0,    end:29},
+  228:{url:"https://www.youtube.com/shorts/K_4VBD7csp0", start:29,   end:50},   // same clip, 2nd move
+  229:{url:"https://www.youtube.com/shorts/KQ0_SKLvUkU", start:0,    end:116},
+  230:{url:"https://www.youtube.com/watch?v=eZzdrLDpqbo", start:1556, end:1650},
+  231:{url:"https://www.youtube.com/shorts/QPZDLanJwEk", start:0,    end:11},
+  232:{url:"https://www.youtube.com/shorts/1LrQxgIu1eA", start:0,    end:43},
+  233:{url:"https://www.youtube.com/watch?v=CSispgPqROE", start:0,   end:75},   // replaces 223
+  234:{url:"https://www.youtube.com/watch?v=5YNRp21YXw0", start:305, end:384},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1158,7 +1182,7 @@ export const PROGRAMS = [
     sessions: {
       upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
       lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
-      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:233} },
       lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
     },
     techniques: {
@@ -1242,7 +1266,7 @@ export const PROGRAMS = [
     sessions: {
       upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
       lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
-      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:233} },
       lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
     },
     techniques: {
@@ -1562,6 +1586,13 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   218: GROUP_META.QUADS, 219: GROUP_META.QUADS, 220: GROUP_META.CORE,
   221: GROUP_META.CORE, 222: GROUP_META.CORE, 223: GROUP_META.SHOULDERS,
   224: GROUP_META.CORE, 225: GROUP_META.BACK,
+  /* Promoted from customs 1000-1008, 2026-08-12. Like 216-225 these sit
+     outside the ID-range group table, so the group is explicit. */
+  226: GROUP_META.QUADS,     227: GROUP_META.CORE,
+  228: GROUP_META.CORE,      229: GROUP_META.CORE,
+  230: GROUP_META.SHOULDERS, 231: GROUP_META.TIBIALIS,
+  232: GROUP_META.TIBIALIS,  233: GROUP_META.SHOULDERS,
+  234: GROUP_META.FOREARMS,
   // Panel recommendation 20 — classification errors, fixed 2026-07-30.
   // 37/38 are hip hinges: the hamstrings and glutes do the work and the back
   // holds an isometric position. Sitting in the BACK id range credited their
@@ -1572,7 +1603,11 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   176: GROUP_META.TIBIALIS };  // Seated Tibialis Raise
 const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   218: "comp", 219: "iso", 220: "comp", 221: "comp", 222: "comp",
-  223: "iso", 224: "iso", 225: "comp" };
+  223: "iso", 224: "iso", 225: "comp",
+  // Promoted from customs 1000-1008, 2026-08-12. 229 Copenhagen Plank is the
+  // only comp of the nine — it is Greg's own classification, carried across.
+  226: "iso", 227: "iso", 228: "iso", 229: "comp", 230: "iso",
+  231: "iso", 232: "iso", 233: "iso", 234: "iso" };
 
 export const exGroup = (id) => {
   id = Number(id);
