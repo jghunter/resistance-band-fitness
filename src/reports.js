@@ -4218,10 +4218,29 @@
                                      was removed 2026-07-31 for being stamped as tape), so
                                      its widthwise figure is the weakest in the table: bare
                                      widthIn with no edge delta to add. */
+                                  /* ALL FOUR MEASURED 2026-08-14 (Greg's tape). This plate
+                                     was the last one carrying computed/derived figures, and
+                                     it was the weakest in the table: its bandSpanIn was
+                                     removed on 2026-07-31 for having been an interpolation
+                                     stamped as tape, so its widthwise fallback was bare
+                                     widthIn with no edge delta to add.
+
+                                     The slot sits OFF-CENTRE, which is why the two widthwise
+                                     partial wraps are so different: 12.5in from the wide side
+                                     and 2.875in from the short side. 12.5 + 2.875 exceeds the
+                                     full 14.75 widthwise wrap because each partial path also
+                                     goes around the slot lip.
+
+                                     CORRECTED at the same time: 2.875 was labelled
+                                     `len_near` "EDGE TO THE NEAR SLOT" from the 2026-08-14
+                                     spec, i.e. LENGTHWISE. Greg's measurements that day place
+                                     it WIDTHWISE from the short side to the hole. The figure
+                                     never changed; the key and the label did. */
                                   bandPaths: [
-                                    { k: "len",      l: "UNDER - LENGTHWISE",    consumedIn: 25.375, source: "computed" },
-                                    { k: "len_near", l: "EDGE TO THE NEAR SLOT", consumedIn: 2.875,  source: "measured" },
-                                    { k: "wid",      l: "UNDER - WIDTHWISE",     consumedIn: 17.125, source: "derived" }
+                                    { k: "len",      l: "UNDER - LENGTHWISE",              consumedIn: 23,    source: "measured" },
+                                    { k: "wid",      l: "UNDER - WIDTHWISE",               consumedIn: 14.75, source: "measured" },
+                                    { k: "wid_far",  l: "WIDTHWISE, WIDE SIDE TO THE HOLE", consumedIn: 12.5,  source: "measured" },
+                                    { k: "wid_near", l: "WIDTHWISE, SHORT SIDE TO THE HOLE", consumedIn: 2.875, source: "measured" }
                                   ],
                                   source: "measured", verified: true },
     "Serious Steel|Door Anchor":{ seriesIn: 5.5, doorThicknessIn: 1.5, source: "measured", verified: true,
