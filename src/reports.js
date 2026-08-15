@@ -1071,6 +1071,22 @@
        change -- the same failure class as the belt bug, where a 40in waist
        circumference was consumed as an inline extension. */
     201: { at: "midThighHeightIn", plusIn: 1.5 }, // Band Deadlift + Shrug
+    /* THE SHRUG, on its own. Greg, 2026-08-14: "you're standing upright and
+       holding the bar with your arms straight down (wherever that happens to
+       be on the individual), and all you're doing is shrugging your shoulders
+       up -- about 1 1/2 to 2 inches."
+
+       So the base is HANDS AT REST, not a leg landmark. Mid-thigh is where
+       Greg's hands happen to hang and would have been right for him by
+       coincidence of arm length -- a proxy, and a wrong default is SILENT,
+       which is the failure this whole model exists to prevent. handsAtRestIn
+       is a real measurement instead: floor to the hands, standing, arms
+       straight down.
+
+       plusIn 1.5 is the height the HANDS rise, exactly as on 201 -- beltReach
+       already halves for the two strands, so 3 here would double the real
+       change. */
+    41:  { at: "handsAtRestIn", plusIn: 1.5 },     // Band Shrug with Hold
     /* The RACKED-SQUAT family, added 2026-08-10. The bar rides on the
        shoulders for the whole rep, so the band's top end at the hardest point
        is mid-shoulder -- one landmark, not an interpolation, hence `at`.

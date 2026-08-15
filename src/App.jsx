@@ -1277,7 +1277,15 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const shown = opts.concat(custom ? [custom] : [])
         return (
           <div style={{marginTop:6}}>
-            <div style={lbl}>ATTACH AT</div>
+            {/* "ATTACH AT" is BELT vocabulary and it leaked -- see the same
+                comment in fitness_app.html. On a bar or handles nothing
+                attaches to anything; one number is wanted either way, and it is
+                how high the band's TOP END is off the floor at the hardest
+                point of the rep. */}
+            <div style={lbl}>{beltOn ? 'ATTACH AT' : 'HIGHEST POINT'}</div>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
+              How high the band's TOP END is off the floor at the HARDEST point of the rep. Not where anything attaches -- on a bar or handles that is simply how high your hands are at the top. Measure it in the position you actually lift in: bent over, the bar is far lower than a standing landmark suggests.
+            </div>
             {!opts.length && (() => {
               /* Two very different situations wore one message until
                  2026-08-14. A 20in band folded on a 25.625in path has NO reach
@@ -1299,7 +1307,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
             <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
               {opts.map(o => (
                 <button key={o.k}
-                  title={`Belt hooks at ${o.heightIn} in off the floor — the band stretches `
+                  title={`${beltOn ? 'Belt hooks at' : "The band's top end is at"} ${o.heightIn} in off the floor — the band stretches `
                         + `${Math.round(o.stretchIn*10)/10} in (strain ${Math.round(o.strain*100)/100})`}
                   onClick={()=>setAttach(o.heightIn)}
                   style={{...btn(attachHeightIn === o.heightIn),fontSize:9,padding:'4px 8px'}}>
@@ -1311,7 +1319,9 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                 fontSize:9,color:custom?C.readout:C.dimGray}}>
                 CUSTOM
                 <input type="number" step="0.25" min="0"
-                  title="Floor-to-hook height, measured STANDING at the top of the rep — not where the band goes slack"
+                  title={beltOn
+                    ? "Floor-to-hook height, measured STANDING at the top of the rep — not where the band goes slack"
+                    : "Floor to the band's top end at the HARDEST point of the rep — not where the band goes slack. On a bar or handles, how high your hands are at the top."}
                   value={customText != null ? customText
                         : (attachHeightIn != null && !isLm ? String(attachHeightIn) : '')}
                   onChange={e => {

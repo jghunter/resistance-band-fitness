@@ -2330,7 +2330,7 @@ export function bodyMeasureNum(v) {
 
 export const BODY_MEASURE = (() => {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
-                   shoulderHeightIn: null, bodyWidthIn: null }
+                   shoulderHeightIn: null, handsAtRestIn: null, bodyWidthIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2342,6 +2342,10 @@ export const BODY_MEASURE = (() => {
       midThighHeightIn: num(p.midThighHeightIn),
       hipHeightIn:      num(p.hipHeightIn),
       shoulderHeightIn: num(p.shoulderHeightIn),
+      /* Floor to the hands, STANDING with the arms straight down (2026-08-14,
+         for the shrug). Read-only here, like every other profile field in this
+         app -- it is edited in fitness_app.html's TRAINING STYLE panel. */
+      handsAtRestIn:    num(p.handsAtRestIn),
       bodyWidthIn:      num(p.bodyWidthIn),
     }
   } catch (e) { return empty }
