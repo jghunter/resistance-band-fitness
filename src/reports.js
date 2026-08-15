@@ -665,6 +665,102 @@
     return gearAdjustableUnset(gearIds, gearOf, undefined) !== null;
   }
 
+  /* ---- footplate band paths (2026-08-14) --------------------------------
+     A footplate is not one number. The same plate takes the band lengthwise,
+     widthwise, through a slot, or through a centre hole, and those differ by
+     more than 20in of consumed band -- enough to make a rig that is impossible
+     one way perfectly ordinary another. Greg's 2026-08-11 and 2026-08-14 RDLs
+     were unloggable for exactly this reason: a 20in band folded cannot wrap
+     the Clench plate at all, and does not have to.
+
+     Same posture as the X Straps: a list of discrete, named, MEASURED options
+     declared by the item itself, chosen per exercise. An unmeasured path is
+     simply absent, so it is never offered and never contributes a silent zero.
+
+     `consumedIn` is the WHOLE path (Greg's ruling 2026-08-14): from where the
+     band leaves the top surface on one side, down, under, up, to where it
+     leaves the top surface on the other. It therefore already contains both
+     edge crossings and any channel drop, which is why beltReach uses it whole
+     instead of adding 2*thickness and channelIn to it. That also retires the
+     question of whether a plate's groove is oriented lengthwise or widthwise:
+     the tape followed the groove or it did not.
+
+     `source` is measured | computed | derived, and ONLY `measured` may reach
+     MEASURED provenance -- the same refusal that removed the Acacia's
+     interpolated bandSpanIn on 2026-07-31. Interpolating and saying so is
+     allowed; interpolating and calling it tape is not.
+
+     Reads through resolveGearDims, so a PWA item that arrived from Firestore
+     with no `dims` resolves its paths from the table by brand|name exactly as
+     a seeded HTML item does. */
+  function plateBandPaths(it) {
+    if (!it) return [];
+    var d = resolveGearDims(it) || {};
+    var out = [];
+    if (Array.isArray(d.bandPaths)) {
+      d.bandPaths.forEach(function (p) {
+        if (!p || p.k == null || p.k === "" || !finitePos(p.consumedIn)) return;
+        out.push({ k: String(p.k), l: p.l || String(p.k), consumedIn: p.consumedIn,
+                   source: (p.source === "measured" || p.source === "derived")
+                     ? p.source : "computed" });
+      });
+      if (out.length) return out;
+    }
+    /* A footplate the table has never heard of -- a hand-added item, or one
+       whose brand|name does not match. Generate the legacy arithmetic so it
+       behaves exactly as it did before this existed, plus the derived
+       widthwise counterpart. Both are labelled, and neither can reach
+       MEASURED. */
+    var span = finitePos(d.bandSpanIn) ? d.bandSpanIn
+             : (finitePos(d.lengthIn) ? d.lengthIn : null);
+    if (span == null) return [];
+    var base = 2 * (finitePos(d.thicknessIn) ? d.thicknessIn : 0)
+             + (finitePos(d.channelIn) ? d.channelIn : 0);
+    out.push({ k: "len", l: "UNDER - LENGTHWISE",
+               consumedIn: span + base, source: "computed" });
+    if (finitePos(d.widthIn)) {
+      /* That plate's OWN edge delta, not a ratio borrowed from other plates --
+         which is precisely what made the removed Acacia 20.5 indefensible. */
+      var delta = (finitePos(d.bandSpanIn) && finitePos(d.lengthIn))
+        ? (d.bandSpanIn - d.lengthIn) : 0;
+      out.push({ k: "wid", l: "UNDER - WIDTHWISE",
+                 consumedIn: d.widthIn + delta + base, source: "derived" });
+    }
+    return out;
+  }
+
+  /* The chosen path, or the default.
+
+     An UNSET key means "the ordinary way", which is the first declared path --
+     so every rig logged before this existed prices unchanged and the default
+     is never a guess about which of several paths was used.
+
+     A key this plate does NOT offer returns null and the caller degrades. It
+     must not silently substitute a different path: swapping the plate on a
+     saved exercise would then reprice it confidently against geometry the
+     user never chose. */
+  function plateBandPathOf(it, k) {
+    var paths = plateBandPaths(it);
+    if (!paths.length) return null;
+    if (k == null || k === "") return paths[0];
+    for (var i = 0; i < paths.length; i++) {
+      if (paths[i].k === k) return paths[i];
+    }
+    return null;
+  }
+
+  /* What both apps' pickers ask for: the footplate in this rig and the paths
+     it declares, or null when there is no footplate or it declares none.
+     Singular on purpose -- gearHasDims and gearDimSource each read `it.dims`
+     raw once and disagreed with the engine in silence; a second reader of one
+     fact is how that happens. */
+  function plateBandPathOptions(gearIds, gearOf) {
+    var it = beltPlateOf(gearIds, gearOf);
+    if (!it) return null;
+    var paths = plateBandPaths(it);
+    return paths.length ? { item: it, paths: paths } : null;
+  }
+
   /* ---- belt / footplate band path ---------------------------------------
      A belt exercise is not a series-length problem. The band goes UNDER a
      footplate, both strands come up, and whatever they attach to -- a belt
@@ -777,7 +873,7 @@
      `plate` is a RESOLVED dims object (resolveGearDims output), not a gear
      item. Returns null when the band is too short to be rigged this way --
      never a negative reach, and never a fabricated load. */
-  function beltReach(band, geom, plate, doubled, body, topSpanIn) {
+  function beltReach(band, geom, plate, doubled, body, topSpanIn, path) {
     if (!band || !plate || !body) return null;
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
       ? geom.restLengthIn : (band.lengthIn || 0);
@@ -786,11 +882,20 @@
     var usableC = 2 * rest / d;
     var width = doubled ? 0
               : (finitePos(topSpanIn) ? topSpanIn : (body.bodyWidthIn || 0));
-    var consumed = (plate.bandSpanIn || plate.lengthIn || 0)
-                 + 2 * (plate.thicknessIn || 0)
-                 + (plate.channelIn || 0)
-                 + width;
-    var reach = (usableC - consumed) / 2;
+    /* `path.consumedIn` is the WHOLE path Greg taped -- top edge, down, under,
+       up, top edge -- so it already contains both edge crossings and any
+       channel drop, and must NOT have 2*thickness and channelIn added to it.
+       Adding them would double-count roughly 2in on every plate, in the
+       direction that overstates stretch and so overstates load.
+
+       Omitted, this is byte-identical to the pre-2026-08-14 arithmetic, which
+       is what keeps every existing call site and assertion unmoved. */
+    var consumed = (path && finitePos(path.consumedIn))
+      ? path.consumedIn
+      : ((plate.bandSpanIn || plate.lengthIn || 0)
+         + 2 * (plate.thicknessIn || 0)
+         + (plate.channelIn || 0));
+    var reach = (usableC - consumed - width) / 2;
     return reach > 0 ? reach : null;
   }
 
@@ -815,8 +920,21 @@
      Sub-rated options are MARKED, not hidden: a singled 41in band on a
      footplate never reaches strain 0.5 at any landmark up to the hip, so
      hiding them would leave the picker empty. */
-  function beltAttachOptions(band, geom, plate, doubled, body, keys) {
-    var reach = beltReach(band, geom, plate, doubled, body);
+  /* `topSpanIn` and `path` are TRAILING OPTIONAL parameters, added 2026-08-14,
+     for the same reason attachLandmarkKeys took its shape when the SHOULDER
+     landmark arrived: every call site that predates them stays byte-identical
+     and no prior assertion moves.
+
+     topSpanIn is not cosmetic. effectiveLoad has always passed it and these
+     two never did, so on a singled bar rig the picker priced against the
+     lifter's body width (17.25in) while the engine priced against the bar's
+     attach span (26in) -- an 8.4in difference in reach. The stretch figures
+     printed on every landmark button, and the "no landmark sits above this
+     band's reach" gate itself, were computed from a reach the engine did not
+     use. Greg's ruling 2026-08-14 confirms the engine's semantics are the
+     right ones: for a bar, bar span; for handles, body width. */
+  function beltAttachOptions(band, geom, plate, doubled, body, keys, topSpanIn, path) {
+    var reach = beltReach(band, geom, plate, doubled, body, topSpanIn, path);
     if (reach == null) return [];
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
       ? geom.restLengthIn : (band.lengthIn || 0);
@@ -911,6 +1029,12 @@
      Greg, 2026-08-06: for a deadlift and a Romanian deadlift the point of
      maximum stretch sits between MID-THIGH and HIP, closer to mid-thigh, one
      third of the way up. 117 and 119 share that endpoint.
+     SUPERSEDED 2026-08-14: Greg corrected this to MID-THIGH itself while
+     reporting the exercise-37 ATTACH AT bug -- the band is between the ankle
+     and mid-calf at the bottom of an RDL and at mid-thigh at the top, and
+     attachHeightIn is the top of the rep. All five hinge entries are `at`
+     now. The 2026-08-06 reasoning is kept because it is the record of what
+     the table meant for the eight days it was live.
 
      201 is the same hinge plus a shrug. `plusIn` is the height the HANDS rise
      -- 1.5in, confirmed directly. Greg also said the shrug "effectively adds
@@ -924,11 +1048,29 @@
      blank. A wrong default is silent -- it yields a plausible number instead of
      a degradation -- so nothing here is guessed. */
   var PLATE_GRIP_DEFAULT = {
-    37:  { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
-    117: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
-    119: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
-    185: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3 },
-    201: { from: "midThighHeightIn", to: "hipHeightIn", frac: 1 / 3, plusIn: 1.5 },
+    /* THE HINGE FAMILY. These five sat {from: midThigh, to: hip, frac: 1/3}
+       from 2026-08-06 until 2026-08-14 -- 30.83in on Greg's measurements. He
+       corrected it while reporting the exercise-37 ATTACH AT bug: on a band
+       RDL the band is loaded somewhere between the ankle and mid-calf at the
+       BOTTOM (which is beltReach, and the model computes it), and "as you
+       unhinge to perform the lift the band is mid-thigh". attachHeightIn is
+       the TOP of the rep, so mid-thigh is the answer.
+
+       One movement pattern, so one rule rather than an exception for 37.
+       `at` rather than a degenerate frac:0 between two copies of one field,
+       for the same reason the racked squats use it: writing a single
+       termination as an interpolation is a lie about the movement. It also
+       means these five now need ONE measured landmark instead of two -- an
+       unmeasured hip no longer withholds the default. */
+    37:  { at: "midThighHeightIn" },              // Band Romanian Deadlift
+    117: { at: "midThighHeightIn" },              // Romanian Deadlift (RDL)
+    119: { at: "midThighHeightIn" },              // Stiff-Leg Deadlift
+    185: { at: "midThighHeightIn" },              // Band Deadlift
+    /* plusIn is the height the HANDS rise, NOT the loop path. beltReach
+       already halves for the two strands, so 3 here would double the real
+       change -- the same failure class as the belt bug, where a 40in waist
+       circumference was consumed as an inline extension. */
+    201: { at: "midThighHeightIn", plusIn: 1.5 }, // Band Deadlift + Shrug
     /* The RACKED-SQUAT family, added 2026-08-10. The bar rides on the
        shoulders for the whole rep, so the band's top end at the hardest point
        is mid-shoulder -- one landmark, not an interpolation, hence `at`.
@@ -1016,6 +1158,45 @@
     return top.kind === "bar" || PLATE_GRIP_DEFAULT[String(exId)] != null;
   }
 
+  /* The day footplate band paths shipped. Same posture as PLATE_GEOM_CUTOFF:
+     DERIVED from the entry's own date, gear and exercise every time it is
+     read, so nothing is written to the log and there is no write path to get
+     wrong. History is NOT restamped -- frozen stamps stay frozen, and this is
+     how one that no longer matches the live card explains itself. */
+  var BAND_PATH_CUTOFF = "2026-08-14";
+
+  function stampPredatesBandPath(dateISO, gearIds, gearOf, exId) {
+    if (!dateISO || String(dateISO) >= BAND_PATH_CUTOFF) return false;
+    var plateItem = beltPlateOf(gearIds, gearOf);
+    if (!plateItem) return false;
+    /* Only rigs that actually took the absolute-stretch path -- the only one
+       that consults `consumed`. A footplate is ALSO the ordinary elevation
+       gear gearPathDelta has always treated it as (a riser under an unrelated
+       lift), and such a rig was on the reference-strain path before AND after,
+       so recomputing it gives the identical number.
+
+       Unlike stampPredatesPlateGeom, a BELT rig is NOT excluded: the belt path
+       calls beltReach too, so it reprices along with everything else. */
+    var known = beltBeltPresent(gearIds, gearOf) ||
+                plateTopSpan(gearIds, gearOf).kind === "bar" ||
+                PLATE_GRIP_DEFAULT[String(exId)] != null;
+    if (!known) return false;
+    /* Would this rig's price ACTUALLY have changed? The Cyberplate and the
+       Acacia's whole-plate paths are still the legacy arithmetic -- neither
+       plate could be taped -- so their history prices identically and flagging
+       it would report a change that never happened.
+
+       Derived by comparing the default path against the formula it replaced,
+       rather than listing the affected plates, so a plate taped LATER starts
+       being flagged with no code edit and a plate whose figure never moves is
+       never flagged at all. */
+    var d = resolveGearDims(plateItem) || {};
+    var legacy = (d.bandSpanIn || d.lengthIn || 0)
+               + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
+    var p = plateBandPathOf(plateItem, null);
+    return !!p && Math.abs(p.consumedIn - legacy) > 1e-9;
+  }
+
   /* The exercise card (item q + this task) surfaces three things about a
      load figure that a printed report was silently omitting: it is a PEAK,
      not an average; some figures were computed with no range of motion at
@@ -1035,7 +1216,8 @@
       "point of the rep, never an average over the range of motion. A band is " +
       "near-slack at the bottom of a hinge and hardest at lockout, so a set can " +
       "feel far lighter than its peak.");
-    var sawRomBlind = false, sawPreFold = false, sawPrePlate = false;
+    var sawRomBlind = false, sawPreFold = false, sawPrePlate = false,
+        sawPreBandPath = false;
     (entries || []).forEach(function (e) {
       if (!e) return;
       Object.keys(e.load || {}).forEach(function (exId) {
@@ -1045,6 +1227,9 @@
         if (ld.era === "pre-fold") sawPreFold = true;
         if (stampPredatesPlateGeom(e.date, (e.gear || {})[exId], gearOf, exId)) {
           sawPrePlate = true;
+        }
+        if (stampPredatesBandPath(e.date, (e.gear || {})[exId], gearOf, exId)) {
+          sawPreBandPath = true;
         }
       });
     });
@@ -1061,6 +1246,13 @@
       notes.push("Some stamps here were frozen before the plate-geometry fix " +
         "(" + PLATE_GEOM_CUTOFF + ") and came from a path that could not see " +
         "the grip height. The current model would price those sets lower.");
+    }
+    if (sawPreBandPath) {
+      notes.push("Some stamps here were frozen before the footplate " +
+        "band-path fix (" + BAND_PATH_CUTOFF + ") and priced the band over " +
+        "the WHOLE plate whether or not it was rigged that way. The current " +
+        "model consumes about 2in less band on the plates that have since " +
+        "been measured, so it prices those sets LIGHTER.");
     }
     return notes;
   }
@@ -1240,12 +1432,12 @@
      Added 2026-08-03 for the CUSTOM option, chosen over a MID-SHIN landmark
      because the Harambe-with-a-strap case is a VARIABLE length and no fixed
      landmark can express it. */
-  function beltAttachAt(band, geom, plate, doubled, body, heightIn) {
+  function beltAttachAt(band, geom, plate, doubled, body, heightIn, topSpanIn, path) {
     /* finitePos, not isFinite: the picker's number input hands back "" while it
        is being typed into and an imported profile can hand back "28". isFinite
        says true to both. */
     if (!finitePos(heightIn)) return null;
-    var reach = beltReach(band, geom, plate, doubled, body);
+    var reach = beltReach(band, geom, plate, doubled, body, topSpanIn, path);
     if (reach == null) return null;
     var s = beltStretch(reach, heightIn);
     if (s == null) return null;
@@ -1479,13 +1671,27 @@
         out.basis = pfx + "the footplate's dimensions are unknown";
         return out;
       }
+      /* WHICH way the band is rigged on this plate. Unset means the plate's
+         first declared path -- the ordinary way -- so every rig logged before
+         band paths existed prices unchanged.
+
+         A key this plate does not offer is REFUSED here rather than quietly
+         resolved to the default. Substituting would reprice a saved exercise
+         against geometry the user never chose, confidently and with nothing on
+         screen saying so, which is the failure this whole model exists to
+         remove. It happens when a plate is swapped on a saved entry. */
+      var bPath = plateBandPathOf(plateItem, o.bandPath);
+      if (!bPath) {
+        out.basis = pfx + "this footplate does not offer the recorded band path";
+        return out;
+      }
       var lbB = 0, refB = 0, anyB = false, allMeasured = true, minStrain = Infinity,
           maxStrain = 0, firstStretch = null, anyClamped = false;
       ids.forEach(function (id) {
         var b = ctx.bandOf ? ctx.bandOf(id) : null;
         if (!b) return;
         var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
-        var reach = beltReach(b, geom, plate, o.doubled, ctx.body, topSpanIn);
+        var reach = beltReach(b, geom, plate, o.doubled, ctx.body, topSpanIn, bPath);
         var s = beltStretch(reach, heightIn);
         if (s == null) return;                    // this band cannot be rigged so
         anyB = true;
@@ -1517,19 +1723,21 @@
         out.ratio = refB ? (lbB / refB) : 1;
         out.stretchIn = firstStretch;
         out.attachHeightIn = heightIn;
+        out.bandPathK = bPath.k;
+        out.bandPathLabel = bPath.l;
         out.belowRated = minStrain < LOAD_MODEL.STRAIN_AT_RATED_MIN;
         out.aboveRated = maxStrain > LOAD_MODEL.STRAIN_AT_RATED_MAX;
         var gearOK = gearDimsVerified(gearIds, ctx.gearOf);
-        /* A plate with no bandSpanIn of its own falls back to `lengthIn` in
-           beltReach -- the plate's overall length standing in for the distance
-           the band actually runs under it. That is a GUESS, and the spec says
-           so: "that fallback forces MODELED and can never reach MEASURED, the
-           same refusal that removed the interpolated bandSpanIn: 20.5 on
-           2026-07-31". No check enforced it, so Serious Steel|Acacia Training
-           Platform -- verified:true, no bandSpanIn -- reached MEASURED on a
-           substituted number. A vendor spec is not a measurement of THIS unit,
-           and neither is a dimension nobody took. */
-        var plateSpanMeasured = finitePos(plate.bandSpanIn);
+        /* Provenance follows the PATH, not the plate. A plate may carry a
+           taped figure for one path and a computed one for another -- the
+           Acacia's near-slot is Greg's tape while its whole-plate figure is
+           still the legacy arithmetic -- so asking "did the user measure this
+           plate" is the wrong question. The right one is "did the user measure
+           the way this band is actually rigged".
+
+           This replaces `finitePos(plate.bandSpanIn)`, which asked the older
+           question and gave the same answer only by coincidence. */
+        var plateSpanMeasured = bPath.source === "measured";
         out.provenance = (allMeasured && gearOK && plateSpanMeasured)
           ? "MEASURED" : "MODELED";
         if (out.provenance === "MEASURED") {
@@ -1540,8 +1748,8 @@
                       "do not reach this stretch)";
         } else if (allMeasured && gearOK && !plateSpanMeasured) {
           out.basis = "band path from the footplate and your attachment height, " +
-                      "on your Tension Master readings but over an unmeasured " +
-                      "footplate band span";
+                      "on your Tension Master readings but over a " + bPath.source +
+                      " footplate band path (" + bPath.l + ")";
         } else {
           out.basis = "band path from the footplate and your attachment height, " +
                       "on the fitted curve";
@@ -1719,7 +1927,7 @@
      its own basis rather than a number borrowed from a different model.
      MEASURED and MODELED share a tier: both are real loads on the same scale,
      and picking by provenance there would report a lighter set as the top. */
-  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening) {
+  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening, bandPath) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
@@ -1727,7 +1935,7 @@
       if (!bands.length) return;
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
-                              exId: exId, opening: opening });
+                              exId: exId, opening: opening, bandPath: bandPath });
       var tier = e.provenance === "RATED" ? 0 : 1;
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
@@ -1755,6 +1963,12 @@
        attachMap   { exId: heightIn } -- belt attachment height per exercise
                    id, or absent/undefined for exercises that aren't a belt
                    setup.
+       bandPathMap { exId: pathKey } -- WHICH way the band was rigged on the
+                   footplate, per exercise id. Absent or undefined means the
+                   plate's first declared path, which is how every entry
+                   logged before 2026-08-14 keeps its meaning. The key is
+                   frozen onto the stamp only when it actually priced the
+                   result; see bandPathK below.
 
      Returns { exId: { lb, rated, ratio, provenance, deltaIn | stretchIn,
      doubled, attachIn, belowRated, romBlind } }, one entry per exercise that
@@ -1778,7 +1992,7 @@
      Note the persisted stamp writes `attachIn`, while the live effectiveLoad
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
-  function stampLoad(exercises, gearMap, ctx, attachMap, openingMap) {
+  function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap) {
     if (!ctx || typeof ctx.bandOf !== "function") return undefined;
     var out = {}, any = false;
     Object.keys(exercises || {}).forEach(function (exId) {
@@ -1793,7 +2007,12 @@
          this rejects must DEGRADE loudly rather than be quietly dropped to
          undefined and degrade for a different stated reason. */
       var openingN = openingMap ? openingMap[exId] : undefined;
-      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN);
+      /* Passed through RAW for the same reason as openingN: plateBandPathOf
+         already refuses a key the plate does not offer, and a value it rejects
+         must DEGRADE loudly in effectiveLoad rather than be quietly dropped to
+         undefined here and degrade for a different stated reason. */
+      var bandPathK = bandPathMap ? bandPathMap[exId] : undefined;
+      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN, bandPathK);
       if (!best) return;
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
@@ -1812,6 +2031,17 @@
                     doubled: best.doubled || undefined,
                     attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
                     openingN: openingUsed ? openingN : undefined,
+                    /* Frozen only when the absolute-stretch path actually
+                       produced this number AND named the path it used.
+                       effectiveLoad sets best.bandPathK only inside that
+                       branch, so a reference-strain rig, a degraded result and
+                       a rig with no footplate all correctly record nothing --
+                       the same rule openingN follows two lines above.
+                       The `&& bandPathK` half is what stops an UNCHOSEN
+                       default being written back as though the user had picked
+                       it: the default priced the set, but nobody selected it,
+                       and a stamp claiming otherwise would outlive the reason. */
+                    bandPathK: (best.bandPathK && bandPathK) ? best.bandPathK : undefined,
                     belowRated: best.belowRated || undefined,
                     romBlind: best.romBlind || undefined };
     });
@@ -1879,8 +2109,23 @@
   function gearChange(ctx, prevGearIds, nowGearIds, opts) {
     var a = (prevGearIds || []).slice().sort().join(",");
     var b = (nowGearIds || []).slice().sort().join(",");
-    if (a === b) return null;
     var o = opts || {};
+    /* A BAND PATH change moves the load with the gear id list untouched -- the
+       same plate threaded through its slots instead of wrapped end to end is
+       4.25in less band consumed on the Clench -- so the identity test has to
+       include it or the banner never fires at all.
+
+       Both sides normalise through plateBandPathOf, so an UNSET key and an
+       explicit default compare EQUAL: merely opening the picker and
+       re-selecting the default must not report a phantom setup change. */
+    var itPrev = beltPlateOf(prevGearIds, ctx.gearOf);
+    var itNow  = beltPlateOf(nowGearIds, ctx.gearOf);
+    var pathPrev = itPrev ? plateBandPathOf(itPrev, o.prevBandPath) : null;
+    var pathNow  = itNow  ? plateBandPathOf(itNow,  o.bandPath)     : null;
+    var kPrev = pathPrev ? pathPrev.k : null;
+    var kNow  = pathNow  ? pathNow.k  : null;
+    var pathChanged = kPrev !== kNow;
+    if (a === b && !pathChanged) return null;
     var names = function (list) {
       return (list || []).map(function (id) {
         var g = ctx.gearOf ? ctx.gearOf(id) : null;
@@ -1901,15 +2146,26 @@
       return out;
     }
 
+    /* A key naming no real path cannot be priced against one that does. */
+    if ((o.prevBandPath && itPrev && !pathPrev) || (o.bandPath && itNow && !pathNow)) {
+      out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      out.reason = "the recorded band path is not one this footplate offers";
+      return out;
+    }
+
     if (beltBefore && beltAfter) {
       var band = o.band || null;
       var pPrev = resolveGearDims(beltPlateOf(prevGearIds, ctx.gearOf));
       var pNow  = resolveGearDims(beltPlateOf(nowGearIds, ctx.gearOf));
       var body  = ctx.body || null;
+      /* The chosen paths, not the legacy whole-plate arithmetic. Until
+         2026-08-14 this quoted a delta computed off numbers effectiveLoad had
+         already stopped using -- the same divergence class as the picker
+         computing one reach while the engine computed another. */
       var rPrev = (band && pPrev && body)
-        ? beltReach(band, o.geom || null, pPrev, !!o.doubled, body) : null;
+        ? beltReach(band, o.geom || null, pPrev, !!o.doubled, body, null, pathPrev) : null;
       var rNow = (band && pNow && body)
-        ? beltReach(band, o.geom || null, pNow, !!o.doubled, body) : null;
+        ? beltReach(band, o.geom || null, pNow, !!o.doubled, body, null, pathNow) : null;
       if (!finitePos(rPrev) || !finitePos(rNow)) {
         out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
         out.reason = !band ? "no band logged yet, so the band's reach is unknown"
@@ -1926,6 +2182,21 @@
       out.deltaIn = rPrev - rNow;
       out.direction = out.deltaIn > 0 ? "heavier"
                     : (out.deltaIn < 0 ? "lighter" : "unknown");
+      return out;
+    }
+
+    /* A band-path change with no belt in the rig. The reach branch above is
+       gated on a belt on BOTH sides, and widening that gate would change what
+       the banner says for every ordinary elevation rig -- a separate decision,
+       deliberately not taken here. Falling through to gearPathDelta instead
+       would be worse than useless: that function never consults the band path,
+       so it would quote a confident ZERO for a change worth inches of reach.
+       Refusing to quantify is the same posture as the 2026-08-03 fix that
+       stopped this banner reporting a belt swap in reference-strain currency. */
+    if (pathChanged) {
+      out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      out.reason = "the band path changed, and without a belt this setup has " +
+                   "no single comparable number";
       return out;
     }
 
@@ -3807,6 +4078,20 @@
                                   attachSpanIn: 26, source: "measured", verified: true },
     "Harambe|Cyberplate":       { thicknessIn: 2, lengthIn: 22, widthIn: 11.75,
                                   channelIn: 1, bandSpanIn: 22.25,
+                                  /* COMPUTED and DERIVED, not taped. This plate was at
+                                     Greg's son's on 2026-08-14 and could not be measured.
+                                     It has no hole, so the two whole-plate paths are all
+                                     it needs. Both figures are the legacy arithmetic
+                                     (span + 2*thickness + channel), so this plate prices
+                                     exactly as it did before band paths existed --
+                                     stampPredatesBandPath correctly leaves its history
+                                     unflagged. On the four plates Greg DID tape, the real
+                                     path runs about 2in shorter than this arithmetic, so
+                                     these two carry a known bias until measured. */
+                                  bandPaths: [
+                                    { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 27.25, source: "computed" },
+                                    { k: "wid", l: "UNDER - WIDTHWISE",  consumedIn: 17,    source: "derived" }
+                                  ],
                                   source: "measured", verified: true },
     /* CORRECTED 2026-07-31, and the correction is large. This read seriesIn 7.75
        from 2026-07-30 to 2026-07-31 because 7 3/4in is the OVERALL LENGTH OF THE
@@ -3861,6 +4146,16 @@
     // ---- X3 Bar ----------------------------------------------------------
     "X3 Bar|Steel Ground Plate":{ thicknessIn: 1, lengthIn: 19.25, widthIn: 9.875,
                                   channelIn: 0.875, bandSpanIn: 19.75,
+                                  /* THE ONLY LENGTH-LOCKED PLATE. Greg, 2026-08-14:
+                                     "the X3 footplate can only travel lengthwise but
+                                     that's the only footplate with that limitation."
+                                     Declaring one path is the whole enforcement -- the
+                                     picker offers what the plate declares, so no flag and
+                                     no branch is needed and a widthwise X3 rig is not
+                                     offerable. */
+                                  bandPaths: [
+                                    { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 20.5, source: "measured" }
+                                  ],
                                   source: "measured", verified: true },
     "X3 Bar|Elite Bar":         { lengthIn: 21.5, hookOffsetIn: 1.875, hookSide: "opposite",
                                   attachSpanIn: 20.375, source: "measured", verified: true },
@@ -3875,6 +4170,27 @@
                                   attachSpanIn: 33.25, source: "measured", verified: true },
     "Clench|Footplate":         { thicknessIn: 1.5, lengthIn: 23.875, widthIn: 14.875,
                                   channelIn: 0.5, bandSpanIn: 24.25,
+                                  /* Four bottom channels (4in x 1/2in) and FOUR OUTER
+                                     SLOTS, one per side, so the band need not wrap the
+                                     plate at all. `len_near` is the path Greg's 2026-08-11
+                                     and 2026-08-14 RDLs actually used: down the outer face,
+                                     about an inch under, back up through the near slot.
+                                     Without it a 20in band folded (a 19.75in loop) cannot
+                                     wrap this plate's 24.25in span by ANY orientation, and
+                                     beltReach correctly returned null -- which is what made
+                                     that exercise unloggable.
+                                     The near-slot figure is the same 2.75in on the long and
+                                     the short sides (Greg, measured 2026-08-14). */
+                                  bandPaths: [
+                                    { k: "len",       l: "UNDER - LENGTHWISE",                consumedIn: 25.625, source: "measured" },
+                                    { k: "len_far",   l: "LENGTHWISE, TO THE FAR SLOT",       consumedIn: 23.5,   source: "measured" },
+                                    { k: "len_slots", l: "LENGTHWISE, SLOT TO SLOT",          consumedIn: 21.375, source: "measured" },
+                                    { k: "len_near",  l: "LENGTHWISE, EDGE TO THE NEAR SLOT", consumedIn: 2.75,   source: "measured" },
+                                    { k: "wid",       l: "UNDER - WIDTHWISE",                 consumedIn: 16.75,  source: "measured" },
+                                    { k: "wid_far",   l: "WIDTHWISE, TO THE FAR SLOT",        consumedIn: 14.75,  source: "measured" },
+                                    { k: "wid_slots", l: "WIDTHWISE, SLOT TO SLOT",           consumedIn: 12.75,  source: "measured" },
+                                    { k: "wid_near",  l: "WIDTHWISE, EDGE TO THE NEAR SLOT",  consumedIn: 2.75,   source: "measured" }
+                                  ],
                                   source: "measured", verified: true },
     "Clench|Handles":           { seriesIn: 1.5, gripDiaIn: 1.25, source: "measured", verified: true,
                                   note: "measured 2026-07-31. Was an unmeasured 5.5in estimate — the estimate was ~3.7x too long, in the direction that understates load." },
@@ -3890,6 +4206,23 @@
        re-add it if and when the platform is actually measured. */
     "Serious Steel|Acacia Training Platform": { thicknessIn: 2.125, lengthIn: 20, widthIn: 11.75,
                                   channelIn: 1.125,
+                                  /* ONE slot. `len_near` is Greg's tape (2026-08-14) and it
+                                     STANDS: the vendor sheet's 6in slot LENGTH is band-WIDTH
+                                     capacity -- how wide a band fits through -- not a
+                                     position and not a path length. The same applies to the
+                                     slot lengths published for all three Serious Steel
+                                     plates; none is a path length and none should be read
+                                     as one.
+                                     The whole-plate paths are still COMPUTED/DERIVED. This
+                                     plate has no bandSpanIn at all (the interpolated 20.5
+                                     was removed 2026-07-31 for being stamped as tape), so
+                                     its widthwise figure is the weakest in the table: bare
+                                     widthIn with no edge delta to add. */
+                                  bandPaths: [
+                                    { k: "len",      l: "UNDER - LENGTHWISE",    consumedIn: 25.375, source: "computed" },
+                                    { k: "len_near", l: "EDGE TO THE NEAR SLOT", consumedIn: 2.875,  source: "measured" },
+                                    { k: "wid",      l: "UNDER - WIDTHWISE",     consumedIn: 17.125, source: "derived" }
+                                  ],
                                   source: "measured", verified: true },
     "Serious Steel|Door Anchor":{ seriesIn: 5.5, doorThicknessIn: 1.5, source: "measured", verified: true,
                                   note: "measured 2026-07-31 at 5 1/2in — the unmeasured estimate said 10in, nearly double. Mounts on a 1 1/2in door; Greg uses it anywhere from 2in to 80in off the floor." },
@@ -3904,9 +4237,24 @@
                                   note: "measured 2026-07-31. Was an unmeasured 5.5in estimate." },
     "HeavyDutyBar|Qdeck":       { thicknessIn: 2, lengthIn: 24, widthIn: 12.5,
                                   channelIn: 0.75, bandSpanIn: 24.125,
+                                  /* The centre hole exists to shorten the band with the
+                                     Tension Master and elevators, and Greg's ruling
+                                     2026-08-14 is that it is used LENGTHWISE ONLY -- hence
+                                     no `wid_hole`. The hole measures 2 3/8in across at the
+                                     centre; that is a band-width capacity note, not an
+                                     input, and nothing reads it. */
+                                  bandPaths: [
+                                    { k: "len",      l: "UNDER - LENGTHWISE",                 consumedIn: 27,      source: "measured" },
+                                    { k: "len_hole", l: "LENGTHWISE, THROUGH THE CENTRE HOLE", consumedIn: 13.5,   source: "measured" },
+                                    { k: "wid",      l: "UNDER - WIDTHWISE",                  consumedIn: 15.3125, source: "measured" }
+                                  ],
                                   source: "measured", verified: true },
     "HeavyDutyBar|Travel Platform": { thicknessIn: 1.625, lengthIn: 19.75, widthIn: 11.1875,
                                   channelIn: 0.875, bandSpanIn: 20,
+                                  bandPaths: [
+                                    { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 21.75,  source: "measured" },
+                                    { k: "wid", l: "UNDER - WIDTHWISE",  consumedIn: 13.375, source: "measured" }
+                                  ],
                                   source: "measured", verified: true },
     /* ADJUSTABLE. A pair, 76cm overall, a hook at one end and SEVEN numbered
        positions stamped on the strap. Which position you hook is a CHOICE, so
@@ -3968,7 +4316,13 @@
      +12in of band path to every exercise it was logged against) and the X
      Straps' seven positions. Adding or correcting a GEAR_DIMS entry means
      bumping this. */
-  var GEAR_DIMS_REV = "2026-08-10-x-straps-r1";
+  /* Bumped 2026-08-14 for the band-path table. A stored `dims` copy carrying
+     an older rev is discarded in favour of a fresh table lookup, which is how
+     the new bandPaths arrays actually reach an existing inventory. The
+     2026-08-07 lesson: a table correction without a rev bump reaches nobody,
+     and every footplate in Greg's inventory carries a stored dims copy that
+     would otherwise win. */
+  var GEAR_DIMS_REV = "2026-08-14-band-paths-r1";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */
@@ -4413,12 +4767,22 @@
     attachClearMarker: attachClearMarker,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
+    plateBandPaths: plateBandPaths,
+    plateBandPathOf: plateBandPathOf,
+    plateBandPathOptions: plateBandPathOptions,
     plateGripDefault: plateGripDefault,
     plateGripDefaultFor: plateGripDefaultFor,
     beltSlackens: beltSlackens,
     BELT_EXTENDERS: BELT_EXTENDERS,
     PLATE_GEOM_CUTOFF: PLATE_GEOM_CUTOFF,
     stampPredatesPlateGeom: stampPredatesPlateGeom,
+    stampPredatesBandPath: stampPredatesBandPath,
+    /* Exported 2026-08-14 so the caveat WORDING can be pinned. It is the one
+       source of these notes for buildSetupDoc, buildHistoryDoc and analyze,
+       and it is what tells a reader that a frozen stamp no longer matches the
+       live card -- user-visible text that should not be able to drift. */
+    loadCaveatNotes: loadCaveatNotes,
+    BAND_PATH_CUTOFF: BAND_PATH_CUTOFF,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
     GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,

@@ -1043,7 +1043,7 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1381,6 +1381,63 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
           </div>
         )
       })()}
+      {/* ── BAND PATH ───────────────────────────────────────────────
+          WHICH way the band is rigged on the footplate. A plate is not one
+          number: the Clench takes the band lengthwise, widthwise, through one
+          of its four outer slots, or between two of them — 25.625in down to
+          2.75in of consumed band. Enough that a rig which is impossible one
+          way is ordinary another, which is why the 2026-08-11 and 2026-08-14
+          RDLs could not be logged: a 20in band folded is a 19.75in loop and
+          cannot wrap that plate at all.
+
+          Same row, same wording and same behaviour as fitness_app.html. The
+          JSX is duplicated because the shared module is plain ES5 in a
+          non-Babel script tag and cannot hold JSX; the PURE part is shared —
+          plateBandPathOptions — so neither app builds its own path list. */}
+      {(function(){
+        if (!RBTS_REPORTS.plateBandPathOptions) return null
+        const po = RBTS_REPORTS.plateBandPathOptions(sel, gearOf)
+        if (!po) return null
+        const setPath = onBandPathChange || (()=>{})
+        const active = RBTS_REPORTS.plateBandPathOf(po.item, bandPath)
+        return (
+          <div style={{marginTop:6}}>
+            <div style={lbl}>{(po.item.name||'').toUpperCase()} · BAND PATH</div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
+              {po.paths.map(pth => (
+                <button key={pth.k}
+                  title={`${pth.l} — ${pth.consumedIn} in of band consumed by the plate `
+                        + `(${pth.source}). Less consumed means the band reaches further, `
+                        + `so LESS stretch and a LIGHTER load.`}
+                  onClick={()=>setPath(pth.k)}
+                  style={{...btn(active ? active.k === pth.k : false),fontSize:9,padding:'4px 8px'}}>
+                  {pth.l} · {pth.consumedIn}&quot;{pth.source === 'measured' ? '' : ' ~'}
+                </button>
+              ))}
+              {bandPath != null && (
+                <button title="Clear the band path — the load falls back to this plate's ordinary lengthwise path"
+                  onClick={()=>setPath(undefined)}
+                  style={{...btn(false,C.dimGray),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
+              )}
+            </div>
+            {po.paths.length === 1 && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:3}}>
+                THIS PLATE TAKES THE BAND ONE WAY ONLY
+              </div>
+            )}
+            {!active && bandPath != null && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:3}}>
+                THIS PLATE DOES NOT OFFER THE RECORDED PATH — PICK ONE OR CLEAR IT
+              </div>
+            )}
+            {po.paths.some(pth => pth.source !== 'measured') && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
+                ~ computed from the plate&apos;s dimensions, not measured — cannot reach MEASURED
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {open && (
         <div style={{
           position:'absolute',zIndex:300,top:'100%',left:0,marginTop:4,
@@ -1444,7 +1501,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, loadStamp, entryDate }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, loadStamp, entryDate }) {
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -1602,7 +1659,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})} exId={id}
             bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
             attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}
-            opening={opening} onOpeningChange={onOpeningChange||(()=>{})}/>
+            opening={opening} onOpeningChange={onOpeningChange||(()=>{})}
+            bandPath={bandPath} onBandPathChange={onBandPathChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -1741,7 +1799,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // which always passes exId) did not, so the number on screen
         // mid-workout could silently disagree with what got saved.
         const e = RBTS_REPORTS.bestSetLoad(
-          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id, opening)
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id, opening, bandPath)
         if (!e || e.lb == null) return null
         // The chip is not decoration: RATED is a vendor midpoint at an
         // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
@@ -1817,7 +1875,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange }) {
   const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
@@ -1847,6 +1905,10 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     if (opening && opening[String(id)] != null && onOpeningChange) {
       const o = {...opening}; delete o[String(id)]; onOpeningChange(o)
     }
+    // And the footplate band path.
+    if (bandPath && bandPath[String(id)] != null && onBandPathChange) {
+      const b = {...bandPath}; delete b[String(id)]; onBandPathChange(b)
+    }
   }
   function updateExGear(id, ids) {
     if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
@@ -1867,6 +1929,15 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     const next = {...(opening||{})}
     if (n == null) delete next[String(id)]; else next[String(id)] = n
     onOpeningChange(next)
+  }
+  /* The footplate band path, same shape. The guard is a non-empty STRING, not
+     isFinite: a path key is a string and isFinite('len') is false, so copying
+     the opening's guard would drop every path silently. */
+  function updateBandPath(id, k) {
+    if (!onBandPathChange) return
+    const next = {...(bandPath||{})}
+    if (typeof k !== 'string' || !k) delete next[String(id)]; else next[String(id)] = k
+    onBandPathChange(next)
   }
 
   function getPrevSets(exerciseId) {
@@ -1906,6 +1977,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         attachHeightIn={(attach||{})[String(id)]}
         onAttachChange={h=>updateAttach(id,h)}
         opening={(opening||{})[String(id)]}
+        bandPath={(bandPath||{})[String(id)]}
+        onBandPathChange={k=>updateBandPath(id,k)}
         onOpeningChange={n=>updateOpening(id,n)}
         entryDate={todayDate}
         loadStamp={savedLoad[String(id)]}/>
@@ -1939,6 +2012,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           attachHeightIn={(attach||{})[String(id)]}
           onAttachChange={h=>updateAttach(id,h)}
           opening={(opening||{})[String(id)]}
+          bandPath={(bandPath||{})[String(id)]}
+          onBandPathChange={k=>updateBandPath(id,k)}
           onOpeningChange={n=>updateOpening(id,n)}
           entryDate={todayDate}
           loadStamp={savedLoad[String(id)]}/>
@@ -3245,6 +3320,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const [gearLogs, setGearLogs]   = useState({})   // per-exercise equipment {exId: [gearItemId,...]}
   const [attachLogs, setAttachLogs] = useState({}) // per-exercise belt attach height {exId: heightIn}
   const [openingLogs, setOpeningLogs] = useState({}) // per-exercise adjustable-gear position {exId: n}
+  const [bandPathLogs, setBandPathLogs] = useState({}) // per-exercise footplate band path {exId: k}
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
@@ -3295,12 +3371,21 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const n = (openingLogs||{})[id]
       if (n != null && isFinite(n)) cleanOpening[id] = n
     })
+    /* The footplate band path, scoped identically. The guard is a non-empty
+       STRING, not isFinite: a path key is a string and isFinite('len') is
+       false, so copying the opening's guard would drop every one of them. */
+    const cleanBandPath = {}
+    Object.keys(cleanEx).forEach(id => {
+      const k = (bandPathLogs||{})[id]
+      if (typeof k === 'string' && k) cleanBandPath[id] = k
+    })
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
       splitId:effSplitId(info.prog),          // P4: which split produced this key
       schemaVersion:2,
       exercises:cleanEx, gear:cleanGear, attach: cleanAttach, opening: cleanOpening,
+      bandPath: cleanBandPath,
       completedAt:new Date().toISOString(),
     }
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
@@ -3311,7 +3396,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
        different shapes). */
     const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening)
+                           cleanOpening, cleanBandPath)
     if (load) entry.load = load
     onSaveEntry(entry)
     setSaved(true)
@@ -3419,6 +3504,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               onGearChange={g=>{setGearLogs(g);setSaved(false);}}
               attach={attachLogs}
               opening={openingLogs}
+              bandPath={bandPathLogs}
+              onBandPathChange={b=>{setBandPathLogs(b); setSaved(false)}}
               onOpeningChange={o=>{setOpeningLogs(o); setSaved(false)}}
               onAttachChange={a=>{setAttachLogs(a);setSaved(false);}}
               todayDate={todayISO} log={log}/>
@@ -3483,6 +3570,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
      without its own state an edit would re-stamp every strap exercise as the
      degraded RATED while the opening still sat in the entry beside it. */
   const [op, setOp] = useState(() => JSON.parse(JSON.stringify(entry.opening || {})))
+  /* The footplate band path, seeded from the entry for the same reason the
+     opening is: re-opening a workout must not silently drop a choice that is
+     already priced into its stamp. */
+  const [bp, setBp] = useState(() => JSON.parse(JSON.stringify(entry.bandPath || {})))
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
@@ -3584,6 +3675,14 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       const n = op[id]
       if (n != null && isFinite(n)) cleanOpening[id] = n
     })
+    /* The footplate band path, scoped identically. The guard is a non-empty
+       STRING, not isFinite: a path key is a string and isFinite('len') is
+       false, so copying the opening's guard would drop every one of them. */
+    const cleanBandPath = {}
+    Object.keys(ex).forEach(id => {
+      const k = bp[id]
+      if (typeof k === 'string' && k) cleanBandPath[id] = k
+    })
     /* Re-stamp load from the sets actually being saved. The freeze-at-save
        rule exists so a later band re-measurement can't rewrite what a past
        workout meant -- it does not apply here, because the user is
@@ -3593,10 +3692,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening)
+                           cleanOpening, cleanBandPath)
     const updated = RBTS_REPORTS.applyLoadStamp(
       { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
-        opening: cleanOpening, editedAt: new Date().toISOString() },
+        opening: cleanOpening, bandPath: cleanBandPath,
+        editedAt: new Date().toISOString() },
       loadStamp)
     onSave(updated)
     onDone(true)
@@ -3633,7 +3733,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
               bands={setBandsOf(refSetOf(id))} doubled={!!refSetOf(id).doubled}
               attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}
               opening={op[id]}
-              onOpeningChange={n=>setOp(prev=>{const x={...prev}; if(n==null) delete x[id]; else x[id]=n; return x})}/>
+              onOpeningChange={n=>setOp(prev=>{const x={...prev}; if(n==null) delete x[id]; else x[id]=n; return x})}
+              bandPath={bp[id]}
+              onBandPathChange={k=>setBp(prev=>{const x={...prev};
+                /* Non-empty STRING, not isFinite -- a path key is a string. */
+                if (typeof k !== 'string' || !k) delete x[id]; else x[id]=k; return x})}/>
           </div>
           {(sets||[]).map((s,i) => {
             const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
