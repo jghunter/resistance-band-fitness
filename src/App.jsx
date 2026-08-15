@@ -1047,6 +1047,17 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
+  /* The CUSTOM attach height AS TYPED. Until 2026-08-14 the box was driven by
+     the PRICED result, so every keystroke that was not already a valid answer
+     blanked it: typing 2 then 4 to reach 24 gave blank, then a fresh 4. The
+     field could not be typed into at all, on ANY exercise.
+
+     null means "not being edited", and the box then shows whatever height is
+     actually recorded -- priced or not -- which is the second half of the fix:
+     a stored height the model cannot price was invisible, so the warning under
+     the box referred to a number nothing on screen showed and CLEAR looked
+     inert while having something to clear. */
+  const [customText, setCustomText] = useState(null)
 
   useEffect(() => {
     if (!open) return
@@ -1235,10 +1246,20 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const top = RBTS_REPORTS.plateTopSpan(sel, gearOf)
         const lmKeys = RBTS_REPORTS.attachLandmarkKeys
           ? RBTS_REPORTS.attachLandmarkKeys(top.kind) : undefined
+        /* `plate` is the gear ITEM; resolveGearDims(plate) is its dims. The
+           path resolver wants the item. */
+        const bPath = RBTS_REPORTS.plateBandPathOf
+          ? RBTS_REPORTS.plateBandPathOf(plate, bandPath) : null
+        /* top.spanIn and bPath, both of which effectiveLoad has always used and
+           this picker never did. On a singled bar rig the picker priced against
+           the lifter's body width (17.25in) while the engine priced against the
+           bar's attach span (26in), so the stretch printed on every landmark
+           button -- and the "nothing sits above this reach" gate itself -- came
+           from a reach the engine did not use. */
         const opts = RBTS_REPORTS.beltAttachOptions(
           band, getLocalBandGeom()[band.id] || null,
           RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE,
-          lmKeys)
+          lmKeys, top.spanIn, bPath)
         const setAttach = onAttachChange || (()=>{})
         /* CUSTOM, added 2026-08-03 in place of a MID-SHIN landmark: a Harambe
            belt fed through a rope or strap hangs at a VARIABLE height that no
@@ -1250,17 +1271,31 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const isLm = opts.some(o => o.heightIn === attachHeightIn)
         const custom = (attachHeightIn != null && !isLm)
           ? RBTS_REPORTS.beltAttachAt(band, getLocalBandGeom()[band.id] || null,
-              RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE, attachHeightIn)
+              RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE, attachHeightIn,
+              top.spanIn, bPath)
           : null
         const shown = opts.concat(custom ? [custom] : [])
         return (
           <div style={{marginTop:6}}>
             <div style={lbl}>ATTACH AT</div>
-            {!opts.length && (
-              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginBottom:4}}>
-                NO LANDMARK SITS ABOVE THIS BAND&apos;S REACH — TYPE A CUSTOM HEIGHT
-              </div>
-            )}
+            {!opts.length && (() => {
+              /* Two very different situations wore one message until
+                 2026-08-14. A 20in band folded on a 25.625in path has NO reach
+                 at all -- beltReach returns null -- and telling the user no
+                 landmark sits above it sends them hunting for a taller
+                 landmark that cannot exist. */
+              const noReach = RBTS_REPORTS.beltReach(
+                band, getLocalBandGeom()[band.id] || null,
+                RBTS_REPORTS.resolveGearDims(plate), !!doubled,
+                BODY_MEASURE, top.spanIn, bPath) == null
+              return (
+                <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginBottom:4}}>
+                  {noReach
+                    ? "THIS BAND IS TOO SHORT TO BE RIGGED ON THIS PLATE BY THIS PATH — TRY A SHORTER BAND PATH, A LONGER BAND, OR SINGLE IT"
+                    : "NO LANDMARK SITS ABOVE THIS BAND'S REACH — TYPE A CUSTOM HEIGHT"}
+                </div>
+              )
+            })()}
             <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
               {opts.map(o => (
                 <button key={o.k}
@@ -1277,8 +1312,13 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
                 CUSTOM
                 <input type="number" step="0.25" min="0"
                   title="Floor-to-hook height, measured STANDING at the top of the rep — not where the band goes slack"
-                  value={custom ? custom.heightIn : ''}
-                  onChange={e => setAttach(e.target.value === '' ? undefined : Number(e.target.value))}
+                  value={customText != null ? customText
+                        : (attachHeightIn != null && !isLm ? String(attachHeightIn) : '')}
+                  onChange={e => {
+                    setCustomText(e.target.value)
+                    setAttach(e.target.value === '' ? undefined : Number(e.target.value))
+                  }}
+                  onBlur={() => setCustomText(null)}
                   style={{...inputStyle,width:56,fontSize:10,padding:'3px 5px'}}/>
                 &quot;
                 {custom && (
