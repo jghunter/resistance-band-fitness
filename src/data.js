@@ -127,6 +127,10 @@ export const EXERCISE_NAMES = {
   229:"Copenhagen Plank", 230:"Hourglass Laterals",
   231:"Resisted Dorsiflexion", 232:"Posterior Tibialis",
   233:"Band Lying Y-Raise", 234:"Forearm Twist",
+  /* 235/236 added 2026-08-20 for the substitution feature. 235 pairs with 33
+     (Band Face Pull) and 236 with 43 (Standing Band Overhead Press), so each
+     lands in the first band of the other's substitute list. */
+  235:"Bent-Over Face Pull", 236:"Z Press",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,6 +396,9 @@ export const VIDEOS = {
   232:{url:"https://www.youtube.com/shorts/1LrQxgIu1eA", start:0,    end:43},
   233:{url:"https://www.youtube.com/watch?v=CSispgPqROE", start:0,   end:75},   // replaces 223
   234:{url:"https://www.youtube.com/watch?v=5YNRp21YXw0", start:305, end:384},
+  /* No clip window on either: neither has been timed. Both play whole. */
+  235:{url:"https://www.youtube.com/watch?v=2NZuRdHC9v0"},
+  236:{url:"https://www.youtube.com/watch?v=cx8A2AKF_c8"},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1593,6 +1600,9 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   230: GROUP_META.SHOULDERS, 231: GROUP_META.TIBIALIS,
   232: GROUP_META.TIBIALIS,  233: GROUP_META.SHOULDERS,
   234: GROUP_META.FOREARMS,
+  /* 235/236, 2026-08-20. Past 234 the id-range table returns MOBILITY, so the
+     group is explicit. 235 matches 33 (BACK), 236 matches 43 (SHOULDERS). */
+  235: GROUP_META.BACK,      236: GROUP_META.SHOULDERS,
   // Panel recommendation 20 — classification errors, fixed 2026-07-30.
   // 37/38 are hip hinges: the hamstrings and glutes do the work and the back
   // holds an isometric position. Sitting in the BACK id range credited their
@@ -1607,7 +1617,10 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   // Promoted from customs 1000-1008, 2026-08-12. 229 Copenhagen Plank is the
   // only comp of the nine — it is Greg's own classification, carried across.
   226: "iso", 227: "iso", 228: "iso", 229: "comp", 230: "iso",
-  231: "iso", 232: "iso", 233: "iso", 234: "iso" };
+  231: "iso", 232: "iso", 233: "iso", 234: "iso",
+  /* 235 is single-joint like the face pull it derives from. 236 is a
+     multi-joint press, like 43. */
+  235: "iso", 236: "comp" };
 
 export const exGroup = (id) => {
   id = Number(id);
