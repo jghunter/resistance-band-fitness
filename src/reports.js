@@ -2122,6 +2122,55 @@
      opts { band, geom, doubled } is required to reach "belt"; without a band
      there is no reach to compute and it degrades to "incomparable" rather than
      falling back to the path sentence that is wrong for it. */
+  /* Ordered substitute candidates for one scheduled exercise.
+
+     Three bands: same muscle group AND same iso/comp class; same group, other
+     class; then everything else, which is withheld unless the caller asks for
+     it. Each band is sorted by NAME, because the reader is scanning for a lift
+     they already know by name and an id ordering would scatter them.
+
+     Group and class are used rather than a curated per-exercise table on
+     purpose. Both already cover every exercise and are maintained for other
+     reasons, so this ordering cannot go stale. The curated tables elsewhere in
+     this module -- BELT_EXTENDERS, PLATE_GRIP_DEFAULT -- earn their cost
+     because a wrong value there is APPLIED SILENTLY to a load figure. Here the
+     output is a list a person reads and then chooses from, so an imperfect
+     ordering is visible and correctable in the moment rather than frozen onto
+     a stamp.
+
+     ctx supplies allExerciseIds(), groupOf(id), classOf(id) and nameOf(id),
+     the same callback style as bandOf / gearOf / bandGeomOf.
+     opts is { showAll: Boolean }, default false. */
+  function substituteCandidates(exId, ctx, opts) {
+    opts = opts || {};
+    var id = Number(exId);
+    var g = ctx.groupOf(id);
+    var label = g ? g.label : null;
+    var cls = ctx.classOf(id);
+    var b1 = [], b2 = [], b3 = [];
+    (ctx.allExerciseIds() || []).forEach(function (other) {
+      other = Number(other);
+      if (other === id) return;
+      var og = ctx.groupOf(other);
+      var ol = og ? og.label : null;
+      /* A null group never matches a null group: an exercise the tables do not
+         know is not "the same group" as another unknown one. Without this both
+         fall into band 1 together and the picker offers a confident pairing
+         off two absences. */
+      if (label != null && ol === label && ctx.classOf(other) === cls) b1.push(other);
+      else if (label != null && ol === label) b2.push(other);
+      else b3.push(other);
+    });
+    function byName(a, b) {
+      return String(ctx.nameOf(a)).localeCompare(String(ctx.nameOf(b)));
+    }
+    return {
+      sameGroupSameClass: b1.sort(byName),
+      sameGroup: b2.sort(byName),
+      other: opts.showAll ? b3.sort(byName) : [],
+    };
+  }
+
   function gearChange(ctx, prevGearIds, nowGearIds, opts) {
     var a = (prevGearIds || []).slice().sort().join(",");
     var b = (nowGearIds || []).slice().sort().join(",");
@@ -4802,6 +4851,7 @@
     attachClearMarker: attachClearMarker,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
+    substituteCandidates: substituteCandidates,
     plateBandPaths: plateBandPaths,
     plateBandPathOf: plateBandPathOf,
     plateBandPathOptions: plateBandPathOptions,
