@@ -1551,7 +1551,12 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, loadStamp, entryDate }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
+  scheduledId = scheduledId || null
+  substituteCtx = substituteCtx || null
+  onSubstitute = onSubstitute || null
+  const [showPick, setShowPick] = useState(false)
+  const [showAll, setShowAll] = useState(false)
   const name  = EXERCISE_NAMES[id] || `Exercise #${id}`
   const group = exGroup(id)
   const tech  = techKey ? (TECHNIQUES[techKey] || '').split(' — ')[0] : null
@@ -1649,8 +1654,76 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>#{id}</span>
         <span style={pill(group.color)}>{group.label}</span>
         {role && <span style={pill(C.readout)}>{role}</span>}
+        {onSubstitute && (
+          <button onClick={()=>setShowPick(!showPick)}
+            title="Do a different exercise in this slot, today only"
+            style={{...btn(showPick),fontSize:9,padding:'2px 8px',marginLeft:'auto'}}>
+            {showPick ? 'CLOSE' : 'SUBSTITUTE'}
+          </button>
+        )}
       </div>
       <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4}}>{name}</div>
+      {scheduledId && (
+        <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,letterSpacing:'0.08em',
+          display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span>SUBSTITUTED FOR {EXERCISE_NAMES[scheduledId] || `#${scheduledId}`}</span>
+          <button onClick={()=>{ onSubstitute(null); setShowPick(false); setShowAll(false) }}
+            title="Put the scheduled exercise back"
+            style={{...btn(false),fontSize:9,padding:'1px 7px'}}>REVERT</button>
+        </div>
+      )}
+      {showPick && onSubstitute && substituteCtx && (() => {
+        /* Candidates are always for the SCHEDULED exercise, never for whatever
+           currently stands in for it -- otherwise a second swap re-keys against
+           the wrong slot and drifts further from the program each time. */
+        const base = scheduledId != null ? scheduledId : id
+        const cand = RBTS_REPORTS.substituteCandidates(base, substituteCtx, { showAll })
+        const nothing = !cand.sameGroupSameClass.length && !cand.sameGroup.length && !cand.other.length
+        const row = exid => {
+          const g = substituteCtx.groupOf(exid)
+          return (
+            <button key={exid}
+              onClick={()=>{ onSubstitute(exid); setShowPick(false); setShowAll(false) }}
+              style={{display:'flex',alignItems:'center',gap:6,width:'100%',
+                background:C.bgPanel,border:`1px solid ${C.dimGray}55`,borderRadius:4,
+                padding:'3px 6px',cursor:'pointer',textAlign:'left'}}>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.text,flex:1}}>
+                {substituteCtx.nameOf(exid)}
+              </span>
+              <span style={pill(g ? g.color : C.dimGray)}>{g ? g.label : '?'}</span>
+              <span style={pill(C.dimGray)}>{String(substituteCtx.classOf(exid)).toUpperCase()}</span>
+            </button>
+          )
+        }
+        const band = (label, ids) => ids.length ? (
+          <div style={{marginTop:6}}>
+            <span style={lbl}>{label}</span>
+            <div style={{display:'flex',flexDirection:'column',gap:3,marginTop:3}}>{ids.map(row)}</div>
+          </div>
+        ) : null
+        return (
+          <div style={{border:`1px solid ${C.amber}55`,borderRadius:4,padding:8,
+            maxHeight:260,overflowY:'auto'}}>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.5}}>
+              Today only. The program keeps prescribing {substituteCtx.nameOf(base)}.
+            </div>
+            {band('SAME GROUP, SAME TYPE', cand.sameGroupSameClass)}
+            {band('SAME GROUP', cand.sameGroup)}
+            {band('EVERYTHING ELSE', cand.other)}
+            {nothing && (
+              <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginTop:6}}>
+                Nothing else shares this muscle group.
+              </div>
+            )}
+            {!showAll && (
+              <button onClick={()=>setShowAll(true)}
+                style={{...btn(false),fontSize:9,padding:'2px 8px',marginTop:8}}>
+                SHOW ALL EXERCISES
+              </button>
+            )}
+          </div>
+        )
+      })()}
       {tech && (
         <div style={{fontSize:10,fontFamily:'monospace',color:C.amber,
           background:`${C.amber}18`,border:`1px solid ${C.amber}44`,
@@ -1925,7 +1998,11 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, subs, onSubsChange }) {
+  /* Defaulted in the body, not the signature: several parity assertions match
+     these signatures with [^}]*, which a `= {}` default silently breaks. */
+  subs = subs || {}
+  onSubsChange = onSubsChange || function(){}
   const session  = getSessionEx(prog, sKey)   // P3: native or derived
   const focus    = getSessionFocus(prog, sKey)
   const isDeload = isDeloadSession(prog, week, sKey)
@@ -2002,8 +2079,29 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
      already saved (same date + session) carries one; a fresh, unsaved
      session has none, and LoggedExCard degrades that to "render nothing". */
   const savedLoad = (log.find(e => e && e.date === todayDate && e.session === sKey) || {}).load || {}
+  /* Recording a substitution MOVES NOTHING: sets, gear, attach, opening and
+     band path already logged against the scheduled exercise stay keyed to it,
+     so REVERT brings it back intact. */
+  function setSub(schedId, perfId) {
+    const next = { ...subs }
+    if (perfId == null || String(perfId) === String(schedId)) delete next[String(schedId)]
+    else next[String(schedId)] = Number(perfId)
+    onSubsChange(next)
+  }
+  /* The lookups substituteCandidates needs, built once per render. */
+  const subCtx = {
+    allExerciseIds: () => Object.keys(EXERCISE_NAMES).map(Number),
+    groupOf: exid => exGroup(Number(exid)),
+    classOf: exid => exClass(Number(exid)),
+    nameOf:  exid => EXERCISE_NAMES[exid] || `Exercise #${exid}`,
+  }
   function renderCard(slot, id, role) {
-    const prev = getPrevSets(String(id))
+    /* schedId is what the PROGRAM prescribes; effId is what is actually being
+       done. Everything downstream uses effId because it all describes the
+       performed lift. Only the header uses schedId. */
+    const schedId = Number(id)
+    const effId = subs[String(schedId)] != null ? Number(subs[String(schedId)]) : schedId
+    const prev = getPrevSets(String(effId))
     // Progression flag lives in RBTS_REPORTS.progressionState so the in-workout
     // card, the printed setup sheet and the HTML app all agree. Same rules:
     // double progression, RIR gate, independent L/R sides, deload entries and
@@ -2013,31 +2111,41 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     // flagged READY at 12 seconds; the module applies the 30-second threshold to
     // those six ids, matching fitness_app.html.
     const ps = RBTS_REPORTS.progressionState(
-      makeReportCtx({ log, gear: gearInv, myBands: [] }), id, todayDate)
+      makeReportCtx({ log, gear: gearInv, myBands: [] }), effId, todayDate)
     const progSides = ps.sides
     const progFlag  = ps.ready
     const stalled   = ps.stalled
     return (
-      <LoggedExCard key={slot} id={id} role={role}
+      <LoggedExCard key={slot} id={effId} role={role}
         techKey={techMap[slot]||null}
-        sets={getOrInit(id)} onSetsChange={s=>updateEx(id,s)}
+        sets={getOrInit(effId)} onSetsChange={s=>updateEx(effId,s)}
         prevSets={prev} progFlag={progFlag} progSides={progSides} stalled={stalled}
-        gearInv={gearInv} gear={(gear||{})[String(id)]||[]}
-        onGearChange={ids=>updateExGear(id,ids)}
-        attachHeightIn={(attach||{})[String(id)]}
-        onAttachChange={h=>updateAttach(id,h)}
-        opening={(opening||{})[String(id)]}
-        bandPath={(bandPath||{})[String(id)]}
-        onBandPathChange={k=>updateBandPath(id,k)}
-        onOpeningChange={n=>updateOpening(id,n)}
+        gearInv={gearInv} gear={(gear||{})[String(effId)]||[]}
+        onGearChange={ids=>updateExGear(effId,ids)}
+        attachHeightIn={(attach||{})[String(effId)]}
+        onAttachChange={h=>updateAttach(effId,h)}
+        opening={(opening||{})[String(effId)]}
+        bandPath={(bandPath||{})[String(effId)]}
+        onBandPathChange={k=>updateBandPath(effId,k)}
+        onOpeningChange={n=>updateOpening(effId,n)}
         entryDate={todayDate}
-        loadStamp={savedLoad[String(id)]}/>
+        loadStamp={savedLoad[String(effId)]}
+        scheduledId={effId === schedId ? null : schedId}
+        substituteCtx={subCtx}
+        onSubstitute={newId => setSub(schedId, newId)}/>
     )
   }
 
   const prescribedIds = {}
   Object.values(session.primary).forEach(id => { prescribedIds[String(id)] = true })
   Object.values(session.accessories).forEach(id => { prescribedIds[String(id)] = true })
+  /* A substitute's sets are keyed by the PERFORMED id, which is not one of the
+     program's slots -- without this it renders TWICE, once in its slot and
+     again under ADDED EXERCISES. Conditional on the SCHEDULED id being
+     prescribed this session, so a stale key cannot suppress a real addition. */
+  Object.keys(subs).forEach(schedId => {
+    if (prescribedIds[schedId]) prescribedIds[String(subs[schedId])] = true
+  })
   const extraIds = Object.keys(exercises||{}).filter(id => !prescribedIds[id])
   let srchResults = []
   if (addSrch.trim()) {
@@ -3371,6 +3479,10 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const [attachLogs, setAttachLogs] = useState({}) // per-exercise belt attach height {exId: heightIn}
   const [openingLogs, setOpeningLogs] = useState({}) // per-exercise adjustable-gear position {exId: n}
   const [bandPathLogs, setBandPathLogs] = useState({}) // per-exercise footplate band path {exId: k}
+  /* { scheduledExId: performedExId } -- which prescribed exercise was swapped
+     for which, this session only. The ONE map keyed by the scheduled exercise;
+     every other per-exercise map is keyed by the performed id. */
+  const [subsLogs, setSubsLogs] = useState({})
   const [saved, setSaved]         = useState(false)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
@@ -3389,6 +3501,15 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          RATED over a belt-path figure. */
       setAttachLogs(existing?.attach ?? {})
       setOpeningLogs(existing?.opening ?? {})
+      /* bandPath was MISSING here until 2026-08-20 -- the same defect the
+         comment above describes for attach, left behind when the band-path
+         model landed. Reopening today's saved workout came back with the path
+         blank, and the next save re-stamped without it, silently repricing the
+         entry off the plate's default path. */
+      setBandPathLogs(existing?.bandPath ?? {})
+      /* And the substitution, or reopening a saved session shows the SCHEDULED
+         exercise sitting above sets that were logged against the substitute. */
+      setSubsLogs(existing?.subs ?? {})
       setSaved(!!(existing?.completedAt))
     }
   }, [info.session, todayISO, log])
@@ -3429,6 +3550,16 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const k = (bandPathLogs||{})[id]
       if (typeof k === 'string' && k) cleanBandPath[id] = k
     })
+    /* The substitution map, scoped by the exercise it points AT rather than by
+       its own key -- the PERFORMED exercise is the one that must have real
+       sets. A self-referential entry is REVERT's resting state, not a
+       substitution, and is dropped. */
+    const cleanSubs = {}
+    Object.keys(subsLogs||{}).forEach(schedId => {
+      const perf = subsLogs[schedId]
+      if (perf == null || String(perf) === String(schedId)) return
+      if (cleanEx[String(perf)]) cleanSubs[String(schedId)] = Number(perf)
+    })
     const entry = {
       date:todayISO, programId:info.prog.id, week:info.week,
       session:info.session, workoutNum:info.num,
@@ -3436,6 +3567,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       schemaVersion:2,
       exercises:cleanEx, gear:cleanGear, attach: cleanAttach, opening: cleanOpening,
       bandPath: cleanBandPath,
+      subs: cleanSubs,
       completedAt:new Date().toISOString(),
     }
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
@@ -3556,6 +3688,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               opening={openingLogs}
               bandPath={bandPathLogs}
               onBandPathChange={b=>{setBandPathLogs(b); setSaved(false)}}
+              subs={subsLogs}
+              onSubsChange={sb=>{setSubsLogs(sb); setSaved(false)}}
               onOpeningChange={o=>{setOpeningLogs(o); setSaved(false)}}
               onAttachChange={a=>{setAttachLogs(a);setSaved(false);}}
               todayDate={todayISO} log={log}/>
@@ -4150,11 +4284,25 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 onDone={()=>setEditKey(null)} gearInv={gearInv} log={log}/>
             ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:6}}>
-              {Object.entries(e.exercises||{}).map(([exId,sets]) => (
+              {(() => {
+              /* PERFORMED id -> SCHEDULED id, built once per entry rather than
+                 per exercise: a session has a handful of substitutions and a
+                 per-exercise rebuild is quadratic across a multi-year log. */
+              const subBack = {}
+              Object.keys(e.subs||{}).forEach(schedId => {
+                subBack[String(e.subs[schedId])] = Number(schedId)
+              })
+              return Object.entries(e.exercises||{}).map(([exId,sets]) => (
                 <div key={exId} style={{background:C.bgInput,borderRadius:5,padding:'7px 10px'}}>
                   <div style={{fontFamily:'monospace',fontSize:11,color:C.text,marginBottom:5}}>
                     <span style={{color:C.dimGray}}>#{exId} </span>{EXERCISE_NAMES[exId]||exId}
                   </div>
+                  {subBack[String(exId)] != null && (
+                    <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                      letterSpacing:'0.08em',marginTop:-2,marginBottom:5}}>
+                      SUBSTITUTED FOR {EXERCISE_NAMES[subBack[String(exId)]] || `#${subBack[String(exId)]}`}
+                    </div>
+                  )}
                   {e.gear && Array.isArray(e.gear[exId]) && e.gear[exId].length > 0 && (
                     <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
                       ⚙ {e.gear[exId].map(gid => {
@@ -4189,7 +4337,8 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                     )
                   })}
                 </div>
-              ))}
+              ))
+              })()}
             </div>
             )}
           </div>
