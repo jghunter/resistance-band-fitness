@@ -339,6 +339,12 @@
   //   muscular failure, so the logger seeds ONE set and the analyzer stops
   //   measuring him against multi-set weekly landmarks he does not train to.
   //   These are HIS choices. The defaults above stay multi-set for everyone else.
+  //
+  //   NOT APPLIED BY migrateToProfiles SINCE 2026-08-21. It seeded every
+  //   profile the migration created, on any device, which handed a stranger
+  //   his training philosophy invisibly. Kept and exported because it is the
+  //   record of what he trains and test_profile_population.cjs builds his
+  //   profile from it. Apply it deliberately or not at all.
   function gregSeedOverrides() {
     return {
       population: "older_adult",
@@ -489,12 +495,38 @@
     }
 
     // 6a. Build the profile object, pulling ownedBands from legacy rbts_myBands.
+    /* NOTHING PERSONAL IS SEEDED HERE (changed 2026-08-21, Greg's ruling).
+       This used to apply gregSeedOverrides() -- population "older_adult",
+       experience "advanced", rirTarget 1, defaultSets 1, volumeModel "hit",
+       deloadEvery 5, splitId "upper_lower" -- to EVERY profile this function
+       creates. That is correct for exactly one person, and this function runs
+       at module load on ANY device with no profile, so the first person handed
+       the app inherited a training philosophy they never chose: the logger
+       seeded one set to failure, the analyzer withheld the weekly volume
+       landmarks, and READY / STALLED verdicts were judged at RIR 1. There is
+       no profile screen, so none of it was visible or switchable -- only
+       defaultSets and volumeModel have editors at all (TODAY -> TRAINING
+       STYLE), and rirTarget has none.
+
+       An absent field falls through to PROFILE_DEFAULTS, which reproduce the
+       ordinary multi-set behaviour: rirTarget 2, defaultSets null (follow the
+       program), volumeModel "standard". A new trainee chooses HIT or volume
+       for themselves rather than being defaulted into someone else's answer.
+
+       Greg's own profile is UNAFFECTED: it was written to rbts_profiles when
+       his device migrated, MIGRATION_FLAG has guarded this function ever
+       since, and his values carry explicitKeys so no population rule can
+       overwrite them. gregSeedOverrides() is kept and still exported -- it is
+       the record of what he actually trains, and test_profile_population.cjs
+       builds his profile from it -- it is simply no longer imposed on
+       strangers. A device of his that somehow still holds legacy flat keys and
+       no profile now lands on the defaults; one visit to TRAINING STYLE puts
+       it back, which is the same tap any user makes. */
     var ownedBands = [];
     try { ownedBands = JSON.parse(store.getItem(FLAT.myBands) || "[]") || []; }
     catch (e) { ownedBands = []; }
 
-    var profile = makeProfile(profileId, profileName,
-      Object.assign(gregSeedOverrides(), { ownedBands: ownedBands }));
+    var profile = makeProfile(profileId, profileName, { ownedBands: ownedBands });
 
     // 6b. Create profile registry + active pointer (only if absent).
     if (!store.getItem("rbts_profiles")) {
