@@ -902,24 +902,30 @@ function BandPicker({ selected, onChange, doubled }) {
   selected.forEach(id => { if (counts[id]==null){counts[id]=0;distinct.push(id)} counts[id]++ })
   const stackBand0 = distinct.length ? BANDS.find(x=>x.id===distinct[0]) : null
   const stackLen = stackBand0 ? stackBand0.lengthIn : null
-  const rebuildStack = (ids, cnts) => {
-    const out=[]
-    ids.forEach(id => {
-      const n = Math.max(1, Math.min(MAX_PER_BAND, cnts[id] || 1))
-      for (let i=0;i<n;i++) out.push(id)
-    })
-    return out
+  /* Delegates to the shared module, same as fitness_app.html. These were
+     inline in both apps and both carried the one-or-none defect: the row
+     handler called removeBandId whenever the band was already selected, so a
+     second tap deleted it rather than adding a copy. */
+  const STACK_OPTS = {
+    maxPerBand: MAX_PER_BAND,
+    lengthOf: (id) => { const b = BANDS.find(x=>x.id===id); return b ? b.lengthIn : null },
   }
   const addBand = (id) => {
-    const b = BANDS.find(x=>x.id===id); if(!b) return
-    if (stackLen != null && b.lengthIn !== stackLen) return
-    if (distinct.indexOf(id) >= 0) return   // already present; use [+] for a copy
-    onChange(rebuildStack([...distinct, id], {...counts, [id]: 1}))
+    if (!BANDS.find(x=>x.id===id)) return
+    onChange(RBTS_REPORTS.stackAdd(selected, id, STACK_OPTS))
   }
-  const removeBandId = (id) => onChange(rebuildStack(distinct.filter(x => x !== id), counts))
+  const removeBandId = (id) => onChange(RBTS_REPORTS.stackRemoveAll(selected, id))
   const setCount = (id, n) => {
     if (distinct.indexOf(id) < 0) return
-    onChange(rebuildStack(distinct, {...counts, [id]: Math.max(1, Math.min(MAX_PER_BAND, n))}))
+    const want = Math.max(1, Math.min(MAX_PER_BAND, n))
+    let out = selected
+    while (RBTS_REPORTS.stackCountOf(out, id) > want) out = RBTS_REPORTS.stackRemoveOne(out, id)
+    while (RBTS_REPORTS.stackCountOf(out, id) < want) {
+      const grown = RBTS_REPORTS.stackAdd(out, id, STACK_OPTS)
+      if (grown.length === out.length) break
+      out = grown
+    }
+    if (out !== selected) onChange(out)
   }
 
   return (
@@ -1000,8 +1006,12 @@ function BandPicker({ selected, onChange, doubled }) {
             const cnt = counts[b.id] || 0
             const lenMismatch = stackLen != null && b.lengthIn !== stackLen && cnt === 0
             return (
-              <div key={b.id} onClick={() => { if(cnt>0){removeBandId(b.id)} else if(!lenMismatch){addBand(b.id)} }}
-                title={cnt>0 ? 'Selected — tap to remove' : (lenMismatch ? `Different length (${b.lengthIn}") — stack only bands of ${stackLen}"` : 'Tap to add')}
+              <div key={b.id} onClick={() => { if(!lenMismatch){addBand(b.id)} }}
+                title={cnt>0
+                  ? (cnt>=MAX_PER_BAND
+                      ? `Maximum ${MAX_PER_BAND} of one band — tap the ✕ to remove`
+                      : `Tap to add another (you have ${cnt}) — tap the ✕ to remove`)
+                  : (lenMismatch ? `Different length (${b.lengthIn}") — stack only bands of ${stackLen}"` : 'Tap to add')}
                 style={{
                 display:'flex',alignItems:'center',gap:8,padding:'5px 7px',
                 borderRadius:4,cursor:lenMismatch?'not-allowed':'pointer',marginBottom:2,
@@ -1019,7 +1029,14 @@ function BandPicker({ selected, onChange, doubled }) {
                 <span style={{fontFamily:'monospace',fontSize:9,color:lenMismatch?C.amber:C.dimGray,flexShrink:0}}>
                   {b.lengthIn}"{lenMismatch?' ≠':''}
                 </span>
-                {cnt>0 && <span title="Tap row to remove" style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',fontSize:9,fontWeight:'bold'}}>×{cnt} ✕</span>}
+                {/* The badge is the REMOVE control and stops propagation, so
+                    it cannot be mistaken for another add. The row body adds. */}
+                {cnt>0 && (
+                  <span onClick={(e)=>{ e.stopPropagation(); removeBandId(b.id) }}
+                    title={`Remove ${cnt>1 ? `all ${cnt} of these bands` : 'this band'} from the stack`}
+                    style={{background:C.accent,color:'#000',borderRadius:10,padding:'1px 6px',
+                      fontSize:9,fontWeight:'bold',cursor:'pointer',flexShrink:0}}>×{cnt} ✕</span>
+                )}
               </div>
             )
           })}
