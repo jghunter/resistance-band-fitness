@@ -2122,6 +2122,45 @@
      opts { band, geom, doubled } is required to reach "belt"; without a band
      there is no reach to compute and it degrades to "incomparable" rather than
      falling back to the path sentence that is wrong for it. */
+  /* How many set rows a FRESH exercise seeds.
+
+     `style` is { defaultSets, volumeModel } -- the profile's TRAINING STYLE,
+     passed in rather than read from a module global so this can be tested at
+     all. Both apps' progDefaultSets delegate here.
+
+     Precedence, and why:
+       1. An explicit defaultSets is the user's own answer and beats
+          everything, including the HIT rule below. A HIT trainee who
+          deliberately types 2 means 2.
+       2. volumeModel "hit" seeds ONE. HIT is one set carried to momentary
+          muscular failure; a block prescribing three is the philosophy being
+          opted out of, not an argument against it. ADDED 2026-08-20 -- until
+          then this function never consulted volumeModel at all, so a profile
+          with defaultSets cleared to null seeded the program's three while
+          the ANALYZER, which does read volumeModel, suppressed multi-set
+          landmarks for the same profile. The two halves of the app disagreed
+          about the same training philosophy, and the count nobody chose won.
+       3. An explicit prog.defaultSets.
+       4. A count written into the program's prose note ("3 sets, 90s rest") --
+          programs 26-36 carry their real prescription that way.
+       5. Otherwise 3, which is what the legacy programs assume in practice.
+
+     Rule 5 is the only invented number here and it is now unreachable for a
+     HIT profile, which is where it did the damage. */
+  function seededSetCount(prog, style) {
+    var s = style || {};
+    if (typeof s.defaultSets === "number" && s.defaultSets > 0) {
+      return Math.min(s.defaultSets, 10);
+    }
+    if (s.volumeModel === "hit") return 1;
+    if (prog && typeof prog.defaultSets === "number" && prog.defaultSets > 0) {
+      return Math.min(prog.defaultSets, 10);
+    }
+    var m = prog && prog.note && String(prog.note).match(/(\d+)(?:\s*-\s*\d+)?\s*sets?\b/i);
+    if (m) { var n = parseInt(m[1], 10); if (n > 0 && n <= 10) return n; }
+    return 3;
+  }
+
   /* ── BAND STACK EDITING ────────────────────────────────────────────────
      A stack is a MULTISET of band ids: a repeated id is TWO PHYSICAL BANDS of
      that model, side by side. The FOLD is not here -- `doubled` lives on the
@@ -4915,6 +4954,7 @@
     attachClearMarker: attachClearMarker,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
+    seededSetCount: seededSetCount,
     substituteCandidates: substituteCandidates,
     stackAdd: stackAdd,
     stackRemoveOne: stackRemoveOne,

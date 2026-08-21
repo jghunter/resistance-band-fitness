@@ -1,4 +1,5 @@
 import RBTS_PHASE1 from './phase1.js'   // Phase-1 config (SPLITS, etc.)
+import RBTS_REPORTS from './reports.js' // canonical pure module; imports nothing, so no cycle
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DESIGN TOKENS
@@ -2379,15 +2380,10 @@ export function bodyMeasureComplete() {
    prog.defaultSets wins; otherwise the count is read out of the note;
    otherwise 3. Mirrors fitness_app.html. */
 export function progDefaultSets(prog) {
-  if (typeof TRAINING_STYLE.defaultSets === 'number' && TRAINING_STYLE.defaultSets > 0) {
-    return Math.min(TRAINING_STYLE.defaultSets, 10)
-  }
-  if (prog && typeof prog.defaultSets === 'number' && prog.defaultSets > 0) {
-    return Math.min(prog.defaultSets, 10)
-  }
-  const m = prog && prog.note && String(prog.note).match(/(\d+)(?:\s*-\s*\d+)?\s*sets?\b/i)
-  if (m) { const n = parseInt(m[1], 10); if (n > 0 && n <= 10) return n }
-  return 3
+  /* The decision lives in RBTS_REPORTS.seededSetCount, shared with
+     fitness_app.html and tested by test_seeded_sets.cjs. This wrapper only
+     supplies the profile's style. */
+  return RBTS_REPORTS.seededSetCount(prog, TRAINING_STYLE)
 }
 
 export function buildTechSchedule(prog) {
