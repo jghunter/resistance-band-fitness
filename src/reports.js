@@ -2122,6 +2122,70 @@
      opts { band, geom, doubled } is required to reach "belt"; without a band
      there is no reach to compute and it degrades to "incomparable" rather than
      falling back to the path sentence that is wrong for it. */
+  /* ── BAND STACK EDITING ────────────────────────────────────────────────
+     A stack is a MULTISET of band ids: a repeated id is TWO PHYSICAL BANDS of
+     that model, side by side. The FOLD is not here -- `doubled` lives on the
+     set row and is an independent axis.
+
+     These three were inline in BandPicker until 2026-08-20, where no test
+     could reach them, and a real defect hid there the whole time: the band
+     list row called the remove-everything path whenever the band was already
+     selected, so tapping a band a second time -- the obvious way to ask for
+     two of it -- deleted it instead. Greg hit it logging a Romanian deadlift
+     with two Serious Steel 20in bands: "it took one or none."
+
+     `opts.lengthOf(id)` returns the band's length or null. `opts.maxPerBand`
+     caps copies of one model. All three return a NEW array. */
+
+  function stackCountOf(selected, id) {
+    var n = 0;
+    (selected || []).forEach(function (x) { if (x === id) n++; });
+    return n;
+  }
+
+  /* The length every band in this stack must match, or null when the stack is
+     empty and anything is allowed. */
+  function stackLengthOf(selected, opts) {
+    var first = (selected || [])[0];
+    if (first == null) return null;
+    return opts.lengthOf(first);
+  }
+
+  function stackAdd(selected, id, opts) {
+    var cur = (selected || []).slice();
+    var max = (opts && opts.maxPerBand) || 4;
+    if (stackCountOf(cur, id) >= max) return cur;
+
+    var want = opts.lengthOf(id);
+    var need = stackLengthOf(cur, opts);
+    /* An id the catalog does not know has a null length. It is refused into a
+       non-empty stack rather than waved through: treating "unknown" as
+       "matches everything" is how a mixed-length stack gets built silently,
+       and the summed load estimate would then be quietly meaningless. */
+    if (need != null && want !== need) return cur;
+
+    /* Insert beside the existing copies so one model's bands stay contiguous;
+       the chip UI groups by id anyway, but a stable order keeps the stored
+       array readable in a backup. */
+    var last = -1;
+    for (var i = 0; i < cur.length; i++) if (cur[i] === id) last = i;
+    if (last < 0) cur.push(id);
+    else cur.splice(last + 1, 0, id);
+    return cur;
+  }
+
+  function stackRemoveOne(selected, id) {
+    var cur = (selected || []).slice();
+    for (var i = cur.length - 1; i >= 0; i--) {
+      if (cur[i] === id) { cur.splice(i, 1); return cur; }
+    }
+    return cur;
+  }
+
+  function stackRemoveAll(selected, id) {
+    return (selected || []).filter(function (x) { return x !== id; });
+  }
+
   /* Ordered substitute candidates for one scheduled exercise.
 
      Three bands: same muscle group AND same iso/comp class; same group, other
@@ -4852,6 +4916,10 @@
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     substituteCandidates: substituteCandidates,
+    stackAdd: stackAdd,
+    stackRemoveOne: stackRemoveOne,
+    stackRemoveAll: stackRemoveAll,
+    stackCountOf: stackCountOf,
     plateBandPaths: plateBandPaths,
     plateBandPathOf: plateBandPathOf,
     plateBandPathOptions: plateBandPathOptions,
