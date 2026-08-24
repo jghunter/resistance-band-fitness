@@ -216,7 +216,7 @@ export const VIDEOS = {
   46:"https://www.youtube.com/watch?v=iOeMmW3_l3s",
   47: {url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:319, end:347},
   48: {url:"https://www.youtube.com/watch?v=gfEyrmxbCbw", start:29, end:59},
-  49:"https://www.youtube.com/watch?v=oHCxtt6g7UA",
+  49:"https://www.youtube.com/shorts/xz9q5DUiC3I",
   50:"https://www.youtube.com/watch?v=NtaPROZOcmM",
   51:"https://www.youtube.com/watch?v=cyihFNmsq-A",
   52:"https://www.youtube.com/watch?v=NtaPROZOcmM",
@@ -228,7 +228,7 @@ export const VIDEOS = {
   58:"https://www.youtube.com/watch?v=NtaPROZOcmM",
   59:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
   60:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
-  61: {url:"https://www.youtube.com/watch?v=6ffBlaBBWmA", start:414, end:487},
+  61: {url:"https://www.youtube.com/shorts/QohNmAf3xBc"},   // own clip now; no window, plays whole
   62: {url:"https://www.youtube.com/watch?v=6ffBlaBBWmA", start:598, end:602},
   63:"https://www.youtube.com/watch?v=_2xWmYNnFS8",
   64:"https://www.youtube.com/watch?v=C_lfM3v9HOc",
@@ -249,7 +249,7 @@ export const VIDEOS = {
   79:"https://www.youtube.com/watch?v=3vUbYrbym9w",
   80:"https://www.youtube.com/watch?v=w-XRg2eNop4",
   81:"https://www.youtube.com/watch?v=fSiblzK6qS8",
-  82: {url:"https://www.youtube.com/watch?v=hNSV3mfPbNo", start:0, end:9},
+  82: {url:"https://www.youtube.com/shorts/hNSV3mfPbNo", start:0, end:9},
   83:"https://www.youtube.com/watch?v=zQjbnGXlwH0",
   84:"https://www.youtube.com/watch?v=MpecjmHOVBE",
   85:"https://www.youtube.com/watch?v=k6WI1adIiHM",
@@ -303,7 +303,7 @@ export const VIDEOS = {
   133:"https://www.youtube.com/watch?v=uej9usJAIUw",
   134:"https://www.youtube.com/watch?v=FVCmVLwRNe0",
   135:"https://www.youtube.com/watch?v=c9sY_1EXyvk",
-  136:"https://www.youtube.com/watch?v=FVCmVLwRNe0",
+  136:"https://www.youtube.com/shorts/ko7iYb4eVR8",
   137:"https://www.youtube.com/watch?v=x9QWH_1AbP8",
   138:"https://www.youtube.com/watch?v=oXAMW-LNX_Q",
   139:"https://www.youtube.com/watch?v=ro1zBaXaOMg",
@@ -316,6 +316,7 @@ export const VIDEOS = {
   146:"https://www.youtube.com/watch?v=a5rUdCeTtSE",
   147:"https://www.youtube.com/watch?v=RGqznhXhtJE",
   148:"https://www.youtube.com/watch?v=uutP0eBt51I",
+  149:{url:"https://www.youtube.com/shorts/p0NWvRkeMu4"},
   150:"https://www.youtube.com/watch?v=rj6EE7ybnlE",
   151:"https://www.youtube.com/watch?v=Y3CDzx-oj3k",
   152:"https://www.youtube.com/watch?v=tcxMByxhaqo",
@@ -384,6 +385,10 @@ export const VIDEOS = {
   215:"https://www.youtube.com/watch?v=c2JIMZpTtoA",
   216:{url:"https://www.youtube.com/watch?v=Q-lnd6SWR5A", start:117, end:162},  // pec crossover 1:57–2:42
   217:{url:"https://www.youtube.com/shorts/K6rSbbyAVTo", start:11},             // split squat w/ belt — 3rd move, ~0:11 in
+  /* 218/219/224 added 2026-08-24. None is timed, so all three play whole. */
+  218:{url:"https://www.youtube.com/shorts/-utR7gQmaMo"},
+  219:{url:"https://www.youtube.com/shorts/t95MKRptEX4"},
+  224:{url:"https://www.youtube.com/shorts/5eMkKAGm5B0"},
   // Promoted from customs 1000-1008 (2026-08-12). 226 is not a YouTube link:
   // resolveVideo returns it with embedUrl null and never appends a timestamp,
   // so start/end are carried but inert — kept because they record where in
