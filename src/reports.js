@@ -4237,6 +4237,107 @@
   }
 
 
+
+  /* ---- the ADD GEAR pick list ------------------------------------------ */
+  /* Moved here from fitness_app.html 2026-08-24 so both apps share one copy.
+     The HTML app built this from its own GEAR_SEED, which the PWA does not
+     have at all -- so the PWA's ADD GEAR form fell back to a brand dropdown
+     built from the brands ALREADY in the inventory. On a fresh install that
+     list is empty, leaving brand and name free-typed and the type guessed by
+     inferGearType's regex.
+
+     That matters because seedDimsFor matches GEAR_DIMS[brand + "|" + name]
+     EXACTLY: "X3 Bar|Elite Bar" resolves measured dimensions, "X3|Elite bar"
+     resolves nothing. Since 2026-08-21 the starting inventory is EMPTY, so
+     every item is typed by someone who has never seen the canonical spelling
+     and this stopped being an edge case.
+
+     Why the list is carried here rather than derived:
+
+       - from GEAR_DIMS' keys? They are 31 of the 33 items (Wrist Wraps and
+         the Tension Master carry no dimensions, correctly), and they carry no
+         TYPE at all.
+       - from inferGearType's regex? It disagrees with the curated type on
+         RBT|Band Utility Strap, which is an anchor (Greg, 2026-08-03) and
+         which the regex calls "other". A type is not cosmetic: a footplate
+         left on "other" falls through gearPathDelta's catch-all branch, which
+         reads a thickness as an ELEVATION and doubles it.
+
+     GEAR_SEED stays in fitness_app.html -- it is what sync_gear.rb reads to
+     regenerate the Rails and C mirrors, and it carries qty/status this list
+     does not need. The two are pinned to each other by test_gear_geometry.cjs
+     so they cannot drift in silence. */
+  var GEAR_CATALOG = [
+    { brand: "Clench", items: [
+      { name: "Carbon EZ Bar", type: "bar" },
+      { name: "Carbon Pro Bar", type: "bar" },
+      { name: "Footplate", type: "footplate" },
+      { name: "Handles", type: "handle" },
+      { name: "Heavy Duty Anchors", type: "anchor" }
+    ] },
+    { brand: "Harambe", items: [
+      { name: "Black Ropes", type: "other" },
+      { name: "Blue Ropes", type: "other" },
+      { name: "Cyberplate", type: "footplate" },
+      { name: "Foam Block", type: "other" },
+      { name: "Handles", type: "handle" },
+      { name: "Rods", type: "other" },
+      { name: "Split Squat Belt", type: "belt" },
+      { name: "T Bar", type: "bar" },
+      { name: "Wedges", type: "other" },
+      { name: "White Ropes", type: "other" },
+      { name: "Yellow Ropes", type: "other" }
+    ] },
+    { brand: "HeavyDutyBar", items: [
+      { name: "Bantam Bar", type: "bar" },
+      { name: "Elevators", type: "other" },
+      { name: "Qdeck", type: "footplate" },
+      { name: "Qlaw Handles", type: "handle" },
+      { name: "Swift Bar", type: "bar" },
+      { name: "Tension Master", type: "other" },
+      { name: "Travel Platform", type: "footplate" },
+      { name: "X Straps", type: "other" }
+    ] },
+    { brand: "RBT", items: [
+      { name: "Band Utility Strap", type: "anchor" }
+    ] },
+    { brand: "Serious Steel", items: [
+      { name: "Acacia Training Platform", type: "footplate" },
+      { name: "Door Anchor", type: "anchor" },
+      { name: "Large Band Guard", type: "other" },
+      { name: "Wrist Wraps", type: "other" }
+    ] },
+    { brand: "X3 Bar", items: [
+      { name: "Elite Bar", type: "bar" },
+      { name: "Force Bar", type: "bar" },
+      { name: "Squat Belt (Medium)", type: "belt" },
+      { name: "Steel Ground Plate", type: "footplate" }
+    ] }
+  ];
+
+  /* Brands sorted, each brand's items sorted, every item carrying its type.
+     Free typing still works in both apps: this fills the dropdowns, it does
+     not restrict them. */
+  function gearCatalog() {
+    return GEAR_CATALOG.map(function (g) {
+      return { brand: g.brand, items: g.items.map(function (it) {
+        return { name: it.name, type: it.type };
+      }) };
+    });
+  }
+  /* The catalog entry for one brand|name, or null. Used by both ADD GEAR forms
+     to set the type from the catalog rather than from inferGearType's regex.
+     The match is EXACT, deliberately: a fuzzy hit here would hand back a type
+     for an item whose brand|name will not resolve dimensions anyway. */
+  function gearCatalogItem(brand, name) {
+    var hit = null;
+    GEAR_CATALOG.forEach(function (g) {
+      if (g.brand !== brand) return;
+      g.items.forEach(function (it) { if (it.name === name) hit = it; });
+    });
+    return hit ? { name: hit.name, type: hit.type } : null;
+  }
+
   /* ---- gear geometry table -------------------------------------------- */
   /* Moved here from fitness_app.html 2026-07-31 so both apps share one
      copy -- see resolveGearDims below and gearPathDelta above. */
@@ -4976,6 +5077,9 @@
        live card -- user-visible text that should not be able to drift. */
     loadCaveatNotes: loadCaveatNotes,
     BAND_PATH_CUTOFF: BAND_PATH_CUTOFF,
+    GEAR_CATALOG: GEAR_CATALOG,
+    gearCatalog: gearCatalog,
+    gearCatalogItem: gearCatalogItem,
     GEAR_DIMS: GEAR_DIMS,
     GEAR_DIMS_REV: GEAR_DIMS_REV,
     GEAR_DIM_FIELDS: GEAR_DIM_FIELDS,

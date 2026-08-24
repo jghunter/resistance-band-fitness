@@ -4610,16 +4610,48 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
 
   // add-gear form
   const [addingGear, setAddingGear] = useState(false)
-  const [gf, setGf] = useState({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
+  const [gf, setGf] = useState({ brand:'', newBrand:'', name:'', qty:1, status:'owned', type:'other' })
   const gfSet = (k, v) => setGf(p => ({ ...p, [k]: v }))
+  /* Picking a catalog NAME also sets the TYPE, because the type is not a
+     cosmetic tag: it caps how many of that kind the workout GEAR picker
+     accepts (1 bar, 1 footplate, 2 handles) and decides which branch of
+     gearPathDelta prices the item. A footplate left on the default "other"
+     falls through to the catch-all branch, which reads a thickness as an
+     elevation and doubles it -- the Foam Block defect, through the door of a
+     dropdown nobody changed. Typing a name the catalog does not know leaves
+     whatever type is already selected. */
+  function gfSetName(v) {
+    setGf(p => {
+      const n = { ...p, name: v }
+      const brand = (p.brand === '__new__' ? p.newBrand : p.brand).trim()
+      const hit = RBTS_REPORTS.gearCatalogItem(brand, v.trim())
+      if (hit) n.type = hit.type
+      return n
+    })
+  }
+  const gCatalog = RBTS_REPORTS.gearCatalog()
+  /* Catalog brands UNION the brands already in the inventory, so the dropdown
+     keeps offering a brand the user typed themselves. Before 2026-08-24 this
+     list was the inventory brands ALONE -- empty on a fresh install, which is
+     every install since the seed was emptied on 2026-08-21. */
+  const gFormBrands = (() => {
+    const out = gCatalog.map(g => g.brand)
+    gBrands.forEach(b => { if (out.indexOf(b) < 0) out.push(b) })
+    return out.sort()
+  })()
+  const gCatalogNames = (() => {
+    const brand = (gf.brand === '__new__' ? gf.newBrand : gf.brand).trim()
+    const hit = gCatalog.find(g => g.brand === brand)
+    return hit ? hit.items : []
+  })()
   function addGearItem() {
     const brand = (gf.brand === '__new__' ? gf.newBrand : gf.brand).trim()
     const name  = gf.name.trim()
     if (!brand || !name) return
     onSaveGear({ id:`g${Date.now()}`, brand, name,
       qty:Math.max(1, parseInt(gf.qty,10)||1), status:gf.status, note:'',
-      type:inferGearType(name) })
-    setGf({ brand:'', newBrand:'', name:'', qty:1, status:'owned' })
+      type:gf.type||inferGearType(name) })
+    setGf({ brand:'', newBrand:'', name:'', qty:1, status:'owned', type:'other' })
     setAddingGear(false); openBrand('gear:'+brand)
   }
 
@@ -4739,9 +4771,10 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
           <div style={{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center',
             marginBottom:12,padding:10,background:C.bgInput,borderRadius:5}}>
             <select value={gf.brand} onChange={e => gfSet('brand',e.target.value)}
+              title="The catalog brands carry measured dimensions. Pick one if your item is on it — the spelling has to match exactly for the app to find the measurements."
               style={{...inputStyle,minWidth:130}}>
               <option value="">— brand —</option>
-              {gBrands.map(br => <option key={br} value={br}>{br}</option>)}
+              {gFormBrands.map(br => <option key={br} value={br}>{br}</option>)}
               <option value="__new__">+ New brand…</option>
             </select>
             {gf.brand==='__new__' && (
@@ -4749,9 +4782,19 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
                 onChange={e => gfSet('newBrand',e.target.value)}
                 style={{...inputStyle,minWidth:120}}/>
             )}
-            <input value={gf.name} placeholder="item name"
-              onChange={e => gfSet('name',e.target.value)}
+            {/* A datalist, not a select: the catalog is a strong SUGGESTION,
+                never a restriction. Picking an entry spells brand|name exactly
+                as GEAR_DIMS is keyed and brings its measurements with it;
+                anything else can still be typed straight in. */}
+            <input value={gf.name} placeholder="item name" list="gear-catalog-names"
+              title={gCatalogNames.length
+                ? 'Pick from the list to get this item’s measured dimensions, or type your own.'
+                : 'Type the item name.'}
+              onChange={e => gfSetName(e.target.value)}
               style={{...inputStyle,minWidth:150}}/>
+            <datalist id="gear-catalog-names">
+              {gCatalogNames.map(it => <option key={it.name} value={it.name}/>)}
+            </datalist>
             <input type="number" min="1" value={gf.qty}
               onChange={e => gfSet('qty',e.target.value)}
               style={{...inputStyle,width:60}}/>
@@ -4759,6 +4802,11 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
               style={{...inputStyle,minWidth:100}}>
               <option value="owned">Owned</option>
               <option value="inbound">Inbound</option>
+            </select>
+            <select value={gf.type} title="Used to cap selections in the workout GEAR picker (1 bar, 1 footplate, up to 2 handles/anchors)"
+              onChange={e => gfSet('type',e.target.value)}
+              style={{...inputStyle,minWidth:110}}>
+              {GEAR_TYPES.map(t => <option key={t} value={t}>{GEAR_TYPE_LABELS[t]}</option>)}
             </select>
             <button style={{...btn(true,C.green),fontSize:11}} onClick={addGearItem}>ADD</button>
           </div>
