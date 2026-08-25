@@ -3221,13 +3221,36 @@ function ProgramsTab({ onProgramsChanged }) {
                   {deloadProtocolText(prog)}
                 </span>
               : <>
-                  <span style={lbl}>WEEK {week} TECHNIQUES (AS SCHEDULED)</span>
+                  {RBTS_REPORTS.progProtocol(prog) && (
+                    <div style={{marginBottom:8}}>
+                      <span style={pill(C.amber)}>
+                        PROTOCOL: {TECHNIQUES[RBTS_REPORTS.progProtocol(prog)].split(' — ')[0]}
+                      </span>
+                      <div style={{fontFamily:'monospace',fontSize:11,color:C.text,marginTop:4}}>
+                        Applies to EVERY exercise, every working week.
+                      </div>
+                      <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,marginTop:2}}>
+                        {TECHNIQUES[RBTS_REPORTS.progProtocol(prog)]}
+                      </div>
+                      {RBTS_REPORTS.techCautionOf(RBTS_REPORTS.progProtocol(prog)) && (
+                        <div style={{fontFamily:'monospace',fontSize:11,color:C.amber,marginTop:4}}>
+                          CAUTION — {RBTS_REPORTS.techCautionOf(RBTS_REPORTS.progProtocol(prog))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <span style={lbl}>WEEK {week} INTENSIFIERS (AS SCHEDULED)</span>
                   {getWeekTechniques(prog, week).map((t,i) => (
                     <div key={i} style={{fontFamily:'monospace',fontSize:11,color:C.amber,marginBottom:2}}>
                       ⚡ {t.session}-{SLOT_LABELS[t.slot]??t.slot}:{' '}
                       <span style={{color:C.text}}>{TECHNIQUES[t.technique]?.split(' — ')[0]}</span>
                     </div>
                   ))}
+                  {getWeekTechniques(prog, week).length===0 &&
+                    !RBTS_REPORTS.progProtocol(prog) &&
+                    <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray}}>
+                      No intensifiers land this week
+                    </div>}
                 </>
             }
           </div>
