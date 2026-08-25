@@ -2532,7 +2532,8 @@ export function buildTechSchedule(prog) {
   TECH_SCHEDULES[ck] = slots;
   return slots;
 }
-// Deload workouts never receive a scheduled technique, so no deload guard needed.
+// The SCHEDULE path needs no deload guard -- buildTechSchedule never places onto
+// a deload workout. The PROTOCOL path below carries its own, bypassing the schedule.
 export function getTechMap(prog, week, sKey) {
   const map = {};
   if (week < 1) return map;

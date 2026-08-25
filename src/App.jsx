@@ -3223,6 +3223,13 @@ function ProgramsTab({ onProgramsChanged }) {
               : <>
                   {RBTS_REPORTS.progProtocol(prog) && (
                     <div style={{marginBottom:8}}>
+                      {/* Indexed WITHOUT `?.` deliberately, unlike the scheduled row
+                          below. progProtocol only ever returns a key that is in
+                          TECH_KEYS, and test_program_invariants.cjs asserts TECH_KEYS
+                          equals both apps' TECHNIQUES maps exactly -- so a miss here is
+                          a SOURCE state that fails a suite, never a runtime state.
+                          Optional chaining would turn that caught failure into a
+                          silently blank pill. */}
                       <span style={pill(C.amber)}>
                         PROTOCOL: {TECHNIQUES[RBTS_REPORTS.progProtocol(prog)].split(' — ')[0]}
                       </span>
