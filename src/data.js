@@ -1065,6 +1065,10 @@ export const PROGRAMS = [
   {
     id: 23,
     name: "Program 23 — Big Five (Body by Science)",
+    // ONE full-body session, repeated. Never derive it per split: the Lat
+    // Pulldown and the Bent-Over Row are BOTH back compounds, and the
+    // derivation keeps only one per muscle. See getSessionEx.
+    fullBody: true,
     sessionFocus: {
       C:{label:"FULL BODY", color:"#a78bfa"},
       D:{label:"FULL BODY", color:"#a78bfa"},
@@ -1094,12 +1098,18 @@ export const PROGRAMS = [
 
   // ──────────────────────────────────────────────────────────
   // PROGRAM 24 — 30-10-30 (Ellington Darden)
-  // Full-body HIT: Band Squat, Front Squat, Chest Press,
+  // Full-body HIT: Leg Press, Front Squat, Band Squat, Chest Press,
   // Overhead Press, Bent-Over Row, Biceps Curl — all sessions identical.
-  // Protocol: 30s super-slow negative → 10 full reps → 30s super-slow negative.
+  // Protocol: 30s super-slow negative → 10 full reps → 30s super-slow negative,
+  // on EVERY exercise (the technique schedule can only tag two per week; the
+  // protocol itself applies to the whole session).
   {
     id: 24,
     name: "Program 24 — 30-10-30 (Ellington Darden)",
+    // ONE full-body session, repeated. Never derive it per split: the Leg
+    // Press, the Front Squat and the Band Squat are ALL THREE quad compounds,
+    // and the derivation keeps only one per muscle. See getSessionEx.
+    fullBody: true,
     sessionFocus: {
       C:{label:"FULL BODY", color:"#a78bfa"},
       D:{label:"FULL BODY", color:"#a78bfa"},
@@ -1108,15 +1118,15 @@ export const PROGRAMS = [
       G:{label:"FULL BODY", color:"#a78bfa"},
     },
     sessions: {
-      C: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
-      D: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
-      E: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
-      F: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
-      G: { primary:{chestComp:1,backComp:23}, accessories:{legComp:97,legIso:98,shoulderComp:43,biceps:129} },
+      C: { primary:{chestComp:1,backComp:23}, accessories:{legComp:218,legIso:98,quads:97,shoulderComp:43,biceps:129} },
+      D: { primary:{chestComp:1,backComp:23}, accessories:{legComp:218,legIso:98,quads:97,shoulderComp:43,biceps:129} },
+      E: { primary:{chestComp:1,backComp:23}, accessories:{legComp:218,legIso:98,quads:97,shoulderComp:43,biceps:129} },
+      F: { primary:{chestComp:1,backComp:23}, accessories:{legComp:218,legIso:98,quads:97,shoulderComp:43,biceps:129} },
+      G: { primary:{chestComp:1,backComp:23}, accessories:{legComp:218,legIso:98,quads:97,shoulderComp:43,biceps:129} },
     },
     deload: {
       note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
-      exercises: [1, 23, 97, 98, 43, 129]
+      exercises: [1, 23, 218, 98, 97, 43, 129]
     },
     techniques: {
       week1: [ t("C","chestComp","30_10_30"),    t("D","backComp","30_10_30")      ],
@@ -1136,6 +1146,8 @@ export const PROGRAMS = [
   {
     id: 25,
     name: "Program 25 — Original X (Full Body)",
+    // ONE full-body session, repeated — same rule as 23 and 24.
+    fullBody: true,
     sessionFocus: {
       C:{label:"FULL BODY", color:"#22d3ee"},
       D:{label:"FULL BODY", color:"#22d3ee"},
@@ -2164,8 +2176,29 @@ export function splitOwningDay(sKey) {
   }
   return null;
 }
+// A FULL-BODY program is ONE session repeated, not a rotation: Big Five and
+// 30-10-30 prescribe the same whole-body workout every time out. Deriving it
+// per split is not merely pointless, it is LOSSY. deriveSession flattens
+// through progMuscleEx, which keeps ONE compound and ONE isolation PER MUSCLE,
+// so a program holding two back compounds (P23: Lat Pulldown 28 + Bent-Over
+// Row 23) or three quad compounds (P24: Leg Press 218 + Front Squat 98 + Band
+// Squat 97) silently loses the surplus. Greg hit exactly that on 2026-08-25:
+// the row showed up only on the DELOAD week, because prog.deload.exercises is
+// a flat list that never goes through the flatten. A full-body program
+// therefore returns its authored session for EVERY day key of EVERY split,
+// which is also what the programs themselves prescribe. Every session C-G is
+// identical by construction (asserted in test_program_invariants.cjs), so the
+// first authored session answers a foreign day key correctly.
+export function fullBodySessionOf(prog) {
+  const s = prog && prog.sessions; if (!s) return null;
+  const k = Object.keys(s); return k.length ? s[k[0]] : null;
+}
 export function getSessionEx(prog, sKey) {
   if (!prog) return { primary:{}, accessories:{} };
+  if (prog.fullBody) {
+    const fb = (prog.sessions && prog.sessions[sKey]) || fullBodySessionOf(prog);
+    if (fb) return fb;
+  }
   const eff = effSplitId(prog);
   const effDays = (splitsReg()[eff] || {}).days || SESSION_KEYS;
   const foreign = !effDays.includes(sKey);
