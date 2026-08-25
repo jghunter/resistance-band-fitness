@@ -1110,6 +1110,12 @@ export const PROGRAMS = [
     // Press, the Front Squat and the Band Squat are ALL THREE quad compounds,
     // and the derivation keeps only one per muscle. See getSessionEx.
     fullBody: true,
+    // 30-10-30 is not an intensifier added to this program -- it IS the
+    // program. A PROTOCOL applies to every exercise of every working session
+    // and never enters buildTechSchedule, whose slots hold ONE technique per
+    // WORKOUT. Never declare `techniques` alongside it: the scheduler would
+    // place a second tag contradicting this one on the same card, silently.
+    protocol: "30_10_30",
     sessionFocus: {
       C:{label:"FULL BODY", color:"#a78bfa"},
       D:{label:"FULL BODY", color:"#a78bfa"},
@@ -1127,13 +1133,6 @@ export const PROGRAMS = [
     deload: {
       note: "Week 6 — 3 sessions at ≤50% intensity. No high-intensity techniques.",
       exercises: [1, 23, 218, 98, 97, 43, 129]
-    },
-    techniques: {
-      week1: [ t("C","chestComp","30_10_30"),    t("D","backComp","30_10_30")      ],
-      week2: [ t("E","legComp","30_10_30"),       t("F","legIso","30_10_30")       ],
-      week3: [ t("G","shoulderComp","30_10_30"),  t("C","biceps","30_10_30")       ],
-      week4: [ t("D","chestComp","30_10_30"),     t("E","backComp","30_10_30")     ],
-      week5: [ t("F","legComp","30_10_30"),       t("G","shoulderComp","30_10_30") ],
     },
   },
 
@@ -2537,6 +2536,18 @@ export function buildTechSchedule(prog) {
 export function getTechMap(prog, week, sKey) {
   const map = {};
   if (week < 1) return map;
+  /* A PROTOCOL applies to EVERY exercise, so it never enters the schedule --
+     buildTechSchedule holds ONE technique per WORKOUT and cannot represent it.
+     The deload guard is NOT belt-and-braces: the TODAY tab renders its own
+     deload circuit and never asks, but buildSetupDoc calls this for every
+     session including deloads and has no deload branch of its own. */
+  const proto = RBTS_REPORTS.progProtocol(prog);
+  if (proto && !isDeloadSession(prog, week, sKey)) {
+    const ps = getSessionEx(prog, sKey);
+    Object.keys(ps.primary     || {}).forEach((k) => { map[k] = proto; });
+    Object.keys(ps.accessories || {}).forEach((k) => { map[k] = proto; });
+    return map;
+  }
   const days = progSplitDays(prog), L = days.length, WPW = wpw();
   const sched = buildTechSchedule(prog), N = sched.length;
   for (let idx = (week-1)*WPW; idx < (week-1)*WPW+WPW && idx < N; idx++) {
