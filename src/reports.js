@@ -144,6 +144,29 @@
     "30_10_30":            "Two 30-second eccentrics under band tension is a long time to hold position. Have a way to bail out that does not involve letting the band go.",
     "negative_accentuated":"Only useful if you can control the whole lowering phase. If the last third gets away from you, the band is too heavy.",
   };
+
+  /* The canonical technique keys. TECH_CAUTION above covers only the SIX
+     techniques that are dangerous, so it cannot answer "is this a real
+     technique" -- which is what progProtocol needs. Carried here as data
+     because this is the one file whose contents reach the PWA automatically;
+     test_program_invariants.cjs asserts it equals both apps' TECHNIQUES maps
+     exactly, so the two cannot drift in silence. */
+  var TECH_KEYS = ["1_quarter_reps", "super_slow", "negative_accentuated",
+    "forced_reps", "drop_set", "rest_pause", "partials", "isometric_hold",
+    "pre_exhaustion", "mechanical_drop_set", "m_set", "30_10_30"];
+
+  /* The technique a program applies to EVERY exercise, or null.
+     A PROTOCOL is not an intensifier scattered through a block -- it is how
+     the program is performed. 30-10-30 IS Darden's program. It never enters
+     buildTechSchedule, whose slots hold ONE technique per WORKOUT and could
+     not represent this; getTechMap expands it instead.
+     An UNKNOWN key resolves to NOTHING rather than to itself, so a typo
+     produces no tag instead of a card labelled with a key nobody can read. */
+  function progProtocol(prog) {
+    var k = prog && prog.protocol;
+    return (typeof k === "string" && TECH_KEYS.indexOf(k) >= 0) ? k : null;
+  }
+
   var EX_CAUTION = {
     // Cervical spine. Programmed ~70 times across the library.
     177: "Sub-maximal only, and slow. Stop immediately for tingling, numbness, or pain radiating into the shoulder, arm or hand — that is a nerve symptom, not a training symptom.",
@@ -5020,6 +5043,8 @@
     returningState: returningState,
     EX_CAUTION: EX_CAUTION,
     TECH_CAUTION: TECH_CAUTION,
+    TECH_KEYS: TECH_KEYS,
+    progProtocol: progProtocol,
     exCautionOf: exCautionOf,
     techCautionOf: techCautionOf,
     stackSuggestions: stackSuggestions,
