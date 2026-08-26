@@ -2463,6 +2463,20 @@ export function buildTechSchedule(prog) {
   const len = progLengthWeeks(prog), N = len * WPW;
   const slots = new Array(N).fill(null);
   const weekCount = wk => { let n=0; for (let i=(wk-1)*WPW;i<wk*WPW;i++) if (slots[i]) n++; return n; };
+  /* One (week, day, slot) holds ONE technique. getTechMap keys its map by
+     SLOT, so a second technique on the same slot of the same day silently
+     OVERWRITES the first. A native split never collides; a foreign split
+     collapses five session keys onto two or three, so C/chestComp and
+     E/chestComp both become upper/chestComp. HARD in BOTH passes, unlike the
+     weekly cap: exceeding the cap crowds a week, stacking DESTROYS a
+     technique. Mirrors fitness_app.html; keep the two in step. */
+  const slotTaken = (wk, day, slot) => {
+    for (let i=(wk-1)*WPW;i<wk*WPW;i++) {
+      const s = slots[i];
+      if (s && s.session === day && s.slot === slot) return true;
+    }
+    return false;
+  };
   for (let w = 1; w <= len; w++) {
     ((prog.techniques && prog.techniques[`week${w}`]) || []).forEach(t => {
       const tDay = native ? t.session : (md[slotMuscle(t.slot)] || null);
@@ -2481,6 +2495,7 @@ export function buildTechSchedule(prog) {
           if (isDeloadWorkout(prog, idx)) continue;      // never schedule onto a deload workout
           if (days[idx % L] !== tDay) continue;
           const wk = Math.floor(idx / WPW) + 1;
+          if (slotTaken(wk, tDay, t.slot)) continue;
           const wc = weekCount(wk);
           if (pass === 0 && wc >= TECH_PER_WEEK_MAX) continue;
           const score = Math.abs(wk - w) * 10 + wc * 30 + wk
@@ -2515,6 +2530,7 @@ export function buildTechSchedule(prog) {
         if (days[j2 % L] !== a2.session) continue;
         const wj = Math.floor(j2 / WPW) + 1;
         if (weekCount(wj) >= TECH_PER_WEEK_MAX) continue;
+        if (slotTaken(wj, a2.session, a2.slot)) continue;   // never relocate INTO a stack
         slots[j2] = a2; slots[i2] = null; moved = true; break;
       }
     }
@@ -2539,7 +2555,14 @@ export function buildTechSchedule(prog) {
               const wm3 = Math.floor(m3 / WPW) + 1;
               if (wm3 === wkOver || wm3 === wj3) continue;
               if (weekCount(wm3) >= TECH_PER_WEEK_MAX) continue;
+              if (slotTaken(wm3, c3.session, c3.slot)) continue;
               slots[m3] = c3; slots[k3] = null;
+              /* Tested AFTER C vacates: C is often the very entry that blocked
+                 A's slot, so checking before would refuse a legal chain. */
+              if (slotTaken(wj3, a3.session, a3.slot)) {
+                slots[k3] = c3; slots[m3] = null;   // undo, keep looking
+                continue;
+              }
               slots[j3] = a3; slots[i3] = null;
               moved = true; break;
             }
