@@ -3181,6 +3181,12 @@ function ProgramsTab({ onProgramsChanged }) {
   const safePi = Math.min(pi, PROGRAMS.length - 1)
   const prog            = PROGRAMS[safePi] || PROGRAMS[0]
   const isDeload        = isDeloadSession(prog, week, sKey)
+  /* Resolved ONCE per render. The banner below asked six times, and the empty
+     state a seventh. progProtocol is a pure lookup, so this is legibility
+     rather than speed: one name to read, and the caution test stops being a
+     nested call inside its own condition. Mirrors fitness_app.html. */
+  const proto        = RBTS_REPORTS.progProtocol(prog)
+  const protoCaution = proto ? RBTS_REPORTS.techCautionOf(proto) : null
   const removeCustom = () => {
     if (!prog.custom) return
     deleteCustomProgram(prog.id)
@@ -3240,7 +3246,7 @@ function ProgramsTab({ onProgramsChanged }) {
                   {deloadProtocolText(prog)}
                 </span>
               : <>
-                  {RBTS_REPORTS.progProtocol(prog) && (
+                  {proto && (
                     <div style={{marginBottom:8}}>
                       {/* Indexed WITHOUT `?.` deliberately, unlike the scheduled row
                           below. progProtocol only ever returns a key that is in
@@ -3250,17 +3256,17 @@ function ProgramsTab({ onProgramsChanged }) {
                           Optional chaining would turn that caught failure into a
                           silently blank pill. */}
                       <span style={pill(C.amber)}>
-                        PROTOCOL: {TECHNIQUES[RBTS_REPORTS.progProtocol(prog)].split(' — ')[0]}
+                        PROTOCOL: {TECHNIQUES[proto].split(' — ')[0]}
                       </span>
                       <div style={{fontFamily:'monospace',fontSize:11,color:C.text,marginTop:4}}>
                         Applies to EVERY exercise, every working week.
                       </div>
                       <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,marginTop:2}}>
-                        {TECHNIQUES[RBTS_REPORTS.progProtocol(prog)]}
+                        {TECHNIQUES[proto]}
                       </div>
-                      {RBTS_REPORTS.techCautionOf(RBTS_REPORTS.progProtocol(prog)) && (
+                      {protoCaution && (
                         <div style={{fontFamily:'monospace',fontSize:11,color:C.amber,marginTop:4}}>
-                          CAUTION — {RBTS_REPORTS.techCautionOf(RBTS_REPORTS.progProtocol(prog))}
+                          CAUTION — {protoCaution}
                         </div>
                       )}
                     </div>
@@ -3272,8 +3278,7 @@ function ProgramsTab({ onProgramsChanged }) {
                       <span style={{color:C.text}}>{TECHNIQUES[t.technique]?.split(' — ')[0]}</span>
                     </div>
                   ))}
-                  {getWeekTechniques(prog, week).length===0 &&
-                    !RBTS_REPORTS.progProtocol(prog) &&
+                  {getWeekTechniques(prog, week).length===0 && !proto &&
                     <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray}}>
                       No intensifiers land this week
                     </div>}
