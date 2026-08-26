@@ -5085,6 +5085,45 @@
     };
   }
 
+  /* ── EX_MOVEMENT ────────────────────────────────────────────────────────
+     Greg's rule (2026-08-25): a PUSH moves the band, bar or handle AWAY from
+     the body; a PULL moves it TOWARD the body.
+
+     This table holds ONLY the exercises whose movement disagrees with their
+     muscle group's day under `push_pull`. It is deliberately small: measured
+     against the real catalog, muscle routing is already correct for about 90%
+     of 236 exercises, and 81 of them (planks, crunches, dead bugs, isometric
+     neck holds, mobility) have no push/pull meaning at all. Tagging all 236
+     would invent data for a third of them.
+
+     A curated table rather than a heuristic, on the BELT_EXTENDERS precedent:
+     two heuristics were tried there and both were wrong within a day, each
+     found by Greg looking at his own gear rather than by any suite. */
+  var EX_MOVEMENT = {
+    "13":  "pull",   // Band Pullover        (CHEST -> push day)
+    "51":  "pull",   // Band Rear Delt Fly   (SHOULDERS -> push day)
+    "56":  "pull",   // Band Upright Row     (SHOULDERS -> push day)
+    "220": "pull",   // Band Side Plank Row  (CORE -> push day)
+    /* 223 and 233 are the SAME movement under two ids. 233 is the one the
+       programs prescribe; 223 is kept defined so old history still resolves,
+       the exercise-id counterpart of the band-id stability rule. Both need the
+       entry -- omitting 223 would leave a stale log entry on the wrong day. */
+    "223": "pull",   // Band Lying Y-Raise   (SHOULDERS -> push day)
+    "233": "pull"    // Band Lying Y-Raise   (SHOULDERS -> push day)
+  };
+
+  /* Resolve one exercise's day. Returns `muscleDayKey` unchanged unless the
+     ACTIVE SPLIT declares movementDays -- which only push_pull does. That is
+     the structural exclusion: a split that does not declare the field cannot
+     be affected, rather than relying on a guard someone must remember. */
+  function exMovementDay(split, exId, muscleDayKey) {
+    var mds = split && split.movementDays;
+    if (!mds) return muscleDayKey;
+    var mv = EX_MOVEMENT[String(exId)];
+    if (!mv) return muscleDayKey;
+    return mds[mv] || muscleDayKey;
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -5181,6 +5220,8 @@
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     seededSetCount: seededSetCount,
     substituteCandidates: substituteCandidates,
+    EX_MOVEMENT: EX_MOVEMENT,
+    exMovementDay: exMovementDay,
     stackAdd: stackAdd,
     stackRemoveOne: stackRemoveOne,
     stackRemoveAll: stackRemoveAll,
