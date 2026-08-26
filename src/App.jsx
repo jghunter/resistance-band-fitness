@@ -3528,6 +3528,16 @@ function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
    Call site below passes ctx explicitly (RBTS_REPORTS.stampLoad(exercises,
    gearMap, ctx)); the module touches no DOM, no localStorage, no app globals. */
 
+/* The exercise ids a session prescribes, flat. Mirrors fitness_app.html's
+   helper of the same name; used only to filter standing substitutions down to
+   the slots that exist today. */
+function sessionPrescribedIds(prog, sKey) {
+  if (!prog) return []
+  const s = getSessionEx(prog, sKey)
+  if (!s) return []
+  return [...Object.values(s.primary || {}), ...Object.values(s.accessories || {})]
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TODAY TAB
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3574,8 +3584,23 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          entry off the plate's default path. */
       setBandPathLogs(existing?.bandPath ?? {})
       /* And the substitution, or reopening a saved session shows the SCHEDULED
-         exercise sitting above sets that were logged against the substitute. */
-      setSubsLogs(existing?.subs ?? {})
+         exercise sitting above sets that were logged against the substitute.
+
+         THE FRESH BRANCH IS THE ONLY ONE THAT SEEDS A STANDING SUBSTITUTION.
+         `existing` present with no `subs` still yields {} -- an entry saved
+         before this feature recorded no substitution, and that is a fact about
+         it rather than a gap to fill. This app has no draft mechanism, so
+         "fresh" is simply "no existing entry".
+
+         It APPLIES standing subs and never creates one: there is no profile
+         editor here, matching rirTarget, defaultSets, volumeModel and the body
+         measurements. */
+      setSubsLogs(existing
+        ? (existing.subs ?? {})
+        : RBTS_REPORTS.standingSubsFor(
+            (_ACTIVE_PROFILE && _ACTIVE_PROFILE.standingSubs) || {},
+            sessionPrescribedIds(info.prog, info.session),
+            EXERCISE_NAMES))
       setSaved(!!(existing?.completedAt))
     }
   }, [info.session, todayISO, log])
