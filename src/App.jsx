@@ -496,6 +496,25 @@ function writeLogVerified(entries) {
   } catch { return false }
 }
 
+/* ONE resolution of "what is my log right now", shared by the clash DIALOG and
+   the merge that APPLIES its answer. They resolved it differently for exactly
+   one commit and it cost a Critical: the dialog fell back to React state, the
+   merge read an absent `rbts_log` as `[]`. On a freshly signed-in device --
+   where React state is full and the key does not exist, which is the ordinary
+   state, see logRef -- KEEP MINE therefore computed EVERY incoming entry as
+   "fresh" and pushed the file's version of every clashing session to Firestore,
+   destroying the user's own copy in the cloud and in localStorage.
+
+   An absent key is NOT an empty log. `fallback` is the caller's live in-memory
+   copy; only a stored ARRAY outranks it. */
+function logBase(fallback) {
+  try {
+    const ls = JSON.parse(localStorage.getItem('rbts_log') || 'null')
+    if (Array.isArray(ls)) return ls
+  } catch { /* unparseable: the in-memory copy is the better answer */ }
+  return Array.isArray(fallback) ? fallback : []
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE GEAR + MY-BANDS HELPERS
 //   gear  → users/{uid}/gear/{itemId}   (one doc per equipment item)
@@ -4279,12 +4298,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
            React state, and if the two ever disagree (a failed write, a render
            mid-sync) the dialog would describe something other than what
            happens. fitness_app.html reads getLog() for both. */
-        let baseLog = log
-        try {
-          const ls = JSON.parse(localStorage.getItem('rbts_log') || 'null')
-          if (Array.isArray(ls)) baseLog = ls
-        } catch {}
-        const split = RBTS_REPORTS.splitLogMerge(baseLog, incoming)
+        const split = RBTS_REPORTS.splitLogMerge(logBase(log), incoming)
         let policy = 'mine'
         if (split.clashes.length) {
           const lines = split.clashes.slice(0, 12).map(c =>
@@ -4317,6 +4331,18 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 'Nothing is removed either way.') ? 'file' : 'mine'
         }
         const res = await onMergeImport(incoming, policy)
+        /* A storage failure reports itself instead of dressing up as a merge
+           of zero sessions. `result` is initialised to zeroes and is only
+           filled inside the try block, so without this the alert read
+           "Added 0 session(s), kept 0 of yours" on a full quota -- while React
+           state HAD merged, so the screen disagreed with the message. */
+        if (res && res.stored === false) {
+          alert('Could not save the merged log on this device — storage is ' +
+                'probably full.\n\nWhat you see on screen has merged, but it ' +
+                'will be lost on reload. Nothing was sent to the cloud.' +
+                invMsg + measMsg)
+          return
+        }
         alert(`Added ${res ? res.added : '?'} session(s), ` +
           (policy === 'file' ? `replaced ${res ? res.replaced : '?'}`
                              : `kept ${res ? res.kept : '?'} of yours`) + '.' +
@@ -4988,6 +5014,20 @@ export default function App() {
   const [tab, setTab]                 = useState('today')
   const [user, setUser]               = useState(null)
   const [log, setLog]                 = useState([])
+  /* THE LOG'S BASE COPY, for callbacks that must not re-identify on every
+     log change. `rbts_log` being ABSENT while `log` holds the full history is
+     a NORMAL state on a signed-in device, not a corrupt one: the sign-in path
+     calls setLog(mig.entries) unconditionally but only calls writeLogVerified
+     when the fold migration TOUCHED something, which it does not once the
+     cloud entries are already migrated -- i.e. on every device now. (Do not
+     name that condition in prose here: a parity assertion counts its
+     occurrences in this file.) Only handleSaveEntry
+     maintains the key, incrementally, when a workout is logged HERE. So a
+     fresh install that signs in and merges a file has React state full and
+     localStorage empty, and anything that treats the missing key as "no
+     sessions" is reasoning from a blank slate that is not blank. */
+  const logRef = useRef([])
+  useEffect(() => { logRef.current = log }, [log])
   const [gear, setGear]               = useState([])
   const [myBands, setMyBands]         = useState([])
   const [settings, setSettings]       = useState(() => getLocalSettings())
@@ -5319,26 +5359,38 @@ export default function App() {
        then -- so this pushed NOTHING and still reported "Synced to the cloud".
        "mine" is not an edge case: it is the policy whenever there are zero
        clashes, i.e. the ordinary merge of a desktop export onto a phone. */
-    let write = incoming
+    /* NULL until decided, never a hopeful default. `let write = incoming`
+       before a block that may throw means a storage failure silently pushes
+       EVERY incoming entry -- overriding a KEEP MINE the user chose, in the
+       one branch where localStorage was never written either, so the cloud and
+       the device end up disagreeing outright. Undecided means DO NOT PUSH. */
+    let write = null
+    let stored = false
     /* `result` is assigned OUTSIDE the state updater. React may defer or
        double-invoke an updater, so a side effect inside one is not a place to
        compute a number the caller then reports to the user. */
     setLog(prev => RBTS_REPORTS.applyLogMerge(prev, incoming, policy).merged)
     try {
-      const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
-      if (policy !== 'file') write = RBTS_REPORTS.splitLogMerge(local, incoming).fresh
+      /* The SAME base the clash dialog split against -- logBase, not an
+         absent-key-means-empty read. See logBase. */
+      const local = logBase(logRef.current)
+      write = policy === 'file'
+        ? incoming
+        : RBTS_REPORTS.splitLogMerge(local, incoming).fresh
       const r = RBTS_REPORTS.applyLogMerge(local, incoming, policy)
       localStorage.setItem('rbts_log', JSON.stringify(r.merged))
       result = { added: r.added, replaced: r.replaced, kept: r.kept }
+      stored = true
     } catch {}
     let synced = false
-    if (user) {
+    if (user && write) {
       try {
         await Promise.all(write.map(e => saveEntryToFirestore(user.uid, e)))
         synced = true
       } catch (err) { logCloudWriteFailure('merge import', incoming.map(e => e.date), err) }
     }
-    return { added: result.added, replaced: result.replaced, kept: result.kept, synced }
+    return { added: result.added, replaced: result.replaced, kept: result.kept,
+             synced, stored }
   }, [user])
 
   const handleDeleteEntry = useCallback(async (entry) => {
