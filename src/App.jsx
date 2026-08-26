@@ -4146,6 +4146,8 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
          absent -- this app has no custom-band form and no brand manager, so
          exporting them would write keys nothing here ever reads.) */
       rbts_customPrograms: getCustomPrograms(),
+      rbts_owner: (() => { try { return localStorage.getItem('rbts_owner') || '' }
+                           catch { return '' } })(),
       // Inventory only once it has actually loaded — an export taken during the
       // initial cloud sync would otherwise carry empty arrays, which import as
       // a deliberate inventory wipe on another device.
@@ -4181,6 +4183,25 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
     reader.onload = async ev => {
       try {
         const state = JSON.parse(ev.target.result)
+        const fileOwner = (state && typeof state.rbts_owner === 'string') ? state.rbts_owner : ''
+        let myOwner = ''
+        try { myOwner = localStorage.getItem('rbts_owner') || '' } catch {}
+        const verdict = RBTS_REPORTS.ownerMatches(fileOwner, myOwner)
+        if (verdict === 'mismatch') {
+          alert('This backup belongs to ' + fileOwner.toUpperCase() + '.\n' +
+                'Your log belongs to ' + myOwner.toUpperCase() + '.\n\n' +
+                'MERGE IMPORT is for your own devices. Merging another person\'s ' +
+                'sessions into your log would mix their training into your ' +
+                'history and your analyzer figures.\n\nNothing was changed.')
+          return
+        }
+        if (verdict === 'unknown-mine') {
+          alert('This backup belongs to ' + fileOwner.toUpperCase() + '.\n\n' +
+                'This device has no owner set, so I cannot tell whether that is ' +
+                'you.\n\nSet your name in TODAY -> TRAINING STYLE, then try the ' +
+                'merge again.\n\nNothing was changed.')
+          return
+        }
         const incoming = Array.isArray(state.rbts_log) ? state.rbts_log
                        : (Array.isArray(state) ? state : null)
         // Custom exercise definitions (from the HTML app or another PWA device)
@@ -4246,8 +4267,36 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           }
           alert('Invalid file — expected an rbts_log array.'); return
         }
-        const res = await onMergeImport(incoming)
-        alert(`Merged ${incoming.length} session(s) across ${res ? res.dates : '?'} date(s).` +
+        const split = RBTS_REPORTS.splitLogMerge(log, incoming)
+        let policy = 'mine'
+        if (split.clashes.length) {
+          const lines = split.clashes.slice(0, 12).map(c =>
+            `   ${c.key}  (${Object.keys(c.mine.exercises || {}).length} exercises here, ` +
+            `${Object.keys(c.theirs.exercises || {}).length} in the file)`).join('\n')
+          const more = split.clashes.length > 12
+                     ? `\n   ...and ${split.clashes.length - 12} more` : ''
+          if (!window.confirm(`Merging ${incoming.length} session(s).\n\n` +
+                `${split.fresh.length} are new and will be added.\n\n` +
+                `${split.clashes.length} already exist in your log:\n${lines}${more}` +
+                '\n\nOK to decide what happens to those, or Cancel to abandon ' +
+                'the whole merge.')) {
+            alert('Merge cancelled. Nothing was changed.')
+            return
+          }
+          policy = window.confirm(`Use the FILE'S version of those ` +
+                `${split.clashes.length} session(s)?\n\n` +
+                'OK  = use the file\'s (replaces them)\n' +
+                `Cancel = keep mine (the ${split.fresh.length} ` +
+                'new session(s) still merge)\n\n' +
+                'Nothing is removed either way.') ? 'file' : 'mine'
+        }
+        const res = await onMergeImport(incoming, policy)
+        alert(`Added ${res ? res.added : '?'} session(s), ` +
+          (policy === 'file' ? `replaced ${res ? res.replaced : '?'}`
+                             : `kept ${res ? res.kept : '?'} of yours`) + '.' +
+          ((verdict === 'unknown-file' || verdict === 'unknown-both')
+             ? '\n\nNOTE: this file carries no owner name, so I could not check ' +
+               'whose log it is.' : '') +
           (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
           (mergedProgs ? ` Custom programs: ${mergedProgs.length} total — RELOAD to see them.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
@@ -4930,6 +4979,16 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setInvLoaded(false)   // re-gate export until this session's inventory loads
       setUser(u)
+      /* WHO THIS LOG BELONGS TO, free from the account -- no typing, and the
+         same value on every device this person signs in on. displayName is
+         already used for the header chip; the email local part is a fallback
+         for an account that has none. Cleared on sign-out so a signed-out
+         device does not claim an identity it cannot prove. */
+      try {
+        const who = u ? ((u.displayName || '').trim()
+                         || (u.email || '').split('@')[0] || '') : ''
+        if (who) localStorage.setItem('rbts_owner', who)
+      } catch { /* storage full or blocked: the merge simply cannot owner-check */ }
       setAuthLoading(false)
       if (u) {
         setLogLoading(true)
@@ -5198,8 +5257,8 @@ export default function App() {
     }
   }, [user])
 
-  const handleMergeImport = useCallback(async (incoming) => {
-    if (!Array.isArray(incoming) || incoming.length === 0) return { added:0, dates:0, synced:false }
+  const handleMergeImport = useCallback(async (incoming, policy) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return { added:0, replaced:0, kept:0, synced:false }
     // Stamp every imported entry with a fresh updatedAt so it authoritatively
     // overwrites any stale Firestore copy of the same date on the next sign-in
     // reconcile (this is what was previously dropping re-imported corrections).
@@ -5212,29 +5271,36 @@ export default function App() {
     // encoding permanently. Already-migrated entries carry foldMigrated and
     // are skipped.
     incoming = migrateFoldOnce(incoming, null).entries
-    const dropDates = new Set(incoming.map(e => e.date))
+    /* Keyed on date + session -- the entry's REAL identity, and the Firestore
+       document id. The old rule dropped by DATE alone.
+       THE deleteDoc LOOP IS GONE, not conditioned: a replacement is a setDoc
+       over the same `${date}_${session}` document, which overwrites in place,
+       so no path needs a delete. That loop hard-removed a signed-in user's
+       sessions from the cloud, in the app with no undo of any kind. */
+    let result = { added: 0, replaced: 0, kept: 0 }
     setLog(prev => {
-      const kept = prev.filter(e => !dropDates.has(e.date))
-      return kept.concat(incoming).sort((a,b) => a.date.localeCompare(b.date))
+      const r = RBTS_REPORTS.applyLogMerge(prev, incoming, policy)
+      result = { added: r.added, replaced: r.replaced, kept: r.kept }
+      return r.merged
     })
-    // Always update localStorage too (both signed in and out) so the reconcile
-    // source of truth stays current regardless of auth state at merge time.
     try {
       const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
-      const kept  = local.filter(e => !dropDates.has(e.date))
-      localStorage.setItem('rbts_log', JSON.stringify(kept.concat(incoming).sort((a,b)=>a.date.localeCompare(b.date))))
+      const r = RBTS_REPORTS.applyLogMerge(local, incoming, policy)
+      localStorage.setItem('rbts_log', JSON.stringify(r.merged))
+      result = { added: r.added, replaced: r.replaced, kept: r.kept }
     } catch {}
     let synced = false
     if (user) {
       try {
-        const existing = await loadLogFromFirestore(user.uid)
-        const toDelete = existing.filter(e => dropDates.has(e.date))
-        await Promise.all(toDelete.map(e => deleteDoc(doc(db,'users',user.uid,'workouts',`${e.date}_${e.session}`))))
-        await Promise.all(incoming.map(e => saveEntryToFirestore(user.uid, e)))
+        const write = policy === 'file'
+          ? incoming
+          : RBTS_REPORTS.splitLogMerge(
+              JSON.parse(localStorage.getItem('rbts_log') || '[]'), incoming).fresh
+        await Promise.all(write.map(e => saveEntryToFirestore(user.uid, e)))
         synced = true
       } catch (err) { logCloudWriteFailure('merge import', incoming.map(e => e.date), err) }
     }
-    return { added: incoming.length, dates: dropDates.size, synced }
+    return { added: result.added, replaced: result.replaced, kept: result.kept, synced }
   }, [user])
 
   const handleDeleteEntry = useCallback(async (entry) => {
