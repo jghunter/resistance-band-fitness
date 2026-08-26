@@ -4195,11 +4195,18 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 'history and your analyzer figures.\n\nNothing was changed.')
           return
         }
+        /* THE ONLY MESSAGE OF THE THREE THAT IS DELIBERATELY *NOT* IDENTICAL TO
+           fitness_app.html's. This app has no TRAINING STYLE panel, and typing
+           a name in the HTML app would not help either: that writes ownerName
+           into rbts_profiles on a DIFFERENT ORIGIN, while this app reads
+           localStorage['rbts_owner'], which only signing in writes. So
+           `unknown-mine` here means exactly "signed out", and the HTML app's
+           wording would be wrong 100% of the time it fired. */
         if (verdict === 'unknown-mine') {
           alert('This backup belongs to ' + fileOwner.toUpperCase() + '.\n\n' +
                 'This device has no owner set, so I cannot tell whether that is ' +
-                'you.\n\nSet your name in TODAY -> TRAINING STYLE, then try the ' +
-                'merge again.\n\nNothing was changed.')
+                'you.\n\nSign in with your Google account to set it, then try ' +
+                'the merge again.\n\nNothing was changed.')
           return
         }
         const incoming = Array.isArray(state.rbts_log) ? state.rbts_log
@@ -4267,7 +4274,17 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           }
           alert('Invalid file — expected an rbts_log array.'); return
         }
-        const split = RBTS_REPORTS.splitLogMerge(log, incoming)
+        /* The clash list must be computed from the SAME copy the merge is
+           applied to. handleMergeImport applies against localStorage; `log` is
+           React state, and if the two ever disagree (a failed write, a render
+           mid-sync) the dialog would describe something other than what
+           happens. fitness_app.html reads getLog() for both. */
+        let baseLog = log
+        try {
+          const ls = JSON.parse(localStorage.getItem('rbts_log') || 'null')
+          if (Array.isArray(ls)) baseLog = ls
+        } catch {}
+        const split = RBTS_REPORTS.splitLogMerge(baseLog, incoming)
         let policy = 'mine'
         if (split.clashes.length) {
           const lines = split.clashes.slice(0, 12).map(c =>
@@ -4280,7 +4297,16 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 `${split.clashes.length} already exist in your log:\n${lines}${more}` +
                 '\n\nOK to decide what happens to those, or Cancel to abandon ' +
                 'the whole merge.')) {
-            alert('Merge cancelled. Nothing was changed.')
+            /* "Nothing was changed" was FALSE. By the time this dialog runs the
+               inventory has been replaced wholesale and the custom exercises,
+               programs and band calibration have all been merged. Cancelling
+               abandons the LOG merge and nothing else. This whole item exists
+               because an alert misdescribed what a merge did to the log; the
+               same sentence one layer out is the same defect. */
+            alert('Log merge cancelled. Your log is unchanged.' + invMsg +
+                  '\n\nAnything else this file carried -- custom exercises, ' +
+                  'programs, band calibration -- was already merged before ' +
+                  'this point.')
             return
           }
           policy = window.confirm(`Use the FILE'S version of those ` +
@@ -5287,13 +5313,20 @@ export default function App() {
        so no path needs a delete. That loop hard-removed a signed-in user's
        sessions from the cloud, in the app with no undo of any kind. */
     let result = { added: 0, replaced: 0, kept: 0 }
-    setLog(prev => {
-      const r = RBTS_REPORTS.applyLogMerge(prev, incoming, policy)
-      result = { added: r.added, replaced: r.replaced, kept: r.kept }
-      return r.merged
-    })
+    /* WHAT REACHES THE CLOUD IS DECIDED BEFORE THE LOCAL WRITE. Under policy
+       "mine" only the FRESH entries were stored, and splitting against an
+       ALREADY-MERGED log finds none of them -- every incoming key is present by
+       then -- so this pushed NOTHING and still reported "Synced to the cloud".
+       "mine" is not an edge case: it is the policy whenever there are zero
+       clashes, i.e. the ordinary merge of a desktop export onto a phone. */
+    let write = incoming
+    /* `result` is assigned OUTSIDE the state updater. React may defer or
+       double-invoke an updater, so a side effect inside one is not a place to
+       compute a number the caller then reports to the user. */
+    setLog(prev => RBTS_REPORTS.applyLogMerge(prev, incoming, policy).merged)
     try {
       const local = JSON.parse(localStorage.getItem('rbts_log') || '[]')
+      if (policy !== 'file') write = RBTS_REPORTS.splitLogMerge(local, incoming).fresh
       const r = RBTS_REPORTS.applyLogMerge(local, incoming, policy)
       localStorage.setItem('rbts_log', JSON.stringify(r.merged))
       result = { added: r.added, replaced: r.replaced, kept: r.kept }
@@ -5301,10 +5334,6 @@ export default function App() {
     let synced = false
     if (user) {
       try {
-        const write = policy === 'file'
-          ? incoming
-          : RBTS_REPORTS.splitLogMerge(
-              JSON.parse(localStorage.getItem('rbts_log') || '[]'), incoming).fresh
         await Promise.all(write.map(e => saveEntryToFirestore(user.uid, e)))
         synced = true
       } catch (err) { logCloudWriteFailure('merge import', incoming.map(e => e.date), err) }
