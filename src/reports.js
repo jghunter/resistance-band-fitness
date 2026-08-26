@@ -5124,6 +5124,38 @@
     return mds[mv] || muscleDayKey;
   }
 
+  /* ── standingSubsFor ────────────────────────────────────────────────────
+     A STANDING substitution is one the lifter makes every session. It lives
+     on the PROFILE, not on a program: Greg's shoulder is a property of Greg,
+     not of Gorilla Gains. That also means Daniel, Jaclyn and Mike run the
+     same program AS WRITTEN rather than inheriting one person's shoulder --
+     and it leaves saveCustomProgram append-only, which reconcileCustomPrograms
+     depends on to union by id with no per-program timestamps.
+
+     Returns the map to SEED a fresh session with, keyed and valued exactly
+     like a log entry's `subs`, so a reader of history cannot tell whether the
+     swap was tapped that day or set once -- and should not need to. */
+  function standingSubsFor(standingSubs, prescribedIds, exNames) {
+    var out = {};
+    if (!standingSubs || !prescribedIds || !exNames) return out;
+    var here = {};
+    for (var i = 0; i < prescribedIds.length; i++) here[String(prescribedIds[i])] = true;
+    Object.keys(standingSubs).forEach(function (schedId) {
+      var perf = standingSubs[schedId];
+      /* Same two drops the save path applies, so the two cannot disagree
+         about what counts as a substitution. */
+      if (perf == null || String(perf) === String(schedId)) return;
+      /* Filtered to what THIS session prescribes: the map is global across
+         programs, so most sessions prescribe few of its keys. */
+      if (!here[String(schedId)]) return;
+      /* Both ids must still resolve. A custom exercise can be deleted after a
+         standing sub names it, and a card with no name is worse than none. */
+      if (!exNames[schedId] || !exNames[perf]) return;
+      out[String(schedId)] = Number(perf);
+    });
+    return out;
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -5220,6 +5252,7 @@
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     seededSetCount: seededSetCount,
     substituteCandidates: substituteCandidates,
+    standingSubsFor: standingSubsFor,
     EX_MOVEMENT: EX_MOVEMENT,
     exMovementDay: exMovementDay,
     stackAdd: stackAdd,
