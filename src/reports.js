@@ -5065,11 +5065,23 @@
     }
     out = out.concat(split.fresh);
     out.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    /* Counted by DISTINCT KEY, not by clash. One incoming file can carry the
+       same date+session twice; both are clashes but only ONE entry is written,
+       so clashes.length would report "replaced 2" for one session. This whole
+       item exists because the old alert said how many dates were merged and
+       never said anything was removed -- a merge that overstates what it did
+       to the log is that same defect in a smaller coat. */
+    var distinct = {}, n = 0;
+    for (i = 0; i < split.clashes.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(distinct, split.clashes[i].key)) {
+        distinct[split.clashes[i].key] = 1; n++;
+      }
+    }
     return {
       merged: out,
       added: split.fresh.length,
-      replaced: useFile ? split.clashes.length : 0,
-      kept: useFile ? 0 : split.clashes.length
+      replaced: useFile ? n : 0,
+      kept: useFile ? 0 : n
     };
   }
 
