@@ -2148,17 +2148,29 @@ export function deriveSession(prog, splitId, dayKey) {
   const me = progMuscleEx(prog);
   const primary = {}, accessories = {};
   let primDone = false;
+  /* One exercise's day. Identical to md[muscle] unless the ACTIVE SPLIT
+     declares movementDays -- only push_pull does -- and this exercise is one
+     of the six in RBTS_REPORTS.EX_MOVEMENT whose movement disagrees with its
+     muscle group. */
+  const dayOf = (id, m) =>
+    (RBTS_REPORTS && RBTS_REPORTS.exMovementDay)
+      ? RBTS_REPORTS.exMovementDay(sp, id, md[m]) : md[m];
   MUSCLE_ORDER.forEach(m => {
-    if (md[m] !== dayKey) return;
     const e = me[m]; if (!e) return;
+    /* Tested SEPARATELY: an exception can send a muscle's isolation to the
+       other day and leave its compound behind. With no exception in play both
+       are md[m], so this is byte-identical to the old per-muscle filter. */
+    const compHere = e.comp != null && dayOf(e.comp, m) === dayKey;
+    const isoHere  = e.iso  != null && dayOf(e.iso,  m) === dayKey;
+    if (!compHere && !isoHere) return;
     const pfx = MUSCLE_PFX[m];
-    if (e.comp != null && e.iso != null && !primDone) {
+    if (compHere && isoHere && !primDone) {
       primary[pfx + "Comp"] = e.comp; primary[pfx + "Iso"] = e.iso;
       primDone = true;
-    } else if (e.comp != null && e.iso != null) {
+    } else if (compHere && isoHere) {
       accessories[pfx + "Comp"] = e.comp; accessories[pfx + "Iso"] = e.iso;
     } else {
-      const id = (e.comp != null) ? e.comp : e.iso;
+      const id = compHere ? e.comp : e.iso;
       if (id != null) accessories[MUSCLE_SINGLE_KEY[m] || m] = id;
     }
   });
