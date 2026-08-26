@@ -126,15 +126,44 @@
     push_pull: {
       label: "Push / Pull", days: ["push", "pull"],
       validDayCounts: [2, 4, 6],
+      /* ROUTED BY MOVEMENT since 2026-08-26 (Greg): a push moves the band, bar
+         or handle AWAY from the body; a pull moves it TOWARD the body. So
+         squats, leg press and knee extension PUSH, and rows, curls, leg curls
+         and every hinge PULL.
+
+         This is the 2026-07-04 table with {quads, calves} and {hamstrings,
+         glutes} exchanged, which satisfies BOTH of Greg's rules at once. The
+         older one -- "squats must not share an emphasis day with deadlifts" --
+         is preserved rather than traded away, because the hinges moved to pull
+         while the squats moved to push.
+
+         The hinge family is genuinely neither (Greg, 2026-08-26); it is placed
+         on pull by convention (deadlifts are the "pull" in push/pull/legs,
+         sharing posterior chain and grip with rows) and because leg curls are
+         unambiguous pulls and must not be stranded from their own muscle.
+
+         CORE and NECK are FILLER, not a movement call: 15 of 19 core and 5 of
+         8 neck exercises are isometric or rotational. They balance the two
+         days' exercise counts, the same convention as core = LOWER in
+         upper_lower. */
       muscleDay: {
         chest: "push", shoulders: "push", triceps: "push",
-        hamstrings: "push", glutes: "push", core: "push", neck: "push",
+        quads: "push", calves: "push", core: "push", neck: "push",
         back: "pull", biceps: "pull", forearms: "pull",
-        quads: "pull", calves: "pull",
+        hamstrings: "pull", glutes: "pull", tibialis: "pull",
       },
+      /* THE ONLY SPLIT THAT DECLARES THIS. It is what lets deriveSession
+         consult RBTS_REPORTS.EX_MOVEMENT for the six exercises whose movement
+         disagrees with their muscle. A split without this field cannot be
+         affected by that table at all -- upper/lower routes by body region,
+         where "push" and "pull" are meaningless. */
+      movementDays: { push: "push", pull: "pull" },
+      /* These name MOVEMENT PATTERNS, so Deadlifts and Squats swap days with
+         the muscles above. Left alone, the screen would tell the user to lead
+         with a deadlift on a day that no longer contains one. */
       focusCycles: {
-        push: ["Presses", "Deadlifts", "Obliques", "Neck Up/Down"],
-        pull: ["Rows", "Squats", "Extensions", "Forearms (pronated)"],
+        push: ["Presses", "Squats", "Obliques", "Neck Up/Down"],
+        pull: ["Rows", "Deadlifts", "Extensions", "Forearms (pronated)"],
       },
     },
     ppl:         { label: "Push / Pull / Legs", days: ["push", "pull", "legs"],
