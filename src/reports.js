@@ -4991,6 +4991,88 @@
     return { log: out, changed: changed, skipped: skipped, touched: touched };
   }
 
+  /* ---- MERGE IMPORT: whose log is this, and what may it remove --------- */
+  /* mergeJSON used to collect every DATE in the incoming file and delete
+     every local entry on those dates. Between one person's two devices that
+     is a defensible "the file is authoritative for this date". Between two
+     people it deletes your own session on every date they trained, and the
+     alert only said how many dates were merged.
+     Spec: docs/superpowers/specs/2026-08-25-merge-import-owner-design.md */
+
+  /* A person's name, for comparison only. Anything that is not a non-empty
+     string normalises to "" -- a number is NOT coerced, because an owner that
+     came back from a hand-edited backup as 0 must read as ABSENT rather than
+     as a person called "0". */
+  function normalizeOwner(v) {
+    if (typeof v !== "string") return "";
+    return v.replace(/\s+/g, " ").replace(/^ | $/g, "").toLowerCase();
+  }
+
+  /* Five verdicts, not two. An ABSENCE can only be flagged -- every backup on
+     disk predates this field, including the belt-restamp correction file that
+     is still waiting to be imported. A MISMATCH can be refused. */
+  function ownerMatches(fileOwner, myOwner) {
+    var f = normalizeOwner(fileOwner), m = normalizeOwner(myOwner);
+    if (!f && !m) return "unknown-both";
+    if (!f) return "unknown-file";
+    if (!m) return "unknown-mine";
+    return (f === m) ? "match" : "mismatch";
+  }
+
+  /* The entry's REAL key. The Firestore document id is `${date}_${session}`,
+     so date alone is coarser than the cloud key: a file carrying one session
+     deleted every session logged that day. */
+  function logEntryKey(e) {
+    return String((e && e.date) || "") + " " + String((e && e.session) || "");
+  }
+
+  /* Splits and DECIDES NOTHING. Keeping the split separate from the decision
+     is what stops "merge" from quietly meaning "replace". */
+  function splitLogMerge(local, incoming) {
+    var loc = Array.isArray(local) ? local : [];
+    var inc = Array.isArray(incoming) ? incoming : [];
+    var byKey = {}, i;
+    for (i = 0; i < loc.length; i++) byKey[logEntryKey(loc[i])] = loc[i];
+    var fresh = [], clashes = [];
+    for (i = 0; i < inc.length; i++) {
+      var k = logEntryKey(inc[i]);
+      if (Object.prototype.hasOwnProperty.call(byKey, k)) {
+        clashes.push({ key: k, mine: byKey[k], theirs: inc[i] });
+      } else {
+        fresh.push(inc[i]);
+      }
+    }
+    return { fresh: fresh, clashes: clashes };
+  }
+
+  /* NOTHING IS EVER REMOVED. A replacement is one-for-one on the same key, so
+     merged.length can never be less than local.length on either policy. */
+  function applyLogMerge(local, incoming, policy) {
+    var loc = Array.isArray(local) ? local : [];
+    var split = splitLogMerge(loc, incoming);
+    var useFile = (policy === "file");
+    var replaceBy = {};
+    var i;
+    if (useFile) {
+      for (i = 0; i < split.clashes.length; i++) {
+        replaceBy[split.clashes[i].key] = split.clashes[i].theirs;
+      }
+    }
+    var out = [];
+    for (i = 0; i < loc.length; i++) {
+      var k = logEntryKey(loc[i]);
+      out.push(Object.prototype.hasOwnProperty.call(replaceBy, k) ? replaceBy[k] : loc[i]);
+    }
+    out = out.concat(split.fresh);
+    out.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    return {
+      merged: out,
+      added: split.fresh.length,
+      replaced: useFile ? split.clashes.length : 0,
+      kept: useFile ? 0 : split.clashes.length
+    };
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
     CONST: CONST,
@@ -5043,6 +5125,11 @@
     returningState: returningState,
     EX_CAUTION: EX_CAUTION,
     TECH_CAUTION: TECH_CAUTION,
+    normalizeOwner: normalizeOwner,
+    ownerMatches: ownerMatches,
+    logEntryKey: logEntryKey,
+    splitLogMerge: splitLogMerge,
+    applyLogMerge: applyLogMerge,
     TECH_KEYS: TECH_KEYS,
     progProtocol: progProtocol,
     exCautionOf: exCautionOf,
