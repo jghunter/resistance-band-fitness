@@ -4982,8 +4982,17 @@ export default function App() {
       /* WHO THIS LOG BELONGS TO, free from the account -- no typing, and the
          same value on every device this person signs in on. displayName is
          already used for the header chip; the email local part is a fallback
-         for an account that has none. Cleared on sign-out so a signed-out
-         device does not claim an identity it cannot prove. */
+         for an account that has none.
+
+         DELIBERATELY NOT CLEARED ON SIGN-OUT. The write is guarded (`if (who)`),
+         so signing out leaves the last known owner in place rather than blanking
+         it. That is the safer of the two: an owner-less device resolves
+         `unknown-mine`, which REFUSES any file that names an owner -- so
+         clearing would mean signing out on your phone and no longer being able
+         to merge your own desktop export. A remembered name can only ever make
+         the gate stricter, never looser: it cannot turn a mismatch into a match.
+         (An earlier version of this comment claimed it WAS cleared. It never
+         was; the comment was wrong, not the code.) */
       try {
         const who = u ? ((u.displayName || '').trim()
                          || (u.email || '').split('@')[0] || '') : ''
