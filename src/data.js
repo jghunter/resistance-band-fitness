@@ -2082,19 +2082,28 @@ export function isNativeSplit(prog) {
   const u = userSplitId();
   return !u || u === progNativeSplitId(prog);
 }
+/* TIBIALIS added 2026-08-26. GROUP_META.TIBIALIS and four exercises (172, 176,
+   231, 232) had existed for weeks while `tibialis` appeared in this table,
+   MUSCLE_ORDER and every split's muscleDay ZERO times -- so exMuscle returned
+   null and progMuscleEx's `if (!m) return;` DROPPED them outright. ELEVEN
+   program slots across P2-P12 carry one (in `calves` accessory slots), so
+   every one of those was silently missing from every DERIVED session. The
+   native path was unaffected, which is why it went unnoticed. */
 const GROUP_MUSCLE = { CHEST:"chest", BACK:"back", SHOULDERS:"shoulders",
   CORE:"core", GLUTES:"glutes", QUADS:"quads", HAMSTRINGS:"hamstrings",
   BICEPS:"biceps", TRICEPS:"triceps", FOREARMS:"forearms", CALVES:"calves",
-  NECK:"neck" };
+  NECK:"neck", TIBIALIS:"tibialis" };
 export function exMuscle(id) { return GROUP_MUSCLE[exGroup(Number(id)).label] || null; }
 const MUSCLE_ORDER = ["chest","back","shoulders","biceps","triceps","forearms",
-  "neck","quads","hamstrings","glutes","calves","core"];
+  "neck","quads","hamstrings","glutes","calves","tibialis","core"];
 const MUSCLE_PFX = { chest:"chest", back:"back", triceps:"tri", biceps:"bi",
   core:"core", shoulders:"shoulder", quads:"quad", hamstrings:"ham",
-  glutes:"glute", forearms:"forearm", neck:"neck", calves:"calf" };
+  glutes:"glute", forearms:"forearm", neck:"neck", calves:"calf",
+  tibialis:"tib" };
 const MUSCLE_SINGLE_KEY = { hamstrings:"hams" };
 const SLOT_MUSCLE = { chest:"chest", back:"back", triceps:"triceps", biceps:"biceps",
   forearms:"forearms", neck:"neck", calves:"calves", quads:"quads",
+  tibialis:"tibialis", tibComp:"tibialis", tibIso:"tibialis",
   hams:"hamstrings", glutes:"glutes", shoulders:"shoulders", core:"core",
   coreFront:"core", coreBack:"core", coreSides:"core", lats:"back",
   hinge:"hamstrings",

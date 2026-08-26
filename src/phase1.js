@@ -91,7 +91,8 @@
       muscleDay: {
         chest: "fb", back: "fb", shoulders: "fb",
         biceps: "fb", triceps: "fb", forearms: "fb", neck: "fb",
-        quads: "fb", hamstrings: "fb", glutes: "fb", calves: "fb", core: "fb",
+        quads: "fb", hamstrings: "fb", glutes: "fb", calves: "fb",
+        tibialis: "fb", core: "fb",
       },
       focusCycles: { fb: ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core"] },
     },
@@ -102,7 +103,7 @@
         chest: "upper", back: "upper", shoulders: "upper",
         biceps: "upper", triceps: "upper", forearms: "upper", neck: "upper",
         quads: "lower", hamstrings: "lower", glutes: "lower",
-        calves: "lower", core: "lower",
+        calves: "lower", tibialis: "lower", core: "lower",
       },
       focusCycles: {
         upper: ["Chest", "Back", "Abs", "Neck Sides"],
@@ -117,6 +118,7 @@
         biceps: "upper", triceps: "upper", forearms: "upper", neck: "upper",
         core: "upper",
         quads: "lower", hamstrings: "lower", glutes: "lower", calves: "lower",
+        tibialis: "lower",
       },
       focusCycles: {
         upper: ["Chest", "Back", "Abs", "Neck Sides"],
@@ -174,7 +176,7 @@
         chest: "push", shoulders: "push", triceps: "push",
         back: "pull", biceps: "pull", forearms: "pull", neck: "pull",
         quads: "legs", hamstrings: "legs", glutes: "legs",
-        calves: "legs", core: "legs",
+        calves: "legs", tibialis: "legs", core: "legs",
       },
     },
     back_chest_legs: {
@@ -185,7 +187,7 @@
         back: "back", triceps: "back", shoulders: "back",
         chest: "chest", biceps: "chest", neck: "chest", forearms: "chest",
         quads: "legs", hamstrings: "legs", glutes: "legs",
-        calves: "legs", core: "legs",
+        calves: "legs", tibialis: "legs", core: "legs",
       },
     },
     // 4-day Upper/Lower with DISTINCT A/B days. The 2-day upper_lower split
@@ -206,7 +208,7 @@
         chest: "upperA", back: "upperA", biceps: "upperA", forearms: "upperA",
         shoulders: "upperB", triceps: "upperB", neck: "upperB",
         quads: "lowerA", glutes: "lowerA", core: "lowerA",
-        hamstrings: "lowerB", calves: "lowerB",
+        hamstrings: "lowerB", calves: "lowerB", tibialis: "lowerB",
       },
       focusCycles: {
         upperA: ["Chest", "Back", "Arms"],
