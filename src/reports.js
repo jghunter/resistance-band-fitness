@@ -580,7 +580,7 @@
     return gearIds.reduce(function (a, id) {
       var g = gearOf(id);
       if (!g) return a;
-      var d = resolveGearDims(g) || {}, t = g.type;
+      var d = resolveGearDims(g), t = g.type;
       /* Some gear is never in the load path AT ALL -- the Harambe Foam Block
          is somewhere to rest a bar during setup, and Greg's ruling is that it
          must never figure in any calculation of any kind. This is deliberately
@@ -631,7 +631,7 @@
      exactly as a seeded HTML item does. */
   function gearOpeningOptions(it) {
     if (!it) return [];
-    var d = resolveGearDims(it) || {};
+    var d = resolveGearDims(it);
     var inch = d.seriesOptionsIn;
     if (!Array.isArray(inch) || !inch.length) return [];
     var cm = Array.isArray(d.seriesOptionsCm) ? d.seriesOptionsCm : [];
@@ -718,7 +718,7 @@
      a seeded HTML item does. */
   function plateBandPaths(it) {
     if (!it) return [];
-    var d = resolveGearDims(it) || {};
+    var d = resolveGearDims(it);
     var out = [];
     if (Array.isArray(d.bandPaths)) {
       d.bandPaths.forEach(function (p) {
@@ -874,7 +874,7 @@
       if (g.type === "handle") handles = true;
     }
     if (bar) {
-      var dims = resolveGearDims(bar) || {};
+      var dims = resolveGearDims(bar);
       return { kind: "bar",
                spanIn: finitePos(dims.attachSpanIn) ? dims.attachSpanIn : null };
     }
@@ -1229,7 +1229,7 @@
        rather than listing the affected plates, so a plate taped LATER starts
        being flagged with no code edit and a plate whose figure never moves is
        never flagged at all. */
-    var d = resolveGearDims(plateItem) || {};
+    var d = resolveGearDims(plateItem);
     var legacy = (d.bandSpanIn || d.lengthIn || 0)
                + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
     var p = plateBandPathOf(plateItem, null);
@@ -2032,7 +2032,29 @@
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
   function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap) {
-    if (!ctx || typeof ctx.bandOf !== "function") return undefined;
+    /* THROWS on a bad ctx. It used to `return undefined`, which is the wrong
+       failure mode for this function: every caller is a SAVE path, and
+       applyLoadStamp treats undefined as "there was nothing to stamp". So a
+       call that got ctx wrong -- the argument order here differs from
+       effectiveLoad's and bestSetLoad's, which take ctx FIRST -- saved the
+       workout with no load figure at all, permanently, with nothing on screen
+       saying so. Silent, and indistinguishable from a set with no bands.
+
+       Review finding 7 assumed a swapped call "throws loudly rather than
+       misstamping, so it is ergonomics". Measured 2026-08-27: it did not
+       throw, it returned undefined. Rather than reorder 42 call sites across
+       9 files for no functional gain, the failure was made loud. A ctx is
+       supplied by makeReportCtx() on every real path, so this cannot fire in
+       normal use -- it fires exactly when somebody passes the wrong thing.
+
+       "Nothing to stamp" is still expressed by returning undefined, further
+       down: that is a different fact and must stay distinguishable. */
+    if (!ctx || typeof ctx.bandOf !== "function") {
+      throw new TypeError(
+        "stampLoad: ctx (3rd argument) must supply bandOf. Note the argument " +
+        "order -- stampLoad(exercises, gearMap, ctx, ...), unlike " +
+        "effectiveLoad(ctx, ...) and bestSetLoad(ctx, ...) which take ctx first.");
+    }
     var out = {}, any = false;
     Object.keys(exercises || {}).forEach(function (exId) {
       var sets = exercises[exId] || [];
@@ -4713,6 +4735,12 @@
      is the data loss this finding is about, through the other door. There is
      no migration; legacy items simply keep the old rule until they are next
      edited, at which point they gain a key list naturally. */
+  /* CONTRACT: this ALWAYS returns an object, on every path, including a null
+     item and an item the table has never heard of. Five call sites carried a
+     `|| {}` that could not fire; they were removed on 2026-08-27 (review
+     finding 12) and this contract is what makes that safe. A behavioural pin
+     lives in test_gear_geometry.cjs -- if you add a return that can be falsy,
+     that test fails and the five callers need their guards back. */
   function resolveGearDims(it) {
     if (!it) return { source: "estimated", verified: false };
     var d = it.dims;
