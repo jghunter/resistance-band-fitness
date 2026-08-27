@@ -4520,18 +4520,23 @@
        re-add it if and when the platform is actually measured. */
     "Serious Steel|Acacia Training Platform": { thicknessIn: 2.125, lengthIn: 20, widthIn: 11.75,
                                   channelIn: 1.125,
-                                  /* ONE slot. `len_near` is Greg's tape (2026-08-14) and it
-                                     STANDS: the vendor sheet's 6in slot LENGTH is band-WIDTH
+                                  /* ONE slot. The vendor sheet's 6in slot LENGTH is band-WIDTH
                                      capacity -- how wide a band fits through -- not a
                                      position and not a path length. The same applies to the
                                      slot lengths published for all three Serious Steel
                                      plates; none is a path length and none should be read
                                      as one.
-                                     The whole-plate paths are still COMPUTED/DERIVED. This
-                                     plate has no bandSpanIn at all (the interpolated 20.5
-                                     was removed 2026-07-31 for being stamped as tape), so
-                                     its widthwise figure is the weakest in the table: bare
-                                     widthIn with no edge delta to add. */
+
+                                     THIS BLOCK USED TO END with "the whole-plate paths are
+                                     still COMPUTED/DERIVED ... the weakest in the table".
+                                     That was true until 2026-08-14 and was left in place
+                                     after Greg's tape superseded it, so the entry carried
+                                     two comments contradicting each other. On 2026-08-27 it
+                                     sent a session looking for measurements that were
+                                     already here, and telling Greg they were missing.
+                                     Deleted. The block below is the current truth. When a
+                                     measurement lands, DELETE the comment it replaces --
+                                     a stale caveat reads exactly like a live one. */
                                   /* ALL FOUR MEASURED 2026-08-14 (Greg's tape). This plate
                                      was the last one carrying computed/derived figures, and
                                      it was the weakest in the table: its bandSpanIn was
