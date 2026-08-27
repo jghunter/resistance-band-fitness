@@ -3565,12 +3565,33 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
      every other per-exercise map is keyed by the performed id. */
   const [subsLogs, setSubsLogs] = useState({})
   const [saved, setSaved]         = useState(false)
+  /* Which day the SETUP SHEET covers: 'today' or 'next'. Deliberately NOT
+     persisted -- a remembered 'next' would silently print the wrong day the
+     following week, and there is no screen that would show it was still on.
+     It affects the printed sheet ONLY; logging is unchanged. */
+  const [sheetFor, setSheetFor]   = useState('today')
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
   const todayISO   = localISO()
   const todayStr   = new Date().toLocaleDateString('en-US',
     {weekday:'long',month:'long',day:'numeric'}).toUpperCase()
   const focusColor = getSessionFocus(info.prog, info.session).color
+
+  /* ONE resolved target feeds the caption AND the single doc() that PRINT,
+     SAVE .md and COPY .md all share, so the sheet, its file name and the line
+     on screen cannot disagree. On a rest day `info` already describes the next
+     workout, so `tgt = info` is correct there and needs no branch. */
+  const useNextSheet = info.isWk && sheetFor === 'next'
+  const tgt          = useNextSheet ? info.next : info
+  const tgtDate      = info.isWk
+    ? (useNextSheet ? localISO(info.next.date) : todayISO)
+    : localISO(info.nextDate)
+  const tgtGap = Math.round(
+    (new Date(tgtDate + 'T00:00:00') - new Date(todayISO + 'T00:00:00')) / 86400000)
+  /* Spelled out because 'NEXT' is easy to read as 'tomorrow' and very often is
+     not -- MWF gives a 3-day gap every Friday, Mon/Thu a 4-day one. */
+  const tgtGapLabel = tgtGap === 0 ? ''
+    : (tgtGap === 1 ? ' — tomorrow' : ` — ${tgtGap} days away`)
 
   useEffect(() => {
     if (info.isWk) {
@@ -3698,22 +3719,34 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
         <span style={{...pill(info.isWk ? C.green : C.dimGray),fontSize:12,padding:'4px 14px'}}>
           {info.isWk ? 'WORKOUT DAY' : 'REST DAY'}
         </span>
-        {/* Setup sheet: on a workout day this is today's session; on a rest day
-            it is the NEXT scheduled one with its real date, so the sheet can be
-            printed the night before. */}
-        <ReportButtons label="PRINT SETUP SHEET"
-          doc={() => {
-            const d = info.isWk ? todayISO : localISO(info.nextDate)
-            return RBTS_REPORTS.buildSetupDoc(
+        {/* Setup sheet. On a rest day the target is the next scheduled workout,
+            as it always was. On a workout day the TODAY / NEXT chips choose,
+            because setting up in advance for the next session is a real want
+            and there was previously no way to ask for it. */}
+        <div style={{display:'flex',flexDirection:'column',gap:6,alignItems:'flex-start'}}>
+          {info.isWk && (
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+                letterSpacing:'0.08em'}}>FOR</span>
+              <button style={{...btn(!useNextSheet),padding:'4px 12px',fontSize:10}}
+                onClick={() => setSheetFor('today')}>TODAY</button>
+              <button style={{...btn(useNextSheet),padding:'4px 12px',fontSize:10}}
+                onClick={() => setSheetFor('next')}>NEXT</button>
+            </div>
+          )}
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,lineHeight:1.5}}>
+            {tgtDate} · P{info.prog.id} W{tgt.week}{' '}
+            {dayShort(tgt.session)} {getSessionFocus(info.prog, tgt.session).label} #{tgt.num}
+            {tgtGapLabel}
+          </span>
+          <ReportButtons label="PRINT SETUP SHEET"
+            doc={() => RBTS_REPORTS.buildSetupDoc(
               makeReportCtx({ log, gear: gearInv, myBands: [] }),
-              { date: d, prog: info.prog, sKey: info.session, week: info.week,
-                workoutNum: info.isWk ? info.num : null,
-                focusLabel: info.focus || null, isDeload: !!info.isDeload })
-          }}
-          name={() => {
-            const d = info.isWk ? todayISO : localISO(info.nextDate)
-            return `setup_${d}_P${info.prog.id}_${info.session}.md`
-          }}/>
+              { date: tgtDate, prog: info.prog, sKey: tgt.session, week: tgt.week,
+                workoutNum: tgt.num, focusLabel: tgt.focus || null,
+                isDeload: !!tgt.isDeload })}
+            name={() => `setup_${tgtDate}_P${info.prog.id}_${tgt.session}.md`}/>
+        </div>
       </div>
 
       <details style={widget}>
