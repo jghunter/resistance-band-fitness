@@ -4386,6 +4386,18 @@
   /* ---- gear geometry table -------------------------------------------- */
   /* Moved here from fitness_app.html 2026-07-31 so both apps share one
      copy -- see resolveGearDims below and gearPathDelta above. */
+  /* WHO measured this table. Confirmed by Greg 2026-08-27: every entry below
+     that says `source: "measured"` is his own tape. Entries that are NOT his
+     tape say so individually (see the Cyberplate and the Blue Ropes).
+
+     Attribution is at the TABLE level, not per entry, and that was a decision
+     rather than laziness: the dates inside the entries' comments are
+     inconsistent -- several are CORRECTION dates rather than measurement dates,
+     and 11 of the 31 entries carry no date at all. Deriving a per-entry date
+     from those comments would manufacture exactly the confident-wrong
+     provenance finding 9b exists to remove. */
+  var GEAR_DIMS_ATTRIBUTION = { by: "Greg", span: "2026-07-30 to 2026-08-14" };
+
   var GEAR_DIMS = {
     // ---- Harambe ---------------------------------------------------------
     "Harambe|T Bar":            { lengthIn: 28, hookOffsetIn: 3, hookSide: "opposite",
@@ -4406,7 +4418,19 @@
                                     { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 27.25, source: "computed" },
                                     { k: "wid", l: "UNDER - WIDTHWISE",  consumedIn: 17,    source: "derived" }
                                   ],
-                                  source: "measured", verified: true },
+                                  /* NOT Greg's tape, and it no longer claims to be
+                                     (finding 9c, 2026-08-27). Its own two bandPaths
+                                     already said `computed` and `derived`; the entry
+                                     contradicted them. Measured impact on Greg's real
+                                     log: ZERO -- he owns and uses this plate on 12 of
+                                     47 entries, but every stamp there is MODELED or
+                                     RATED already, because no band of his has the two
+                                     Tension Master readings a MEASURED load needs
+                                     (TODO item 16). The exposure this closes is a
+                                     future one: the day anybody takes two readings, a
+                                     lift on this plate would report MEASURED off a
+                                     computed figure. */
+                                  source: "computed", verified: false },
     /* CORRECTED 2026-07-31, and the correction is large. This read seriesIn 7.75
        from 2026-07-30 to 2026-07-31 because 7 3/4in is the OVERALL LENGTH OF THE
        HANDLE, not the load-bearing series length — Greg's own words: "Originally
@@ -4438,8 +4462,15 @@
                                   note: "set of 4, 5in. Adjusted with stackable 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Yellow Ropes":     { seriesIn: 6, source: "measured", verified: true,
                                   note: "set of 4, 6in. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
-    "Harambe|Blue Ropes":       { seriesIn: 29, source: "measured", verified: true,
-                                  note: "29in. NOT OWNED YET — seeded inbound so the figure is ready when it arrives. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
+    "Harambe|Blue Ropes":       { seriesIn: 29,
+                                  /* NOT OWNED YET -- seeded inbound so the figure is
+                                     ready when it arrives. Nobody has held these, so
+                                     nobody taped them (finding 9c, 2026-08-27). Greg
+                                     does not have this item in his inventory, so this
+                                     correction is invisible to him until the set
+                                     arrives. */
+                                  source: "estimated", verified: false,
+                                  note: "29in. NOT MEASURED and NOT OWNED YET — seeded inbound so the figure is ready when it arrives. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|White Ropes":      { seriesIn: 12.5, source: "measured", verified: true,
                                   note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Split Squat Belt": { source: "measured", verified: true,
@@ -4660,7 +4691,7 @@
      2026-08-07 lesson: a table correction without a rev bump reaches nobody,
      and every footplate in Greg's inventory carries a stored dims copy that
      would otherwise win. */
-  var GEAR_DIMS_REV = "2026-08-14-band-paths-r1";
+  var GEAR_DIMS_REV = "2026-08-27-attribution-r1";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */
@@ -4683,6 +4714,10 @@
     var out = assign(d, {});
     out.verified = (d.source === "measured" && d.verified === true);
     out.seedRev = GEAR_DIMS_REV;
+    /* This figure came from the shared table, not from a tape held on THIS
+       device. It rides into stored dims, so a stored copy stays distinguishable
+       from a typed one -- which is the whole of finding 9b. */
+    out.fromCatalog = true;
     return out;
   }
 
@@ -4705,11 +4740,47 @@
     return GEAR_DIM_FIELDS.some(function (f) { return typeof d[f.k] === "number"; });
   }
 
+  /* The badge tier. `catalog` and `computed` were added 2026-08-27 (finding 9b)
+     so a figure that reached this device through the shared table stops
+     presenting itself as a measurement taken here. */
   function gearDimSource(it) {
     if (!it || !gearHasDims(it)) return "none";
     var d = resolveGearDims(it);
+    /* Typed on THIS device wins first: a partly-edited item still carries the
+       catalog marker on the fields the user did not touch, and their own number
+       is a measurement by definition. */
+    if ((Array.isArray(d.userEditedKeys) && d.userEditedKeys.length) || d.userEdited) {
+      return "measured";
+    }
+    if (d.fromCatalog) {
+      if (d.source === "measured" && d.verified === true) return "measured";
+      if (d.source === "computed" || d.source === "derived") return "computed";
+      return "catalog";
+    }
     if (d.verified) return "measured";
     return d.source || "estimated";
+  }
+
+  /* Who taped the figures this item is showing, when they came from the shared
+     table. null for a number typed here (it is the user's own), for anything
+     the table did not supply, and for an entry that is not a measurement.
+
+     This is finding 9b: seedDimsFor matches GEAR_DIMS[brand + "|" + name], so a
+     different person who adds "X3 Bar|Elite Bar" inherited Greg's tape as their
+     own verified dims and the GEAR tab read MEASURED. That lookup is the
+     DESIGNED path -- the ADD GEAR catalog exists so a new user resolves real
+     figures instead of NO DIMS -- so the fix names the tape rather than hiding
+     it. */
+  function gearDimAttribution(it) {
+    if (!it || !gearHasDims(it)) return null;
+    var d = resolveGearDims(it);
+    if ((Array.isArray(d.userEditedKeys) && d.userEditedKeys.length) || d.userEdited) {
+      return null;
+    }
+    if (!d.fromCatalog) return null;
+    if (d.source !== "measured" || d.verified !== true) return null;
+    if (d.measuredBy === null) return null;
+    return { by: GEAR_DIMS_ATTRIBUTION.by, span: GEAR_DIMS_ATTRIBUTION.span };
   }
 
   /* THE resolution order, shared by both apps.
@@ -5317,6 +5388,8 @@
     gearDimFieldsFor: gearDimFieldsFor,
     seedDimsFor: seedDimsFor,
     gearDimSource: gearDimSource,
+    gearDimAttribution: gearDimAttribution,
+    GEAR_DIMS_ATTRIBUTION: GEAR_DIMS_ATTRIBUTION,
     gearHasDims: gearHasDims,
     resolveGearDims: resolveGearDims,
     applyGearDimEdit: applyGearDimEdit,
