@@ -1987,29 +1987,40 @@ export function nextWkDay(from, days) {
   }
 }
 
-export function calcToday(startStr, sched, pi) {
+export function calcToday(startStr, sched, pi, todayOverride) {
   const days = schedDaysOf(sched);
-  const today = new Date(); today.setHours(0,0,0,0);
+  /* An ISO date STRING must be parsed as LOCAL midnight. new Date("2026-08-26")
+     parses as UTC midnight, which in Hawaii (UTC-10) is the afternoon of the
+     25th -- setHours(0,0,0,0) then lands a whole day early, on the wrong side
+     of a schedule boundary once a week in three. todayOverride exists for the
+     tests; no app code passes it. */
+  const today = todayOverride
+    ? (typeof todayOverride === "string"
+        ? new Date(todayOverride + "T00:00:00")
+        : new Date(todayOverride))
+    : new Date();
+  today.setHours(0,0,0,0);
   const isWk = days.includes(today.getDay());
   const prog = PROGRAMS[pi] || PROGRAMS[0];
-  if (isWk) {
-    const n = countWkDays(startStr, days, today);
-    const idx = n - 1;
-    return { isWk:true, session:sessionForIdx(prog, idx),
-             week:weekForIdx(prog, idx), num:n, prog:prog,
+  /* ONE derivation, called for today AND for the next scheduled day. The two
+     branches this replaces ran the same arithmetic from two different dates,
+     which is exactly why nothing in either app could see the day AFTER a
+     workout day, and why a rest day carried no workout number. */
+  const at = dateObj => {
+    const n = countWkDays(startStr, days, dateObj), idx = n - 1;
+    return { date: dateObj, session: sessionForIdx(prog, idx),
+             week: weekForIdx(prog, idx), num: n,
              isDeload: isDeloadWorkout(prog, idx),
-             focus: focusForIdx(prog, idx),           // P5
+             focus: focusForIdx(prog, idx),          // P5: rotating emphasis
              blockDone: idx >= progBlockWorkouts(prog) };
-  } else {
-    const next = nextWkDay(today, days);
-    const n2 = countWkDays(startStr, days, next);
-    const idx2 = n2 - 1;
-    return { isWk:false, nextDate:next, session:sessionForIdx(prog, idx2),
-             week:weekForIdx(prog, idx2), prog:prog,
-             isDeload: isDeloadWorkout(prog, idx2),
-             focus: focusForIdx(prog, idx2),          // P5
-             blockDone: idx2 >= progBlockWorkouts(prog) };
-  }
+  };
+  const nd = nextWkDay(today, days);
+  const next = at(nd);
+  /* On a rest day the current block IS the next one -- callers that read the
+     top-level fields on a rest day already meant the next workout, and keeping
+     that true is what makes this refactor invisible to them. */
+  const cur = isWk ? at(today) : next;
+  return { isWk, prog, nextDate: nd, next, ...cur };
 }
 
 
