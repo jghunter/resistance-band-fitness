@@ -24,6 +24,11 @@ import {
      any exercise in the PWA threw ReferenceError. Introduced 2026-07-30 with
      the 1→3 set seeding change; esbuild does not flag an undeclared global. */
   progDefaultSets, TRAINING_STYLE,
+  /* Re-reads TRAINING_STYLE and BODY_MEASURE in place after a cloud adopt
+     replaces the profile (finding 10). Without it the running session keeps the
+     old rirTarget, which feeds READY / STALLED, for the workout about to be
+     logged. */
+  refreshProfileHolders,
   /* Belt band path inputs. Mirrored from the profile; no editor here (the HTML
      app owns it), same as defaultSets / volumeModel. */
   /* bodyMeasureNum is imported, not re-derived: the belt-default effect reads a
@@ -640,6 +645,28 @@ function saveLocalMyBands(ids) { try { localStorage.setItem('rbts_myBands', JSON
 const BAND_GEOM_KEY    = 'rbts_bandGeom'
 const BAND_GEOM_TS_KEY = 'rbts_bandGeomUpdatedAt'
 const PROFILES_TS_KEY  = 'rbts_profilesUpdatedAt'
+/* WHOSE local copy this is. Finding 11: signing in as a second Google account
+   left the first person's calibration in place, stamped and non-empty, so it
+   beat their empty cloud and was pushed into their account. Recording the owner
+   fixes that WITHOUT clearing on sign-out, which would discard your own work
+   every time you signed out on your own device. */
+const BAND_GEOM_UID_KEY = 'rbts_bandGeomUid'
+const PROFILES_UID_KEY  = 'rbts_profilesUid'
+/* One-step undo for a discarding adopt (finding 6) and for a cleared foreign
+   copy (finding 11). The rbts_log_prev pattern. There is deliberately no
+   RESTORE button: the key makes the data recoverable, recovering it is manual.
+   Same scope call already on record for the PWA's missing log undo. */
+const BAND_GEOM_PREV_KEY = 'rbts_bandGeom_prev'
+const PROFILES_PREV_KEY  = 'rbts_profiles_prev'
+
+function localBandGeomUid() { try { return localStorage.getItem(BAND_GEOM_UID_KEY) || '' } catch { return '' } }
+function localProfilesUid() { try { return localStorage.getItem(PROFILES_UID_KEY) || '' } catch { return '' } }
+/* Best effort by design: losing the backup must never abort the sync it is
+   guarding. A storage failure here is logged and the adopt proceeds. */
+function keepPrev(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)) }
+  catch (e) { console.error('Could not keep a previous copy for ' + key + ':', e) }
+}
 const CUSTOM_PROG_TS_KEY = 'rbts_customProgramsUpdatedAt'
 function localCustomProgramsUpdatedAt() {
   try { return Number(localStorage.getItem(CUSTOM_PROG_TS_KEY) || 0) } catch { return 0 }
@@ -677,6 +704,9 @@ function saveLocalProfiles(list, uid) {
   try { localStorage.setItem('rbts_profiles', JSON.stringify(list)) } catch { return false }
   const ts = Date.now()
   try { localStorage.setItem(PROFILES_TS_KEY, String(ts)) } catch {}
+  /* Only when signed in. An offline edit leaves the uid as it was, which is
+     correct: an unowned copy still pushes on first sign-in. */
+  if (uid) { try { localStorage.setItem(PROFILES_UID_KEY, uid) } catch {} }
   if (uid) saveProfileToFirestore(uid, { data: list, updatedAt: ts }).catch(e => console.error('Save profile failed:', e))
   return true
 }
@@ -689,6 +719,8 @@ function saveLocalBandGeom(g, uid) {
   try { localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(g)) } catch { return false }
   const ts = Date.now()
   try { localStorage.setItem(BAND_GEOM_TS_KEY, String(ts)) } catch {}
+  /* Only when signed in -- see saveLocalProfiles. */
+  if (uid) { try { localStorage.setItem(BAND_GEOM_UID_KEY, uid) } catch {} }
   if (uid) saveBandGeomToFirestore(uid, { data: g, updatedAt: ts }).catch(e => console.error('Save band calibration failed:', e))
   return true
 }
@@ -5287,16 +5319,42 @@ export default function App() {
         // measurements and discard them on first sync — see that module's
         // header comment for the full reasoning and its test file for the
         // behavioural proof.
+        /* Collected across both meta documents and reported ONCE, after both
+           have settled. Sign-in is not a moment to interrupt twice, and the
+           data is already recoverable by the time this is read. Declared here,
+           BEFORE either block that pushes to it -- it is a const in this scope,
+           so a reference above the declaration is a temporal-dead-zone error,
+           not a hoist. */
+        const adoptMsgs = []
         try {
           const remote = unwrapMeta(await loadBandGeomFromFirestore(u.uid))
-          const local  = { data: getLocalBandGeom(), updatedAt: localBandGeomUpdatedAt() }
-          const decision = reconcileBandGeom(local, remote)
+          const local  = { data: getLocalBandGeom(), updatedAt: localBandGeomUpdatedAt(),
+                           uid: localBandGeomUid() }
+          const decision = reconcileBandGeom(local, remote, Date.now, u.uid)
+          /* Back the losing copy up BEFORE acting, on every branch that loses
+             one. Both findings land here: a newer remote replacing real work
+             (6), and a copy belonging to somebody else (11). */
+          if (decision.discarded) {
+            keepPrev(BAND_GEOM_PREV_KEY, decision.discarded)
+            adoptMsgs.push('Band calibration on this device was replaced. A copy was kept.')
+          }
           if (decision.action === 'adopt-remote') {
             localStorage.setItem(BAND_GEOM_KEY, JSON.stringify(decision.data))
             localStorage.setItem(BAND_GEOM_TS_KEY, String(decision.updatedAt))
+            try { localStorage.setItem(BAND_GEOM_UID_KEY, u.uid) } catch {}
           } else if (decision.action === 'push-local') {
             localStorage.setItem(BAND_GEOM_TS_KEY, String(decision.updatedAt))
+            try { localStorage.setItem(BAND_GEOM_UID_KEY, u.uid) } catch {}
             await saveBandGeomToFirestore(u.uid, { data: decision.data, updatedAt: decision.updatedAt })
+          } else if (decision.action === 'clear-local') {
+            /* Someone else's calibration, and no cloud copy to replace it with.
+               Remove all three keys together -- a stranded timestamp or uid
+               would make the next sign-in reason about a map that is gone. */
+            try {
+              localStorage.removeItem(BAND_GEOM_KEY)
+              localStorage.removeItem(BAND_GEOM_TS_KEY)
+              localStorage.removeItem(BAND_GEOM_UID_KEY)
+            } catch {}
           }
         } catch (e) { console.error('Band calibration sync failed:', e) }
         // Profile (RIR target, set seeding, volume model, split): the same
@@ -5308,16 +5366,40 @@ export default function App() {
         // device's real profile.
         try {
           const remote = unwrapMeta(await loadProfileFromFirestore(u.uid))
-          const local  = { data: getLocalProfiles(), updatedAt: localProfilesUpdatedAt() }
-          const decision = reconcileProfiles(local, remote)
+          const local  = { data: getLocalProfiles(), updatedAt: localProfilesUpdatedAt(),
+                           uid: localProfilesUid() }
+          const decision = reconcileProfiles(local, remote, Date.now, u.uid)
+          if (decision.discarded) {
+            keepPrev(PROFILES_PREV_KEY, decision.discarded)
+            adoptMsgs.push('Your training profile was replaced by another device. A copy was kept.')
+          }
           if (decision.action === 'adopt-remote') {
             localStorage.setItem('rbts_profiles', JSON.stringify(decision.data))
             localStorage.setItem(PROFILES_TS_KEY, String(decision.updatedAt))
+            try { localStorage.setItem(PROFILES_UID_KEY, u.uid) } catch {}
+            /* Finding 10: the holders are read once at module load, so without
+               this the session keeps the OLD rirTarget, defaultSets and volume
+               model -- for the workout about to be logged, and rirTarget feeds
+               progressionState's READY / STALLED. */
+            refreshProfileHolders()
           } else if (decision.action === 'push-local') {
             localStorage.setItem(PROFILES_TS_KEY, String(decision.updatedAt))
+            try { localStorage.setItem(PROFILES_UID_KEY, u.uid) } catch {}
             await saveProfileToFirestore(u.uid, { data: decision.data, updatedAt: decision.updatedAt })
+          } else if (decision.action === 'clear-local') {
+            try {
+              localStorage.removeItem('rbts_profiles')
+              localStorage.removeItem(PROFILES_TS_KEY)
+              localStorage.removeItem(PROFILES_UID_KEY)
+            } catch {}
+            refreshProfileHolders()
           }
         } catch (e) { console.error('Profile sync failed:', e) }
+        if (adoptMsgs.length) {
+          alert(adoptMsgs.join('\n') +
+                '\n\nThis happens when another of your devices synced more ' +
+                'recently, or when a different account signed in here.')
+        }
         setLogLoading(false)
       } else {
         try {
