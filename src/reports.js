@@ -2032,7 +2032,29 @@
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
   function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap) {
-    if (!ctx || typeof ctx.bandOf !== "function") return undefined;
+    /* THROWS on a bad ctx. It used to `return undefined`, which is the wrong
+       failure mode for this function: every caller is a SAVE path, and
+       applyLoadStamp treats undefined as "there was nothing to stamp". So a
+       call that got ctx wrong -- the argument order here differs from
+       effectiveLoad's and bestSetLoad's, which take ctx FIRST -- saved the
+       workout with no load figure at all, permanently, with nothing on screen
+       saying so. Silent, and indistinguishable from a set with no bands.
+
+       Review finding 7 assumed a swapped call "throws loudly rather than
+       misstamping, so it is ergonomics". Measured 2026-08-27: it did not
+       throw, it returned undefined. Rather than reorder 42 call sites across
+       9 files for no functional gain, the failure was made loud. A ctx is
+       supplied by makeReportCtx() on every real path, so this cannot fire in
+       normal use -- it fires exactly when somebody passes the wrong thing.
+
+       "Nothing to stamp" is still expressed by returning undefined, further
+       down: that is a different fact and must stay distinguishable. */
+    if (!ctx || typeof ctx.bandOf !== "function") {
+      throw new TypeError(
+        "stampLoad: ctx (3rd argument) must supply bandOf. Note the argument " +
+        "order -- stampLoad(exercises, gearMap, ctx, ...), unlike " +
+        "effectiveLoad(ctx, ...) and bestSetLoad(ctx, ...) which take ctx first.");
+    }
     var out = {}, any = false;
     Object.keys(exercises || {}).forEach(function (exId) {
       var sets = exercises[exId] || [];
