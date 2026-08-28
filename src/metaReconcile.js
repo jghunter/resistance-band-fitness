@@ -153,10 +153,21 @@ export function reconcileBandGeom(local, remote, now = Date.now, currentUid) {
  *  that also changed READY / STALLED verdicts.
  *
  *  Unstamped therefore means "possibly the seed" here, and is treated as
- *  empty. Nothing is lost by that: the PWA has no profile editor, so a
- *  PWA-local profile is only ever an import or an adopt (both stamped) or the
- *  seed (never stamped). Edit profiles in fitness_app.html and bring them
- *  over in a backup file, which is the only route that exists. */
+ *  empty. Nothing is lost by that, but the REASON changed on 2026-08-27 and
+ *  the old one is worth not repeating: it used to be "the PWA has no profile
+ *  editor, so a PWA-local profile is only ever an import or an adopt (both
+ *  stamped) or the seed (never stamped)".
+ *
+ *  THE PWA NOW HAS AN EDITOR -- Today -> TRAINING STYLE, added so Daniel could
+ *  enter the body measurements his footplate needs. That sentence is false.
+ *  The rule survives for a different reason: saveTrainingStyle writes through
+ *  saveLocalProfiles, which STAMPS rbts_profilesUpdatedAt, so a deliberate
+ *  edit is never unstamped and is never mistaken for the seed.
+ *
+ *  If any future path writes rbts_profiles WITHOUT stamping, this rule will
+ *  silently discard the user's choice at their next sign-in, with nothing on
+ *  screen. test_pwa_parity_engine.mjs pins that the editor's save path calls
+ *  saveLocalProfiles and does not setItem the key directly. */
 export function reconcileProfiles(local, remote, now = Date.now, currentUid) {
   return reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0, now,
                        { unstampedIsSeed: true,
