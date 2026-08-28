@@ -4601,8 +4601,14 @@ function GearDims({ it, onChange }) {
   const d = RBTS_REPORTS.resolveGearDims(it) || {}
   const fields = RBTS_REPORTS.gearDimFieldsFor(it.type)
   const src = RBTS_REPORTS.gearDimSource({ dims: d })
-  const SRC_COLOR = { measured: C.green, vendor: '#7ecfff', estimated: C.amber, none: C.dimGray }
-  const SRC_LABEL = { measured: 'MEASURED', vendor: 'VENDOR', estimated: 'ESTIMATE', none: 'NO DIMS' }
+  /* `catalog` and `computed` added 2026-08-27 (finding 9b) -- same maps as
+     fitness_app.html. An unlabelled tier renders as `undefined` on the badge. */
+  const SRC_COLOR = { measured: C.green, catalog: C.amber, computed: C.dimGray,
+                      vendor: '#7ecfff', estimated: C.amber, none: C.dimGray }
+  const SRC_LABEL = { measured: 'MEASURED', catalog: 'CATALOG', computed: 'COMPUTED',
+                      vendor: 'VENDOR', estimated: 'ESTIMATE', none: 'NO DIMS' }
+  /* Same already-resolved shape the gearDimSource call above uses. */
+  const attribution = RBTS_REPORTS.gearDimAttribution({ dims: d })
 
   function setField(k, raw) {
     /* A value the user typed is measured by definition -- and userEdited pins
@@ -4620,6 +4626,15 @@ function GearDims({ it, onChange }) {
         style={{...pill(SRC_COLOR[src]), cursor:'pointer', fontSize:9}}>
         {open ? '▾' : '▸'} DIMS · {SRC_LABEL[src]}
       </span>
+      {/* Finding 9b: a figure that reached this device through the shared table
+          says whose tape it is, rather than presenting itself as a measurement
+          taken here. Absent for a number typed in this panel -- that one IS the
+          user's own. */}
+      {attribution && (
+        <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginLeft:6}}>
+          taped by {attribution.by}, {attribution.span}
+        </span>
+      )}
       {open && (
         <div style={{marginTop:6,padding:'8px 10px',background:C.bgInput,borderRadius:4,
           border:`1px solid ${C.accentDim}55`}}>

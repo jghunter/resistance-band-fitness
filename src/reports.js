@@ -1785,10 +1785,24 @@
           out.basis = "band path from the footplate and your attachment height, " +
                       "clamped to your nearest Tension Master reading (your readings " +
                       "do not reach this stretch)";
-        } else if (allMeasured && gearOK && !plateSpanMeasured) {
+        /* `gearOK` was part of this condition until 2026-08-27 and should not
+           have been. When a plate's own dims stopped claiming to be measured
+           (finding 9c corrected the Cyberplate to `verified: false`), the most
+           informative message in this branch stopped firing for the very item
+           it was written to describe, and the user got the vague fallback
+           instead. The two facts are independent: WHY the number is not
+           MEASURED is answered by the PATH here, and by the dims below. */
+        } else if (allMeasured && !plateSpanMeasured) {
           out.basis = "band path from the footplate and your attachment height, " +
                       "on your Tension Master readings but over a " + bPath.source +
                       " footplate band path (" + bPath.l + ")";
+        } else if (allMeasured && !gearOK) {
+          /* Reachable since 2026-08-27: a MEASURED path on gear whose own
+             dimensions nobody taped on this device. Naming it is the point --
+             "on the fitted curve" does not tell anyone what to go and measure. */
+          out.basis = "band path from the footplate and your attachment height, " +
+                      "on your Tension Master readings, but this footplate's own " +
+                      "dimensions are not measured";
         } else {
           out.basis = "band path from the footplate and your attachment height, " +
                       "on the fitted curve";
