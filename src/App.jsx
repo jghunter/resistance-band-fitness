@@ -710,6 +710,35 @@ function saveLocalProfiles(list, uid) {
   if (uid) saveProfileToFirestore(uid, { data: list, updatedAt: ts }).catch(e => console.error('Save profile failed:', e))
   return true
 }
+/* Persist a TRAINING STYLE or BODY MEASURE change onto the ACTIVE profile.
+   Added 2026-08-27 with the panel; fitness_app.html has had one for a month.
+
+   TWO THINGS HERE ARE LOAD-BEARING AND NEITHER IS VISIBLE IF IT IS MISSING.
+
+   1. It writes through saveLocalProfiles, NOT localStorage.setItem. That is
+      what stamps rbts_profilesUpdatedAt. reconcileProfiles treats an UNSTAMPED
+      local profile as migrateToProfiles' machine-generated seed and lets the
+      cloud win -- so writing directly would mean the user's deliberate choice
+      is silently discarded at their next sign-in, with nothing on screen. The
+      rule's own justification used to read "the PWA has no profile editor";
+      that is no longer true, and it survives only because this path stamps.
+   2. It calls refreshProfileHolders, because TRAINING_STYLE and BODY_MEASURE
+      are read once at module load. Without it the panel writes the right value
+      and goes on showing the old one until a reload.
+
+   The patch/explicitKeys decision itself is RBTS_PHASE1.applyProfilePatch --
+   shared with fitness_app.html, so the two cannot drift. */
+function saveTrainingStyle(patch, uid) {
+  try {
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const ps = getLocalProfiles()
+    const next = RBTS_PHASE1.applyProfilePatch(ps, ap, patch)
+    saveLocalProfiles(next, uid)
+    refreshProfileHolders()
+    return true
+  } catch (e) { console.error('Could not save the training style:', e); return false }
+}
+
 function getLocalBandGeom() { try { return JSON.parse(localStorage.getItem(BAND_GEOM_KEY) || '{}') || {} } catch { return {} } }
 function localBandGeomUpdatedAt() { try { return Number(localStorage.getItem(BAND_GEOM_TS_KEY) || 0) } catch { return 0 } }
 // Write band calibration locally (stamping updatedAt) and, when signed in,
@@ -1291,7 +1320,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
            rigs reach it has widened. */
         if (!bodyMeasureComplete()) return (
           <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:6}}>
-            SET BODY MEASUREMENTS IN THE HTML APP (TODAY → TRAINING STYLE) TO COMPUTE {beltOn ? 'BELT' : 'PLATE'} LOAD
+            SET BODY MEASUREMENTS IN TODAY → TRAINING STYLE TO COMPUTE {beltOn ? 'BELT' : 'PLATE'} LOAD
           </div>
         )
         const bandId = (bands || [])[0]
@@ -3602,6 +3631,12 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
      following week, and there is no screen that would show it was still on.
      It affects the printed sheet ONLY; logging is unchanged. */
   const [sheetFor, setSheetFor]   = useState('today')
+  /* TRAINING_STYLE and BODY_MEASURE live OUTSIDE React -- they are module
+     holders that progDefaultSets and the load model read as plain values.
+     refreshProfileHolders updates them in place, which React cannot see, so
+     the panel bumps this to force the re-render that shows the new choice.
+     Same pattern and same reason as fitness_app.html's tsTick. */
+  const [tsTick, setTsTick]       = useState(0)
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
   const todayISO   = localISO()
@@ -3809,6 +3844,85 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                   onClick={()=>setPi(i)}>P{p.id}</button>
               ))}
             </div>
+          </div>
+        </div>
+      </details>
+
+      {/* TRAINING STYLE — per-PROFILE, not global. Added 2026-08-27. Until then
+          this app had NO editor for these, and two getting-started guides sent
+          their readers here anyway. Worse than cosmetic: Daniel has a footplate,
+          and without the six body measurements his plate lifts can never leave
+          RATED — his guide told him they go in "the local version of the app",
+          which he was never given.
+          Every control writes through saveTrainingStyle, which STAMPS the
+          profile (or reconcileProfiles reads the edit as the seed and the cloud
+          silently wins) and refreshes the module holders (or the screen keeps
+          showing the old value until a reload). */}
+      <details style={widget}>
+        <summary style={{fontFamily:'monospace',fontSize:11,color:C.textSec,
+          letterSpacing:'0.1em',textTransform:'uppercase',cursor:'pointer',userSelect:'none'}}>
+          TRAINING STYLE
+        </summary>
+        <div style={{marginTop:12,display:'flex',flexWrap:'wrap',gap:20}}>
+          <div>
+            <span style={lbl}>SETS SEEDED PER EXERCISE</span>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              <button style={{...btn(TRAINING_STYLE.defaultSets==null),fontSize:10,padding:'3px 7px'}}
+                onClick={()=>{ saveTrainingStyle({defaultSets:null}, user?.uid); setTsTick(tsTick+1) }}>
+                PROGRAM
+              </button>
+              {[1,2,3,4,5].map(n => (
+                <button key={n}
+                  style={{...btn(TRAINING_STYLE.defaultSets===n),fontSize:10,padding:'3px 7px'}}
+                  onClick={()=>{ saveTrainingStyle({defaultSets:n}, user?.uid); setTsTick(tsTick+1) }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span style={lbl}>VOLUME MODEL</span>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {[['standard','STANDARD'],['hit','HIT']].map(o => (
+                <button key={o[0]}
+                  style={{...btn(TRAINING_STYLE.volumeModel===o[0]),fontSize:10,padding:'3px 7px'}}
+                  onClick={()=>{ saveTrainingStyle({volumeModel:o[0]}, user?.uid); setTsTick(tsTick+1) }}>
+                  {o[1]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{marginTop:12}}>
+          <div style={lbl}>BODY MEASUREMENTS</div>
+          <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6,marginBottom:8}}>
+            Floor to each landmark, standing, in inches. Used ONLY by lifts that run a
+            band under a footplate or off a belt, to work out how far the band has to
+            stretch. Leave them blank and those lifts stay RATED rather than guessed.
+            With bands alone, nothing reads these. SHOULDER (BAR) is MID-shoulder,
+            where a racked bar actually bears — about 2in below the top of the shoulder.
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+            {[['kneeHeightIn','KNEE'],['midThighHeightIn','MID-THIGH'],
+              ['hipHeightIn','HIP'],['shoulderHeightIn','SHOULDER (BAR)'],
+              ['handsAtRestIn','HANDS AT REST'],
+              ['bodyWidthIn','WIDTH']].map(f => (
+              <div key={f[0]} style={{display:'flex',flexDirection:'column',gap:2}}>
+                <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{f[1]}</span>
+                <input type="number" step="0.25" min="0"
+                  value={BODY_MEASURE[f[0]] == null ? '' : BODY_MEASURE[f[0]]}
+                  onChange={e => {
+                    /* Blank means "not measured" and IS written, as null. A
+                       non-finite or non-positive entry is refused outright --
+                       same guard as fitness_app.html, asserted over shared
+                       hostile inputs in test_pwa_parity_engine.mjs. */
+                    const v = e.target.value === '' ? null : Number(e.target.value)
+                    if (v !== null && (!isFinite(v) || v <= 0)) return
+                    saveTrainingStyle({ [f[0]]: v }, user?.uid); setTsTick(tsTick+1)
+                  }}
+                  style={{...inputStyle,width:70,fontSize:12,padding:'4px 6px'}}/>
+              </div>
+            ))}
           </div>
         </div>
       </details>
