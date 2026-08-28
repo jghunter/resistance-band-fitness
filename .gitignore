@@ -25,3 +25,14 @@ dist-ssr
 
 # diagnostic leftover (safe to delete)
 _parsecheck.cjs
+
+# Firebase emulator leftovers. The emulator writes logs and, if you ever export
+# its data, a dump directory. None of it belongs in the repo; the emulator's
+# whole value is that its data is throwaway.
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+.firebase/
+emulator-data/

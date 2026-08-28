@@ -1,0 +1,22 @@
+{
+  "//": [
+    "EMULATORS ONLY. This file exists so that `firebase emulators:start` can",
+    "run the Auth and Firestore emulators on this machine. It deliberately",
+    "carries NO hosting block and NO deploy targets, so `firebase deploy` has",
+    "nothing here to push. Deployment of this PWA is unchanged and is still",
+    "done the way it always was.",
+    "",
+    "The rules file below is firestore.emulator.rules, NOT firestore.rules.",
+    "That name is deliberate: it must never be mistaken for the project's live",
+    "rules and must never be deployed. See the comment at the top of it."
+  ],
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
+  },
+  "firestore": {
+    "rules": "firestore.emulator.rules"
+  }
+}
