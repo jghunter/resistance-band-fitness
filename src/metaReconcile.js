@@ -33,6 +33,15 @@ export function unwrapMeta(payload) {
   return { data: payload, updatedAt: 0 }
 }
 
+/** Does this local copy belong to somebody other than the person signing in?
+ *  Only a copy that NAMES a different uid is foreign. A copy with no uid is
+ *  not evidence of another owner -- it is the ordinary state of a device that
+ *  had calibration before this feature existed, and that data pushes, which is
+ *  reconcileBandGeom's deliberate rule. */
+function isForeignLocal(local, currentUid) {
+  return !!(currentUid && local && local.uid && local.uid !== currentUid)
+}
+
 /**
  * Decide how to reconcile a local vs. remote copy of one meta document.
  * Whole-document, not per-band/per-field: two devices measuring different
@@ -48,7 +57,8 @@ export function unwrapMeta(payload) {
  *   so a legacy document already reads updatedAt:0 here too.
  * @param {(data:*) => boolean} isEmpty "no real data" test -- bandGeom is
  *   empty at {}, a profile list is empty at [].
- * @returns {{action:'noop'|'adopt-remote'|'push-local', data:*, updatedAt:number}}
+ * @returns {{action:'noop'|'adopt-remote'|'push-local'|'clear-local', data:*,
+ *   updatedAt:number, discarded?:*}}
  *   - noop: neither side has anything to give the other.
  *   - adopt-remote: write remote.data/updatedAt into local storage.
  *   - push-local: write local.data to Firestore, stamped with local.updatedAt
@@ -68,17 +78,56 @@ export function unwrapMeta(payload) {
  *   treated exactly as if it were empty: never pushed, always outranked. Use
  *   it only for a key that has an automatic seeder (see reconcileProfiles);
  *   for a key without one it would throw away real work.
+ *
+ *   `foreignLocal` says the local copy belongs to a DIFFERENT signed-in user
+ *   (finding 11, 2026-08-27). Such a copy is never pushed -- that was the leak
+ *   -- and is not left in place either: with an empty remote the rule above
+ *   returned `noop`, so the second person went on using the first person's tape
+ *   measurements offline. `clear-local` is the action for that case.
+ *
+ *   `discarded` carries the local data on every outcome that throws real local
+ *   content away, so the caller can back it up before acting (finding 6). It is
+ *   deliberately ABSENT when local was genuinely empty, and when an unstamped
+ *   profile was outranked under `unstampedIsSeed` -- that is the seed, and
+ *   reporting it would warn every new user on their first sign-in.
  */
 export function reconcileMeta(local, remote, isEmpty, now = Date.now, opts = {}) {
-  const localEmpty  = isEmpty(local.data) || (!!opts.unstampedIsSeed && !local.updatedAt)
-  const remoteEmpty = !remote || remote.data == null || isEmpty(remote.data)
+  const foreign      = !!opts.foreignLocal
+  const localHasData = !isEmpty(local.data)
+  const localEmpty   = !localHasData ||
+                       (!!opts.unstampedIsSeed && !local.updatedAt) ||
+                       foreign
+  const remoteEmpty  = !remote || remote.data == null || isEmpty(remote.data)
+
+  /* A foreign copy must never be PUSHED -- that is the leak this closes -- and
+     must not be LEFT either, or the person now signed in goes on using the
+     previous person's tape measurements offline on their own device. When a
+     remote exists, adopt-remote overwrites it. When one does not, nothing else
+     in this function would ever remove it, so say so explicitly. The caller
+     backs `discarded` up before acting on either. */
+  if (foreign && localHasData && remoteEmpty) {
+    return { action: 'clear-local', discarded: local.data }
+  }
 
   if (remoteEmpty && localEmpty) return { action: 'noop' }
   if (remoteEmpty) return { action: 'push-local', data: local.data, updatedAt: local.updatedAt || now() }
-  if (localEmpty)  return { action: 'adopt-remote', data: remote.data, updatedAt: remote.updatedAt }
+
+  if (localEmpty) {
+    const out = { action: 'adopt-remote', data: remote.data, updatedAt: remote.updatedAt }
+    /* Only a FOREIGN copy loses real content on this branch. A genuinely empty
+       one loses nothing, and an unstamped one under unstampedIsSeed is
+       migrateToProfiles' machine-generated seed -- discarding that is the whole
+       point of reconcileProfiles, and reporting it would warn every new user on
+       their first sign-in about losing something they never had. */
+    if (foreign && localHasData) out.discarded = local.data
+    return out
+  }
 
   if (remote.updatedAt > local.updatedAt) {
-    return { action: 'adopt-remote', data: remote.data, updatedAt: remote.updatedAt }
+    /* THE discarding branch: real local content, replaced by a newer remote.
+       It is the only outcome that silently threw work away (finding 6). */
+    return { action: 'adopt-remote', data: remote.data, updatedAt: remote.updatedAt,
+             discarded: local.data }
   }
   return { action: 'push-local', data: local.data, updatedAt: local.updatedAt || now() }
 }
@@ -87,8 +136,9 @@ export function reconcileMeta(local, remote, isEmpty, now = Date.now, opts = {})
  *  Plain last-write-wins. Nothing ever manufactures band calibration, so an
  *  unstamped local map is real work someone did with a tape measure and a
  *  Tension Master, and it pushes -- deliberately NOT the profile rule below. */
-export function reconcileBandGeom(local, remote, now = Date.now) {
-  return reconcileMeta(local, remote, d => !d || Object.keys(d).length === 0, now)
+export function reconcileBandGeom(local, remote, now = Date.now, currentUid) {
+  return reconcileMeta(local, remote, d => !d || Object.keys(d).length === 0, now,
+                       { foreignLocal: isForeignLocal(local, currentUid) })
 }
 
 /** rbts_profiles: an array, empty at [].
@@ -107,9 +157,10 @@ export function reconcileBandGeom(local, remote, now = Date.now) {
  *  PWA-local profile is only ever an import or an adopt (both stamped) or the
  *  seed (never stamped). Edit profiles in fitness_app.html and bring them
  *  over in a backup file, which is the only route that exists. */
-export function reconcileProfiles(local, remote, now = Date.now) {
+export function reconcileProfiles(local, remote, now = Date.now, currentUid) {
   return reconcileMeta(local, remote, d => !Array.isArray(d) || d.length === 0, now,
-                       { unstampedIsSeed: true })
+                       { unstampedIsSeed: true,
+                         foreignLocal: isForeignLocal(local, currentUid) })
 }
 
 /* ====================================================================

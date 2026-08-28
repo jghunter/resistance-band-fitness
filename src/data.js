@@ -2372,7 +2372,10 @@ const TECH_SCHEDULES = {};
    import this module with no localStorage). The PWA has no editor for these
    yet — it reads whatever the HTML app wrote, same as the other profile
    fields. Defaults reproduce the multi-set behavior exactly. */
-export const TRAINING_STYLE = (() => {
+/* Split out of the IIFE so a cloud adopt can re-run it (finding 10). The
+   holder's IDENTITY must never change: every consumer holds the imported
+   binding, so a refresh that replaced the object would update nothing. */
+function readTrainingStyle() {
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2382,7 +2385,8 @@ export const TRAINING_STYLE = (() => {
       volumeModel: (p && p.volumeModel === 'hit') ? 'hit' : 'standard',
     }
   } catch (e) { return { defaultSets: null, volumeModel: 'standard' } }
-})()
+}
+export const TRAINING_STYLE = readTrainingStyle()
 
 /* ── BODY MEASUREMENTS (per-profile) — mirrors fitness_app.html ─────────────
    Inputs to the belt/footplate band path, and to nothing else. Each is a plain
@@ -2411,7 +2415,8 @@ export function bodyMeasureNum(v) {
   return (typeof v === 'number' && isFinite(v) && v > 0) ? v : null
 }
 
-export const BODY_MEASURE = (() => {
+/* Split out of the IIFE for the same reason as readTrainingStyle above. */
+function readBodyMeasure() {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
                    shoulderHeightIn: null, handsAtRestIn: null, bodyWidthIn: null }
   try {
@@ -2432,7 +2437,23 @@ export const BODY_MEASURE = (() => {
       bodyWidthIn:      num(p.bodyWidthIn),
     }
   } catch (e) { return empty }
-})()
+}
+export const BODY_MEASURE = readBodyMeasure()
+
+/* Re-read both holders from storage, IN PLACE. Called after a cloud adopt
+   writes a new rbts_profiles (finding 10): without it the running session keeps
+   the previous rirTarget, defaultSets and volumeModel, and rirTarget feeds
+   progressionState's READY / STALLED verdicts.
+
+   Object.assign onto the SAME objects, never a reassignment: `export const`
+   bindings are held by every importer, so replacing them would refresh nothing.
+   Deleting keys first is unnecessary -- both readers always return every key,
+   including the nulls. */
+export function refreshProfileHolders() {
+  Object.assign(TRAINING_STYLE, readTrainingStyle())
+  Object.assign(BODY_MEASURE, readBodyMeasure())
+  return { TRAINING_STYLE, BODY_MEASURE }
+}
 
 /* The two the model cannot run without: the highest landmark and the width a
    singled loop has to span. Mirrors fitness_app.html's bodyMeasureComplete. */
