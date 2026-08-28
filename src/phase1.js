@@ -337,6 +337,38 @@
     return out;
   }
 
+  /* Apply a TRAINING STYLE / BODY MEASURE patch to the ACTIVE profile and mark
+     every patched key explicit. Pure: returns a NEW list and mutates nothing.
+
+     This lives here rather than in either app because BOTH need it and a second
+     copy of one decision is how this project's worst defects started -- the
+     explicitKeys regression below, and gearPathDeltaIn diverging from the live
+     gearPathDelta. fitness_app.html had it inline inside saveTrainingStyle; the
+     PWA was about to grow its own copy for the panel it gained on 2026-08-27.
+
+     `null` is APPLIED, not skipped: it is how the panel says "follow the
+     program" (defaultSets) and "not measured" (a body landmark), and both are
+     deliberate choices that must be protected like any other.
+
+     An unknown activeId returns the list unchanged rather than inventing a
+     profile -- what a missing active profile means is the caller's decision. */
+  function applyProfilePatch(list, activeId, patch) {
+    var src = Array.isArray(list) ? list : [];
+    var keys = Object.keys(patch || {});
+    if (!keys.length) return src.slice();
+    return src.map(function (p) {
+      if (!p || p.id !== activeId) return p;
+      var next = Object.assign({}, p);
+      keys.forEach(function (k) { next[k] = patch[k]; });
+      /* markExplicit seeds from explicitKeysOf, NOT from [] -- the whole point.
+         Seeding from [] is what replaced a nine-field inferred protection with a
+         two-field recorded one on 2026-08-03, so rirTarget: 1 lost to
+         older_adult's suggested 2 for three days with nothing on screen. */
+      next.explicitKeys = markExplicit(p, keys);
+      return next;
+    });
+  }
+
   /* The effective profile: population fills in only what the profile left at
      the base default. Pure - does not mutate or persist anything. */
   function resolveProfile(p) {
@@ -599,6 +631,7 @@
     resolveProfile: resolveProfile,
     explicitKeysOf: explicitKeysOf,
     markExplicit: markExplicit,
+    applyProfilePatch: applyProfilePatch,
     gregSeedOverrides: gregSeedOverrides,
     normalizeSet: normalizeSet,
     sseReps: sseReps,
