@@ -547,7 +547,24 @@
     store = store || (root && root.localStorage);
     opts = opts || {};
     var profileId = opts.profileId || "greg";
-    var profileName = opts.profileName || "Greg";
+    /* The NAME is neutral; the ID is not, and that asymmetry is deliberate.
+       This function runs at module load on any device with no profile, so its
+       defaults are the NEW-USER path, not a migration. Until 2026-08-28 the
+       name defaulted to "Greg", so every fresh install created a profile
+       carrying one person's name. The DATA had already been made neutral on
+       2026-08-21; the label had not, and there is no profile screen with which
+       to correct it. It surfaces in an exported backup file, which is exactly
+       where a stranger's name is confusing.
+
+       `profileId` STAYS "greg" on purpose. It is the localStorage NAMESPACE
+       (`profileKey` builds `rbts_greg_log` and friends from it), so changing it
+       would orphan every scoped key on every device that has ever run this.
+       Only the label moves.
+
+       An install made BEFORE this date keeps the old label: MIGRATION_FLAG
+       guards this function, so it never runs a second time. Greg's own profile
+       is one of those, and keeping his real name is correct for him. */
+    var profileName = opts.profileName || "Athlete";
 
     var report = { ran: false, alreadyMigrated: false, profileId: profileId,
                    copied: [], created: [], skipped: [] };
