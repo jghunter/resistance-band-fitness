@@ -4402,7 +4402,17 @@
      copy -- see resolveGearDims below and gearPathDelta above. */
   /* WHO measured this table. Confirmed by Greg 2026-08-27: every entry below
      that says `source: "measured"` is his own tape. Entries that are NOT his
-     tape say so individually (see the Cyberplate and the Blue Ropes).
+     tape say so individually (see the Blue Ropes). The Cyberplate was on that
+     list until 2026-08-28, when he taped both its dimensions and its two roller
+     band paths.
+
+     THAT WAS THE LAST ONE. Every footplate in this table now declares ONLY
+     measured paths -- the Acacia was the previous holdout and was taped
+     2026-08-14. There is therefore NO real plate left that can serve as the
+     fixture for "a plate whose band path was never measured must not reach
+     MEASURED provenance", and four test blocks that used the Cyberplate for it
+     moved to synthetic plates on 2026-08-28. A synthetic fixture is easier to
+     let rot than a real one, so each says why it exists.
 
      Attribution is at the TABLE level, not per entry, and that was a decision
      rather than laziness: the dates inside the entries' comments are
@@ -4410,41 +4420,69 @@
      and 11 of the 31 entries carry no date at all. Deriving a per-entry date
      from those comments would manufacture exactly the confident-wrong
      provenance finding 9b exists to remove. */
-  var GEAR_DIMS_ATTRIBUTION = { by: "Greg", span: "2026-07-30 to 2026-08-14" };
+  var GEAR_DIMS_ATTRIBUTION = { by: "Greg", span: "2026-07-30 to 2026-08-28" };
 
   var GEAR_DIMS = {
     // ---- Harambe ---------------------------------------------------------
     "Harambe|T Bar":            { lengthIn: 28, hookOffsetIn: 3, hookSide: "opposite",
                                   attachSpanIn: 26, source: "measured", verified: true },
+    /* TAPED 2026-08-28 by Greg, at last -- this is the plate that was at his
+       son's on 2026-08-14 and could not be measured. Four readings: length 22,
+       width 11 3/4, height (thickness) 2, and 7/8 of clearance from the floor
+       to the underside.
+
+       THREE OF THE FOUR CONFIRMED THE FIGURES ALREADY HERE, to the exact
+       hundredth. Those three came from the vendor's specification, and a tape
+       agreeing with a spec is a real result rather than a suspicious one -- a
+       moulded plate is made to its drawing. The FOURTH corrects the clearance
+       from an estimated 1in to a measured 0.875in.
+
+       THE BAND PATHS WERE TAPED THE SAME DAY, and THIS PLATE HAS ROLLERS --
+       the only one in the table that does. Greg's reading, in his own terms:
+       the band travel "from when it first touches the roller on one side and
+       comes up the other side to where it no longer touches that roller".
+       That is exactly `consumedIn`: first contact, under, last contact.
+       **LENGTHWISE 20.5, WIDTHWISE 10.625.**
+
+       THOSE FIGURES ARE SHORTER THAN THE PLATE, AND THAT IS THE POINT.
+       Every other plate here consumes 1.25in to 3.00in MORE than its own flat
+       dimension, because the band wraps a square-ish edge and drops into a
+       channel. This plate's band never touches an edge or a channel: it rides
+       rollers set inboard of the footprint, so the path is 1.5in SHORTER than
+       the length and 1.125in shorter than the width. The two shortfalls agree
+       (about 0.6-0.75in of inset per side), which is the internal check that
+       the reading is coherent rather than a transposition.
+
+       THE COMPUTED FIGURES WERE BADLY WRONG, by far more than the ~2in bias
+       this entry used to warn about: 27.125 -> 20.5 lengthwise, a 6.625in
+       overstatement, and 16.875 -> 10.625 widthwise. The arithmetic they came
+       from adds `2*thickness + channel` (5.125in here) for edge crossings and a
+       channel drop THAT DO NOT EXIST ON A ROLLER PLATE. A shorter consumed path
+       leaves MORE reach and therefore LESS stretch, so this plate has been
+       pricing HEAVIER than the truth ever since it entered the table.
+
+       NOTHING IN GREG'S HISTORY REPRICES, measured rather than assumed: the
+       Cyberplate appears in ZERO of the 48 logged entries in
+       rbts_backup_2026-08-28T17-04-42.json. He owns it and has never logged a
+       lift on it. (The comment here used to claim "12 of 47 entries"; those 55
+       exercise-uses are the ACACIA's. Corrected 2026-08-28.)
+
+       stampPredatesBandPath now returns TRUE for a pre-cutoff Cyberplate rig,
+       because the declared path no longer equals `span + 2*thickness +
+       channel`. That is CORRECT and is the mechanism working as designed -- the
+       price genuinely moved -- and it flags nothing today because there is no
+       such entry. `bandSpanIn: 22.25` is kept for exactly that comparison; it
+       is not taped and nothing else reads it now that both paths are declared.
+
+       `channelIn: 0.875` is Greg's tape of the floor-to-underside clearance. It
+       no longer enters the path arithmetic either, for the same reason. */
     "Harambe|Cyberplate":       { thicknessIn: 2, lengthIn: 22, widthIn: 11.75,
-                                  channelIn: 1, bandSpanIn: 22.25,
-                                  /* COMPUTED and DERIVED, not taped. This plate was at
-                                     Greg's son's on 2026-08-14 and could not be measured.
-                                     It has no hole, so the two whole-plate paths are all
-                                     it needs. Both figures are the legacy arithmetic
-                                     (span + 2*thickness + channel), so this plate prices
-                                     exactly as it did before band paths existed --
-                                     stampPredatesBandPath correctly leaves its history
-                                     unflagged. On the four plates Greg DID tape, the real
-                                     path runs about 2in shorter than this arithmetic, so
-                                     these two carry a known bias until measured. */
+                                  channelIn: 0.875, bandSpanIn: 22.25,
                                   bandPaths: [
-                                    { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 27.25, source: "computed" },
-                                    { k: "wid", l: "UNDER - WIDTHWISE",  consumedIn: 17,    source: "derived" }
+                                    { k: "len", l: "UNDER - LENGTHWISE", consumedIn: 20.5,   source: "measured" },
+                                    { k: "wid", l: "UNDER - WIDTHWISE",  consumedIn: 10.625, source: "measured" }
                                   ],
-                                  /* NOT Greg's tape, and it no longer claims to be
-                                     (finding 9c, 2026-08-27). Its own two bandPaths
-                                     already said `computed` and `derived`; the entry
-                                     contradicted them. Measured impact on Greg's real
-                                     log: ZERO -- he owns and uses this plate on 12 of
-                                     47 entries, but every stamp there is MODELED or
-                                     RATED already, because no band of his has the two
-                                     Tension Master readings a MEASURED load needs
-                                     (TODO item 16). The exposure this closes is a
-                                     future one: the day anybody takes two readings, a
-                                     lift on this plate would report MEASURED off a
-                                     computed figure. */
-                                  source: "computed", verified: false },
+                                  source: "measured", verified: true },
     /* CORRECTED 2026-07-31, and the correction is large. This read seriesIn 7.75
        from 2026-07-30 to 2026-07-31 because 7 3/4in is the OVERALL LENGTH OF THE
        HANDLE, not the load-bearing series length — Greg's own words: "Originally
@@ -4705,7 +4743,7 @@
      2026-08-07 lesson: a table correction without a rev bump reaches nobody,
      and every footplate in Greg's inventory carries a stored dims copy that
      would otherwise win. */
-  var GEAR_DIMS_REV = "2026-08-27-attribution-r1";
+  var GEAR_DIMS_REV = "2026-08-28-cyberplate-rollers-r2";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */

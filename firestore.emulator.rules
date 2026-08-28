@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// ============================================================================
+// EMULATOR ONLY. DO NOT DEPLOY THIS FILE.
+//
+// The name is `firestore.emulator.rules`, not `firestore.rules`, on purpose:
+// the Firebase CLI looks for the plain name by default, and a file with that
+// name sitting in this directory could be pushed over the project's LIVE rules
+// by a stray `firebase deploy`. This file is referenced explicitly from
+// firebase.json's `firestore.rules` key, and firebase.json carries no deploy
+// targets at all.
+//
+// WHAT THIS IS FOR. The two-account ownership test (TODO item 17, review
+// finding 11) needs two different Firebase uids on one device. Creating a
+// second real Google account needs a phone number that accepts SMS. The Auth
+// emulator mints uids from any address you type, with no phone and no
+// verification, so it answers that need directly.
+//
+// WHAT THIS IS *NOT*. These rules mirror the app's intended ownership model.
+// They are NOT a copy of the deployed rules and are not checked against them.
+// A green run here proves the CLIENT logic under two identities; it proves
+// nothing about what the live project enforces.
+//
+// The paths below are the ones App.jsx actually writes:
+//   users/{uid}/workouts/{docId}
+//   users/{uid}/gear/{itemId}
+//   users/{uid}/meta/{myBands|settings|customExercises|customPrograms
+//                     |bandGeom|profile}
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A signed-in person may read and write only their own subtree. This is
+    // the rule the ownership work assumes: uid A must never reach uid B's
+    // calibration, and the emulator is where that can finally be exercised.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Everything else is closed. An explicit deny rather than an absent rule,
+    // so a new collection added later fails loudly here instead of silently
+    // behaving differently from the live project.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

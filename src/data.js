@@ -226,7 +226,7 @@ export const VIDEOS = {
   56: {url:"https://www.youtube.com/watch?v=bLxb3w0c74w", start:28, end:56},
   57:"https://www.youtube.com/watch?v=NtaPROZOcmM",
   58:"https://www.youtube.com/watch?v=NtaPROZOcmM",
-  59:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
+  59: {url:"https://www.youtube.com/shorts/YLoZCkChnZY"},   // own clip now; no window, plays whole
   60:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
   61: {url:"https://www.youtube.com/shorts/QohNmAf3xBc"},   // own clip now; no window, plays whole
   62: {url:"https://www.youtube.com/watch?v=6ffBlaBBWmA", start:598, end:602},
