@@ -3061,6 +3061,22 @@
     }).join(" / ");
   }
 
+  /* The SESSION heading, with the session key appended exactly ONCE.
+
+     The two apps disagree about whose job the key is. The HTML app's
+     sessionLabelOf is sessionDisplay, which already appends " (C)" for the
+     legacy single-letter keys C-G; the PWA's is dayName, which does not.
+     Appending unconditionally printed "CHEST (C) (C)" on every setup sheet and
+     every history report in the HTML app. Found in a browser 2026-08-29.
+     Neither parity suite could see it: both feed ONE shared ctx to both apps,
+     so the difference between the two real sessionLabelOf functions never
+     reached this line. */
+  function sessionHeading(label, sKey) {
+    var suffix = " (" + sKey + ")";
+    label = String(label == null ? "" : label);
+    return label.slice(-suffix.length) === suffix ? label : label + suffix;
+  }
+
   function buildSetupDoc(ctx, opts) {
     var prog = opts.prog, sKey = opts.sKey, week = opts.week;
     var session = ctx.sessionExOf(prog, sKey) || { primary: {}, accessories: {} };
@@ -3149,7 +3165,7 @@
       { label: "DATE", value: opts.date },
       { label: "PROGRAM", value: "P" + prog.id + " " + prog.name },
       { label: "WEEK", value: String(week) },
-      { label: "SESSION", value: ctx.sessionLabelOf(prog, sKey) + " (" + sKey + ")" },
+      { label: "SESSION", value: sessionHeading(ctx.sessionLabelOf(prog, sKey), sKey) },
       { label: "WORKOUT", value: "#" + (opts.workoutNum == null ? "?" : opts.workoutNum) }
     ];
     if (opts.focusLabel) meta.push({ label: "FOCUS", value: opts.focusLabel });
@@ -3322,9 +3338,9 @@
         { label: "DATE", value: e.date + (dayName ? " (" + dayName + ")" : "") },
         { label: "PROGRAM", value: "P" + e.programId + (prog ? " " + prog.name : "") },
         { label: "WEEK", value: String(e.week) },
-        { label: "SESSION", value:
-            (ctx.sessionLabelOf ? ctx.sessionLabelOf(prog, e.session) : e.session) +
-            " (" + e.session + ")" },
+        { label: "SESSION", value: sessionHeading(
+            ctx.sessionLabelOf ? ctx.sessionLabelOf(prog, e.session) : e.session,
+            e.session) },
         { label: "WORKOUT", value: "#" + (e.workoutNum == null ? "?" : e.workoutNum) }
       ];
       if (ctx.deloadOf && ctx.deloadOf(e)) head.push({ label: "DELOAD", value: "yes" });

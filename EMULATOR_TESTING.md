@@ -73,6 +73,38 @@ UI's Authentication tab lists both, with their uids.
 
 ---
 
+## Signing in from a script, when a popup will not do
+
+Used on 2026-08-29 to run the whole of item 17. `signInWithPopup` opens a
+window that browser automation cannot reach, so drive the app's OWN auth object
+instead. In the page console:
+
+```js
+// The SAME module instance Vite already gave the app, not a second copy.
+const fb   = await import('/src/firebase.js')
+const auth = await import('/node_modules/.vite/deps/firebase_auth.js?v=...')
+// The version hash changes; read it from
+// performance.getEntriesByType('resource').
+
+const cred = auth.GoogleAuthProvider.credential(
+  JSON.stringify({ sub: 'uid-alpha', email: 'a@test.local',
+                   email_verified: true, name: 'Alpha Tester' }))
+await auth.signInWithCredential(fb.auth, cred)
+```
+
+The Auth emulator accepts that unsigned JSON as an id token and mints a real
+uid. Change `sub` and `email` for the second identity. `auth.signOut(fb.auth)`
+signs out.
+
+**Stub `window.alert` before you sign in.** The adopt message
+(`App.jsx:5528`) is a blocking `alert()`; it froze the tab twice. Every
+localStorage write happens BEFORE it, so closing the tab loses nothing.
+
+**Vite binds to `[::1]` only.** Use `http://localhost:5173`, not
+`http://127.0.0.1:5173`.
+
+---
+
 ## The checks this unblocks
 
 ### Item 17 — two accounts on one device (review finding 11)
