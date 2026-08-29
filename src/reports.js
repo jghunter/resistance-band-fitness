@@ -319,7 +319,7 @@
        Above strain 0.5 the fit is linear: real latex stiffens toward the top
        of its range, so modeled figures understate load at high stretch.
        Measured points remove the assumption entirely, which is the whole
-       reason for the Tension Master. */
+       reason for taking force-scale readings. */
     STRAIN_AT_RATED_MIN: 0.5,
     STRAIN_AT_RATED_MAX: 1.5,
     /* Assumed working strain of a REFERENCE setup - the strain at which a
@@ -332,7 +332,7 @@
   /* Force in lb at a given absolute stretched-past-rest distance.
      stretchIn is how far BEYOND its rest length the loop has been pulled.
 
-     With >= 2 Tension Master readings this interpolates them and never
+     With >= 2 force-scale readings this interpolates them and never
      reaches the fitted curve at all. Otherwise it evaluates the three-segment
      fit described on LOAD_MODEL:
 
@@ -382,7 +382,7 @@
     return f < 0 ? 0 : f;                                       // never negative
   }
 
-  /* ---- band calibration: rest length + Tension Master readings ----------
+  /* ---- band calibration: rest length + force-scale readings ------------
      BandCalibration (both apps) is a physical-measurement form, not a
      report, but the arithmetic under it -- parsing a typed number, rejecting
      garbage, and keeping the "fewer than 2 points is never MEASURED" floor
@@ -435,7 +435,7 @@
     return e;
   }
 
-  /* One Tension Master reading, edited by UI slot index -- the panel shows a
+  /* One force-scale reading, edited by UI slot index -- the panel shows a
      fixed set of READING 1/2/3 rows, so `index` addresses a slot rather than
      an array position. `points` is the band's current measured array (may be
      short or have incomplete entries); `field` is "stretchIn" or "lb"; `raw`
@@ -518,7 +518,7 @@
      PER FIELD, file wins on what it carries. A band id absent from `incoming`
      is untouched. Within a band, a field absent from the incoming entry keeps
      its local value. That is the whole point: a rest-length-only file must
-     never destroy a `measured[]` force curve that cost a Tension Master
+     never destroy a `measured[]` force curve that cost a force-scale
      session to produce -- the shape of the customPrograms loss rejected on
      2026-08-07, arriving through a different door.
 
@@ -1780,10 +1780,10 @@
         out.provenance = (allMeasured && gearOK && plateSpanMeasured)
           ? "MEASURED" : "MODELED";
         if (out.provenance === "MEASURED") {
-          out.basis = "interpolated through your Tension Master readings at a measured band path";
+          out.basis = "interpolated through your force-scale readings at a measured band path";
         } else if (anyClamped) {
           out.basis = "band path from the footplate and your attachment height, " +
-                      "clamped to your nearest Tension Master reading (your readings " +
+                      "clamped to your nearest force-scale reading (your readings " +
                       "do not reach this stretch)";
         /* `gearOK` was part of this condition until 2026-08-27 and should not
            have been. When a plate's own dims stopped claiming to be measured
@@ -1794,14 +1794,14 @@
            MEASURED is answered by the PATH here, and by the dims below. */
         } else if (allMeasured && !plateSpanMeasured) {
           out.basis = "band path from the footplate and your attachment height, " +
-                      "on your Tension Master readings but over a " + bPath.source +
+                      "on your force-scale readings but over a " + bPath.source +
                       " footplate band path (" + bPath.l + ")";
         } else if (allMeasured && !gearOK) {
           /* Reachable since 2026-08-27: a MEASURED path on gear whose own
              dimensions nobody taped on this device. Naming it is the point --
              "on the fitted curve" does not tell anyone what to go and measure. */
           out.basis = "band path from the footplate and your attachment height, " +
-                      "on your Tension Master readings, but this footplate's own " +
+                      "on your force-scale readings, but this footplate's own " +
                       "dimensions are not measured";
         } else {
           out.basis = "band path from the footplate and your attachment height, " +
@@ -1930,7 +1930,7 @@
     var gearOK2 = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
     out.provenance = (anyMeasured && gearOK2) ? "MEASURED" : "MODELED";
     out.basis = out.provenance === "MEASURED"
-      ? "interpolated through your Tension Master readings"
+      ? "interpolated through your force-scale readings"
       : "fitted from the vendor's rated range at an assumed strain, adjusted for gear";
     return out;
   }

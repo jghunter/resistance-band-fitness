@@ -4859,11 +4859,16 @@ function BandCalibration({ myBands, user }) {
           <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6,marginBottom:10}}>
             Rest length is the loop laid flat with the slack just taken out, inside tip to
             tip — a "41 inch" band often is not 41 inches, and every stretch figure
-            depends on it. The three readings are Tension Master measurements: stretch the
-            band so the distance between the bearing points is a length you have measured,
-            read the gauge, record both. Two readings are enough to replace the assumed
-            curve with a real one; three is better. Leave it all blank and the app keeps
-            using the vendor's rated range, reported as MODELED rather than MEASURED.
+            depends on it. The three readings need a HANGING FORCE SCALE — a fishing,
+            luggage or crane scale with a hook at each end, rated well above the band.
+            Anchor one end of the loop, hook the scale to the other, pull until the gap
+            between the bearing points reaches a distance you marked out beforehand, and
+            record the force. STRETCH is how far BEYOND the rest length you pulled, not
+            the total gap: pull a 41in band to a 66in gap and type 25. Two readings are
+            enough to replace the assumed curve with a real one; three is better, and
+            spread them wide — outside your readings the app holds the nearest one
+            rather than extrapolating. Leave it all blank and the app keeps using the
+            vendor's rated range, reported as MODELED rather than MEASURED.
           </div>
           {!pool.length && (
             <div style={{fontFamily:'monospace',fontSize:11,color:C.amber}}>
@@ -4898,7 +4903,7 @@ function BandCalibration({ myBands, user }) {
                     return (
                       <div key={i} style={{display:'flex',flexDirection:'column',gap:2}}>
                         <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
-                          READING {i+1} — STRETCH / LB
+                          READING {i+1} — STRETCH PAST REST / LB
                         </span>
                         <div style={{display:'flex',gap:3,alignItems:'center'}}>
                           <input type="number" step="0.25" min="0"
