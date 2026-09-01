@@ -257,33 +257,23 @@ const nextSide = (cur) => cur == null ? 'L' : (cur === 'L' ? 'R' : null)
 // reps done after the full reps. Display-only — never counted in progression,
 // sseReps, or volume-load.
 const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
-// Unilateral moves pre-tag the Today card's first two sets L/R. Alternating
-// moves (105, 132) intentionally excluded — both sides happen inside one set.
-const EX_UNILATERAL = new Set([
-  5, 12, 24, 27, 29, 44, 49, 80, 91, 92, 93, 102, 103, 104, 106, 107, 108,
-  118, 133, 146, 147, 152, 169, 217,
-  220, 222,   // side plank row, bird dog (per-side)
-])
-const isUnilateral = (id) => EX_UNILATERAL.has(Number(id))
+// ── Per-side (L/R) seeding ──
+// The rule lives in RBTS_REPORTS so both apps share ONE copy and node can test
+// it — see rbts_reports.js and test_unilateral_gear.cjs. EX_UNILATERAL is
+// structural (always L/R); EX_UNILATERAL_IF_HANDLES seeds L/R only when the
+// exercise's picked gear is handles or dumbbells, because on a bar the two
+// sides operate as one (Greg, 2026-09-01). Alternating moves (105, 132) are
+// excluded from both — both sides happen inside one set.
+const isUnilateral = (id, gearItems) => RBTS_REPORTS.isUnilateral(id, gearItems)
 /* Seed the program's prescribed set count, not one, and a REAL rir value.
    initSets used to seed exactly ONE set, so the analyzer's 10-sets/week
    landmarks could never be satisfied and UNDER fired forever. rir was left
    null with a placeholder, so progressionState skipped the RIR cap entirely
    and READY was decided purely on rep count. Empty sets are still dropped on
-   save (setHasData), so seeding three costs nothing. */
-const initSets = (id, n) => {
-  const count = Math.max(1, n || 1)
-  const out = []
-  for (let i = 0; i < count; i++) {
-    if (isUnilateral(id)) {
-      out.push({reps:0,bands:[],side:'L',rir:RIR_TARGET})
-      out.push({reps:0,bands:[],side:'R',rir:RIR_TARGET})
-    } else {
-      out.push({reps:0,bands:[],rir:RIR_TARGET})
-    }
-  }
-  return out
-}
+   save (setHasData), so seeding three costs nothing.
+   gearItems is OPTIONAL — absent, a gear-conditional exercise seeds bilateral. */
+const initSets = (id, n, gearItems) =>
+  RBTS_REPORTS.seedRows(id, n, gearItems, () => ({reps:0, bands:[], rir:RIR_TARGET}))
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
@@ -2107,12 +2097,30 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
 
   const [showAdd, setShowAdd] = useState(false)
   const [addSrch, setAddSrch] = useState('')
-  function getOrInit(id) { return exercises[id] || initSets(id, progDefaultSets(prog)) }
+  /* seedRows needs RESOLVED inventory items — the per-exercise gear map stores
+     ids alone, which carry no `type`, and the type is what says handles from a
+     bar. Same index LoggedExCard builds at line ~2038. */
+  const gearInvById = {}; (gearInv || []).forEach(g => { gearInvById[g.id] = g })
+  const gearItemsFor = (id) =>
+    ((gear || {})[String(id)] || []).map(k => gearInvById[k]).filter(Boolean)
+  /* A prescribed exercise has no stored sets until it is edited, so its seed
+     re-runs every render and picking gear reshapes the card live. An ad-hoc
+     added one DOES have stored sets — the write is what makes the card appear
+     — so re-derive it too while it is still blank. Once a rep is typed
+     rowsUntouched goes false and the stored sets come back unchanged, which is
+     why a gear change can never disturb logged data. */
+  function getOrInit(id) {
+    const seed = () => initSets(id, progDefaultSets(prog), gearItemsFor(id))
+    const stored = exercises[id]
+    if (!stored) return seed()
+    if (RBTS_REPORTS.isGearConditional(id) && RBTS_REPORTS.rowsUntouched(stored)) return seed()
+    return stored
+  }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
   function addEx(id) {
     const key = String(id)
     if (exercises && exercises[key]) { setShowAdd(false); setAddSrch(''); return }
-    onExercisesChange({...exercises, [key]:initSets(id, progDefaultSets(prog))})
+    onExercisesChange({...exercises, [key]:initSets(id, progDefaultSets(prog), gearItemsFor(id))})
     setShowAdd(false); setAddSrch('')
   }
   function removeEx(id) {
