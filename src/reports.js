@@ -2348,6 +2348,121 @@
 
      Rule 5 is the only invented number here and it is now unreachable for a
      HIT profile, which is where it did the damage. */
+
+  /* ── Unilateral exercises: which ones seed L/R set rows ──────────────────
+     Two lists, because the honest answer is not the same shape for both.
+
+     EX_UNILATERAL is structural: one arm or one leg at a time, whatever is
+     hooked to the band. Alternating moves (105 Walking Lunge, 132 Alternating
+     Hammer Curl) are excluded on purpose -- both sides happen inside one set.
+
+     EX_UNILATERAL_IF_HANDLES depends on the EQUIPMENT, which is Greg's ruling
+     of 2026-09-01: "if using a bar then the left and right sides operate as
+     one, but when using handles or dumbbells they are individually left and
+     right." Wrist pronation on a bar is one movement -- both hands are on the
+     same rigid object and turn together. The same exercise id on two handles
+     is two independent efforts. No static list can be right for both.
+
+     This lived as a duplicated const inside both apps until 2026-09-01, which
+     is why it had no test and why the two lists were maintained by hand in two
+     files. Same move, same reason, as seededSetCount below. */
+  var EX_UNILATERAL = {};
+  [5, 12,                  // single-arm chest press / fly
+   24, 27, 29,             // single-arm row, Meadows row, single-arm pulldown
+   44, 49,                 // single-arm OHP, leaning lateral raise
+   63, 64, 65,             // Pallof press, with rotation, overhead
+   66, 67,                 // woodchop high-to-low, reverse woodchop low-to-high
+   80, 91, 92,             // single-leg hip thrust, standing abduction, glute kickback
+   93, 102, 103, 104, 106, 107, 108,   // lunges, Bulgarian split squat, step-up
+   118,                    // single-leg RDL
+   133, 146, 147, 152,     // concentration curl, 1-arm OH ext, kickback, 1-arm pushdown
+   163,                    // finger extension -- the band is round ONE hand's fingers
+   169,                    // single-leg calf raise
+   217,                    // split squat (belt)
+   220, 222                // side plank row, bird dog (per-side)
+  ].forEach(function (id) { EX_UNILATERAL[id] = true; });
+
+  /* 163 is absent DELIBERATELY -- it is on the unconditional list above.
+     166 Band Farmer's Carry Hold is absent DELIBERATELY too: it is held in
+     both hands at once even when those hands are on handles, so per-side rows
+     would be noise. The side chip still covers a suitcase carry. */
+  var EX_UNILATERAL_IF_HANDLES = {};
+  [48,                     // band lateral raise -- defaults to BOTH arms together
+   157, 158,               // wrist curl, reverse wrist curl
+   159, 160,               // radial deviation, ulnar deviation
+   161, 162,               // wrist pronation, wrist supination
+   164, 165                // grip crush, reverse curl (forearm focus)
+  ].forEach(function (id) { EX_UNILATERAL_IF_HANDLES[id] = true; });
+
+  /* There is NO `dumbbell` gear type: inferGearType has no rule for it and
+     GEAR_CATALOG has no such item, so a free-typed "Dumbbells" is typed
+     `other`. Matching the NAME as well as the type is what makes the rule work
+     for gear nobody has modelled. */
+  var GEAR_SIDED_RE = /dumb\s*-?bell|kettle\s*-?bell/i;
+
+  /* `items` is RESOLVED inventory objects, not the stored gear ids -- the
+     stored array is ids alone and carries no type. An id that no longer
+     resolves arrives as undefined and is skipped rather than thrown on. */
+  function gearIsSided(items) {
+    var arr = items || [], i, g;
+    for (i = 0; i < arr.length; i++) {
+      g = arr[i];
+      if (!g) continue;
+      if (g.type === "handle") return true;
+      if (GEAR_SIDED_RE.test(g.name || "")) return true;
+    }
+    return false;
+  }
+
+  function isGearConditional(id) { return !!EX_UNILATERAL_IF_HANDLES[Number(id)]; }
+
+  /* gearItems is OPTIONAL. Absent or empty, a conditional exercise reads as
+     bilateral -- the documented default for 48, and the right answer for a
+     wrist exercise with no gear recorded. */
+  function isUnilateral(id, gearItems) {
+    var n = Number(id);
+    if (EX_UNILATERAL[n]) return true;
+    if (EX_UNILATERAL_IF_HANDLES[n]) return gearIsSided(gearItems);
+    return false;
+  }
+
+  /* "Nothing has been logged into this card yet", which is what makes it safe
+     to re-derive its shape from the gear currently picked. A row carrying only
+     a `side` is still untouched -- so a chip tapped on an empty row is lost if
+     gear then changes. Accepted 2026-09-01: changing gear reshapes a card you
+     have not logged into yet. `reps` holds the count whatever the unit is, so
+     a timed exercise needs no special case. */
+  function rowsUntouched(sets) {
+    var arr = sets || [], i, s;
+    for (i = 0; i < arr.length; i++) {
+      s = arr[i] || {};
+      if (s.reps > 0) return false;
+      if ((s.bands || []).length) return false;
+      if (Array.isArray(s.segments)) return false;
+      if (s.partials) return false;
+    }
+    return true;
+  }
+
+  /* Decides the L/R SHAPE only. `mk` builds one row in the CALLING FORM's
+     shape and the caller owns it: TODAY seeds rir, LOG PAST SESSION seeds
+     drop:false and no rir, and unifying them would stamp rir onto every set
+     saved through LOG PAST SESSION -- its saveEntry writes rir whenever it is
+     set -- changing progression for every back-logged session. */
+  function seedRows(id, n, gearItems, mk) {
+    var count = Math.max(1, n || 1), out = [], i, l, r;
+    var sided = isUnilateral(id, gearItems);
+    for (i = 0; i < count; i++) {
+      if (sided) {
+        l = mk(); l.side = "L"; out.push(l);
+        r = mk(); r.side = "R"; out.push(r);
+      } else {
+        out.push(mk());
+      }
+    }
+    return out;
+  }
+
   function seededSetCount(prog, style) {
     var s = style || {};
     if (typeof s.defaultSets === "number" && s.defaultSets > 0) {
@@ -5568,6 +5683,14 @@
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     seededSetCount: seededSetCount,
+    EX_UNILATERAL: EX_UNILATERAL,
+    EX_UNILATERAL_IF_HANDLES: EX_UNILATERAL_IF_HANDLES,
+    GEAR_SIDED_RE: GEAR_SIDED_RE,
+    gearIsSided: gearIsSided,
+    isGearConditional: isGearConditional,
+    isUnilateral: isUnilateral,
+    rowsUntouched: rowsUntouched,
+    seedRows: seedRows,
     substituteCandidates: substituteCandidates,
     standingSubsFor: standingSubsFor,
     EX_MOVEMENT: EX_MOVEMENT,
