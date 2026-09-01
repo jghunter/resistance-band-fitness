@@ -3250,11 +3250,17 @@ function ProgramsTab({ onProgramsChanged }) {
   const protoCaution = proto ? RBTS_REPORTS.techCautionOf(proto) : null
   const removeCustom = () => {
     if (!prog.custom) return
+    /* A deletion is PERMANENT: it is recorded as a tombstone, propagates
+       through Firestore, and since 2026-08-31 rides every backup as well, so
+       nothing brings the program back except a REPLACE ALL in the HTML app
+       from a file that still holds it. This confirm is the only guard in front
+       of that, and the button had none. */
+    if (!window.confirm(`Delete "${prog.name || 'this program'}"?
+
+This cannot be undone, and the deletion will follow your backups and your cloud sync to your other devices.`)) return
+    /* deleteCustomProgram writes the tombstone itself now -- it used to be
+       written here, where a second caller could forget it. */
     deleteCustomProgram(prog.id)
-    /* The tombstone is what makes the deletion PROPAGATE. Without it the other
-       device still holds the program, the union puts it back, and deleting is
-       an operation that silently undoes itself. */
-    setCustomProgramTombstones({ ...getCustomProgramTombstones(), [String(prog.id)]: Date.now() })
     onProgramsChanged && onProgramsChanged()
     setPi(0); setWeek(1); setSKey(progSplitDays(PROGRAMS[0])[0]); setVer(v=>v+1)
   }
@@ -4374,6 +4380,10 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
          absent -- this app has no custom-band form and no brand manager, so
          exporting them would write keys nothing here ever reads.) */
       rbts_customPrograms: getCustomPrograms(),
+      /* Rides the backup since 2026-08-31. Without it a deletion made HERE can
+         reach fitness_app.html by no route at all: that app has no Firestore,
+         and the file that travels between them carried only the list. */
+      rbts_customProgramsTombstones: getCustomProgramTombstones(),
       rbts_owner: (() => { try { return localStorage.getItem('rbts_owner') || '' }
                            catch { return '' } })(),
       // Inventory only once it has actually loaded — an export taken during the
@@ -4444,11 +4454,17 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         // entries referencing ids ≥1000 (or 216/217) resolve to names.
         const customs = Array.isArray(state && state.rbts_customExercises) ? state.rbts_customExercises : []
         const addedEx = customs.length && onImportCustomEx ? onImportCustomEx(customs) : 0
-        /* Custom PROGRAMS merge by id, file wins — additive, so nothing this
-           device authored can be lost. PROGRAMS is read at module load, so a
-           reload is needed before a newly arrived program appears in the
-           picker; same posture as the profile below. */
-        const mergedProgs = mergeCustomPrograms(state && state.rbts_customPrograms)
+        /* Custom PROGRAMS merge by id, file wins. PROGRAMS is read at module
+           load, so a reload is needed before a newly arrived program appears in
+           the picker; same posture as the profile below.
+
+           NO LONGER PURELY ADDITIVE (2026-08-31): a tombstone the file brings
+           removes a program held here, so the count of removals is carried to
+           both alerts below rather than left silent. */
+        const mergedProgs = mergeCustomPrograms(
+          state && state.rbts_customPrograms,
+          state && state.rbts_customProgramsTombstones)
+        const progsGone = mergedProgs ? mergedProgs.removed.length : 0
         /* An imported program has to reach the cloud too, or it lives on this
            device only and the next reconcile from another device merges it
            away as absent. */
@@ -4495,8 +4511,12 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         }
         if (!incoming) {
           if (customs.length || invMsg || measMsg || mergedProgs) {
+            /* A file carrying ONLY tombstones has no log and no list, and
+               lands here. It must still report what it removed. */
             alert('No rbts_log in file.' +
               (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
+              (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total.` : '') +
+              (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
               invMsg + measMsg)
             return
           }
@@ -4559,7 +4579,8 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
              ? '\n\nNOTE: this file carries no owner name, so I could not check ' +
                'whose log it is.' : '') +
           (customs.length ? ` Custom exercises: ${customs.length} in file, ${addedEx} new.` : '') +
-          (mergedProgs ? ` Custom programs: ${mergedProgs.length} total — RELOAD to see them.` : '') +
+          (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total — RELOAD to see them.` : '') +
+          (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
           invMsg + measMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }

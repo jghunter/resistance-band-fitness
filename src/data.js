@@ -1464,21 +1464,46 @@ export function setCustomProgramTombstones(map) {
 }
 
 /* Additive: keep what this device has, add what the file brings, FILE WINS on
-   a shared id. Adding a definition can never destroy one, so no confirm.
+   a shared id.
 
    TOMBSTONE-AWARE since 2026-08-07. Without this, importing a backup taken
    BEFORE a deletion resurrects the deleted program -- the exact failure the
    tombstone exists to prevent, arriving through the other door. The import
-   path and the sync path have to agree about what "deleted" means. */
-export function mergeCustomPrograms(incoming) {
-  if (!Array.isArray(incoming) || !incoming.length) return null;
-  const tombs = getCustomProgramTombstones();
-  const fresh = incoming.filter(p => p && p.id != null && !(String(p.id) in tombs));
-  if (!fresh.length) return null;
-  const byId = {};
-  getCustomPrograms().forEach(p => { if (p && p.id != null) byId[p.id] = p; });
-  fresh.forEach(p => { byId[p.id] = p; });
-  return setCustomPrograms(Object.keys(byId).map(k => byId[k]));
+   path and the sync path have to agree about what "deleted" means.
+
+   TWO THINGS CHANGED 2026-08-31, and the old comment here said the opposite of
+   both. Spec:
+   docs/superpowers/specs/2026-08-31-custom-program-tombstones-design.md
+
+   1. It said "adding a definition can never destroy one, so no confirm". This
+      path can now REMOVE a program: a tombstone the FILE brings wins, which is
+      the "deleted anywhere means deleted" rule reconcileCustomPrograms already
+      applies on the Firestore path. Bringing the import path into line with
+      the sync path is the whole point. Still no confirm -- MERGE IMPORT
+      already refuses a file whose rbts_owner names someone else -- but the
+      caller must SAY what it removed.
+
+   2. "NOTHING TO DO" IS A REAL ANSWER AND BOTH CALLERS DEPEND ON IT: a null keeps
+      the import alert quiet and, in the PWA, skips the cloud push. What changed on
+      2026-08-31 is only how it is DECIDED. It used to mean "the file carried no
+      list", which is the trap -- a device that deletes its only custom program
+      exports an EMPTY list and a non-empty tombstone map, and that early return
+      discarded the deletion. It now means "neither the list nor the tombstone map
+      actually moved", which is the question the callers were always asking.
+
+   The rule itself is programMergeImport in rbts_reports.js, shared with
+   fitness_app.html and tested under node with mutation checks; this function
+   is only the storage around it.
+
+   Returns { list, tombstones, added, removed }, or null when nothing applies.
+   NOTE the shape change: it used to return the merged ARRAY. */
+export function mergeCustomPrograms(incoming, incomingTombs) {
+  const res = RBTS_REPORTS.programMergeImport(
+    getCustomPrograms(), getCustomProgramTombstones(), incoming, incomingTombs);
+  if (!res.changed) return null;
+  setCustomPrograms(res.list);
+  setCustomProgramTombstones(res.tombstones);
+  return res;
 }
 
 /* WHICH PROGRAM IS ACTIVE, across a rebuild of PROGRAMS.
@@ -1519,6 +1544,15 @@ export function resolveProgIdx(prevPrograms, nextPrograms, prevIdx) {
 export function deleteCustomProgram(id) {
   const kept = getCustomPrograms().filter(p => p.id !== id);
   try { localStorage.setItem(CUSTOM_PROG_KEY, JSON.stringify(kept)); } catch (e) {}
+  /* The tombstone is what makes the deletion PROPAGATE -- without it the other
+     device still holds the program, the union puts it back, and deleting is an
+     operation that silently undoes itself.
+
+     MOVED HERE FROM removeCustom on 2026-08-31. At the call site a second
+     caller can forget it; here it cannot. fitness_app.html now matches. */
+  const tombs = getCustomProgramTombstones();
+  tombs[String(id)] = Date.now();
+  setCustomProgramTombstones(tombs);
   for (let i = PROGRAMS.length - 1; i >= 0; i--)
     if (PROGRAMS[i].id === id && PROGRAMS[i].custom) PROGRAMS.splice(i, 1);
 }

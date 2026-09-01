@@ -516,7 +516,13 @@
   // Keys that become per-profile (namespaced rbts_<id>_<base>):
   var SCOPED_BASES = ["log", "draft", "startDate", "schedule", "progIdx", "gear"];
   // Keys that stay GLOBAL (shared across profiles):
+  /* rbts_customProgramsTombstones is here for the RECORD: this list has no
+     consumer -- it is exported and nothing reads it -- so an omission changes
+     no behaviour, which is exactly why it would go unnoticed. The tombstone map
+     is global for the same reason the program list is: a deletion is not a
+     per-profile opinion. Added 2026-08-31. */
   var GLOBAL_KEYS = ["rbts_customBands", "rbts_hiddenBrands", "rbts_customPrograms",
+                     "rbts_customProgramsTombstones",
                      "rbts_customExercises",
                      "rbts_profiles", "rbts_activeProfile", "rbts_schemaMigrated"];
   var FLAT = {  // legacy flat keys we migrate FROM

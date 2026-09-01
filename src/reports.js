@@ -572,6 +572,148 @@
     return { map: out, added: added, updated: updated, fields: fields };
   }
 
+  /* ── Custom-program tombstones ───────────────────────────────────────────
+     Spec: docs/superpowers/specs/2026-08-31-custom-program-tombstones-design.md
+
+     A deletion has to survive an IMPORT, not only a sync. reconcileCustomPrograms
+     (metaReconcile.js) has carried tombstones on the Firestore path since
+     2026-08-07, but fitness_app.html merged by id with the file winning
+     unconditionally, so MERGE IMPORT of any backup taken before a deletion
+     brought the program back. The two apps disagreed about what "deleted"
+     means. These three functions are the shared rule both apps now call.
+
+     THE INVARIANT, and it is the one thing to assert on any change here:
+
+         no program in `list` is ever named in `tombstones`
+
+     which falls out of one sentence: ON A MERGE THE DELETION WINS, ON A
+     REPLACE THE FILE WINS. A merge unions the tombstones and drops every
+     tombstoned id from the merged list. A replace takes the file's list and
+     drops any tombstone that list contradicts -- which is what makes REPLACE
+     ALL of a pre-deletion backup a real undo, and it is the only undo offered.
+
+     Pure: no DOM, no localStorage, no app globals, and no argument is ever
+     mutated. Each app supplies its own storage.
+
+     No per-program timestamps are needed, for the reason reconcileCustomPrograms
+     already records: ids are "c" + Date.now() and there is NO edit path
+     (saveCustomProgram only appends, deleteCustomProgram only removes), so a
+     given id's content is immutable and a tombstone wins unconditionally. IF AN
+     EDIT PATH IS EVER ADDED, THIS IS THE FIRST THING THAT HAS TO CHANGE. */
+
+  /* Object.create(null), not {}. Program ids are user-influenced data arriving
+     from imported files, so "constructor" and "__proto__" must be answered by
+     THIS map and not by Object.prototype -- otherwise `String(id) in tombs`
+     reports a tombstone for an id nobody deleted and silently removes it.
+     Same reason reconcileCustomPrograms gives for its own byId map.
+
+     finitePos, not isFinite: isFinite(null) and isFinite("100") are both true.
+     A tombstone with no usable date is not evidence of a deletion. */
+  function tombMap(m) {
+    var out = Object.create(null);
+    if (!m || typeof m !== "object" || Array.isArray(m)) return out;
+    var own = Object.prototype.hasOwnProperty, k;
+    for (k in m) {
+      if (own.call(m, k) && finitePos(m[k])) out[k] = m[k];
+    }
+    return out;
+  }
+
+  /* Union. On a shared id the LATER deletion wins: the two sides are two
+     devices, and the newer stamp is the more recent statement of intent. */
+  function mergeProgramTombstones(a, b) {
+    var out = tombMap(a), inc = tombMap(b), k;
+    for (k in inc) {
+      if (!(k in out) || inc[k] > out[k]) out[k] = inc[k];
+    }
+    return out;
+  }
+
+  /* MERGE IMPORT. Additive on programs, file wins on a shared id -- unchanged
+     -- and then the deletions apply, from EITHER side.
+
+     Returns { list, tombstones, added, removed, changed }. `added` and
+     `removed` exist so the alert can say what happened: this path can now REMOVE a program,
+     which the old comment ("adding a definition can never destroy one") was
+     right to say it could not, and a removal the user is not told about is the
+     failure mode this project has already paid for twice.
+
+     NOTE FOR THE CALLERS: both apps used to open with
+       if (!Array.isArray(incoming) || !incoming.length) return null;
+     That guard is correct only while the list is the sole input. A device that
+     deletes its ONLY custom program exports an empty list and a NON-EMPTY
+     tombstone map, so the early return would discard the deletion -- the exact
+     resurrection this work exists to stop. The guard must mean "nothing to do",
+     never "no list". */
+  function programMergeImport(localList, localTombs, fileList, fileTombs) {
+    var tombs = mergeProgramTombstones(localTombs, fileTombs);
+    var mine = Array.isArray(localList) ? localList : [];
+    var theirs = Array.isArray(fileList) ? fileList : [];
+    var byId = Object.create(null), order = [], i, p, id;
+    var srcs = [mine, theirs], s;
+    for (s = 0; s < srcs.length; s++) {
+      for (i = 0; i < srcs[s].length; i++) {
+        p = srcs[s][i];
+        if (!p || p.id == null) continue;
+        id = String(p.id);
+        if (id in tombs) continue;            // deleted anywhere = deleted
+        if (!(id in byId)) order.push(id);
+        byId[id] = p;                         // second source (the file) wins
+      }
+    }
+    var list = order.map(function (k) { return byId[k]; });
+    var had = Object.create(null);
+    for (i = 0; i < mine.length; i++) {
+      if (mine[i] && mine[i].id != null) had[String(mine[i].id)] = true;
+    }
+    var added = order.filter(function (k) { return !(k in had); });
+    var removed = Object.keys(had).filter(function (k) { return !(k in byId); });
+    /* `changed` is the whole of "is there anything to write". BOTH apps return
+       null from their wrapper when it is false, and both callers depend on
+       that: it keeps the import alert quiet and, in the PWA, skips the cloud
+       push. It lives here rather than in each app because two functions
+       resolving one question in two places will drift -- the explicitKeys
+       defect and the gearPathDeltaIn divergence both started that way.
+
+       Compared on the DEFINITIONS, not on the id list. A shared id resolves
+       file-wins, which replaces the object while leaving the ids identical, so
+       an id-only fingerprint would call a real content change "unchanged" and
+       skip the write. A NEW tombstone for a program this device never held
+       counts too: the map still has to be stored and pushed. */
+    var sameList = JSON.stringify(mine.filter(function (p) {
+      return p && p.id != null;
+    })) === JSON.stringify(list);
+    var sameTombs = JSON.stringify(tombMap(localTombs)) === JSON.stringify(tombs);
+    return { list: list, tombstones: tombs, added: added, removed: removed,
+             changed: !(sameList && sameTombs) };
+  }
+
+  /* REPLACE ALL, which means "make this device look like the file".
+
+     fileCarriesTombs is a separate boolean rather than a null check, because
+     "the file carries an empty map" and "the file carries no map at all" are
+     different facts and only the caller can tell them apart. A device that has
+     never deleted anything exports {} and must be believed; a backup written
+     before this key existed carries nothing and must NOT wipe tombstones
+     written since. That is the same rule rbts_customBands, rbts_customPrograms
+     and rbts_hiddenBrands already follow on this path.
+
+     Then every tombstone the file's own list contradicts is dropped: the file
+     asserts that program exists. Without this the program would come back in
+     the list while the map still named it deleted, and the next merge would
+     remove it again with nothing on screen saying why.
+
+     fitness_app.html only -- the PWA has no REPLACE ALL. Its import paths are
+     handleMergeImport, handleImportInventory and handleImportCustomEx. */
+  function programReplaceAll(fileList, fileTombs, localTombs, fileCarriesTombs) {
+    var list = (Array.isArray(fileList) ? fileList : []).filter(function (p) {
+      return p && p.id != null;
+    });
+    var tombs = tombMap(fileCarriesTombs ? fileTombs : localTombs);
+    list.forEach(function (p) { delete tombs[String(p.id)]; });
+    return { list: list, tombstones: tombs };
+  }
+
   /* Total inches this gear set adds to (+) or removes from (-) the stretch the
      band must cover. Mirrors gearPathDeltaIn in fitness_app.html; kept here so
      the module stays self-contained and testable. */
@@ -5400,6 +5542,9 @@
     bandGeomRestEdit: bandGeomRestEdit,
     bandGeomPointEdit: bandGeomPointEdit,
     mergeBandGeom: mergeBandGeom,
+    mergeProgramTombstones: mergeProgramTombstones,
+    programMergeImport: programMergeImport,
+    programReplaceAll: programReplaceAll,
     gearPathDelta: gearPathDelta,
     gearOpeningOptions: gearOpeningOptions,
     gearIsAdjustable: gearIsAdjustable,
