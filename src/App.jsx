@@ -2125,7 +2125,13 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     const seed = (carryBands) => initSets(id, progDefaultSets(prog), gearItemsFor(id), carryBands)
     const stored = exercises[id]
     if (!stored) return seed()
-    if (!RBTS_REPORTS.isGearConditional(id)) return stored
+    /* NOT gated on isGearConditional. That gate was here for "minimal blast
+       radius" and it was the bug Greg hit on 2026-09-01: exercise 63 Pallof
+       Press is on the UNCONDITIONAL list, so it exited here and a card already
+       sitting in the draft from before the rule changed could never pick up
+       L/R. Every id is considered; an exercise whose wanted sidedness already
+       matches its shape falls through untouched two lines below, which is
+       every ordinary bilateral lift. */
     const have = RBTS_REPORTS.seedState(stored, progDefaultSets(prog))
     if (!have) return stored
     const want = RBTS_REPORTS.isUnilateral(id, gearItemsFor(id)) ? 'sided' : 'bilateral'
