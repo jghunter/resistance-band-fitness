@@ -2424,8 +2424,13 @@
   /* There is NO `dumbbell` gear type: inferGearType has no rule for it and
      GEAR_CATALOG has no such item, so a free-typed "Dumbbells" is typed
      `other`. Matching the NAME as well as the type is what makes the rule work
-     for gear nobody has modelled. */
-  var GEAR_SIDED_RE = /dumb\s*-?bell|kettle\s*-?bell/i;
+     for gear nobody has modelled -- and because the name is hand-typed by
+     whoever added the item, it has to survive how people actually type it:
+     the one-b misspelling "dumbell", and the "DB"/"KB" abbreviations, both of
+     which read as a BAR under a stricter pattern and silently gave the wrong
+     answer. `\b` on the abbreviations keeps them from matching inside a word.
+     Widened after the final review, 2026-09-01. */
+  var GEAR_SIDED_RE = /dumb\s*-?b?ells?\b|kettle\s*-?bells?\b|\bdbs?\b|\bkbs?\b/i;
 
   /* `items` is RESOLVED inventory objects, not the stored gear ids -- the
      stored array is ids alone and carries no type. An id that no longer
