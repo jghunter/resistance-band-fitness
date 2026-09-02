@@ -260,11 +260,12 @@ const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
 // ── Per-side (L/R) seeding ──
 // The rule lives in RBTS_REPORTS so both apps share ONE copy and node can test
 // it — see rbts_reports.js and test_unilateral_gear.cjs. EX_UNILATERAL is
-// structural (always L/R); EX_UNILATERAL_IF_HANDLES seeds L/R only when the
-// exercise's picked gear is handles or dumbbells, because on a bar the two
-// sides operate as one (Greg, 2026-09-01). Alternating moves (105, 132) are
+// structural (always L/R). EX_UNILATERAL_BY_GEAR is three-state: a bar means
+// the sides operate as one, handles or dumbbells mean they are independent,
+// and with nothing recorded the exercise's own default applies — separate for
+// the wrist work, where the band is usually held directly in the hands, and
+// together for 48 and 165 (Greg, 2026-09-01). Alternating moves (105, 132) are
 // excluded from both — both sides happen inside one set.
-const isUnilateral = (id, gearItems) => RBTS_REPORTS.isUnilateral(id, gearItems)
 /* Seed the program's prescribed set count, not one, and a REAL rir value.
    initSets used to seed exactly ONE set, so the analyzer's 10-sets/week
    landmarks could never be satisfied and UNDER fired forever. rir was left
@@ -272,8 +273,9 @@ const isUnilateral = (id, gearItems) => RBTS_REPORTS.isUnilateral(id, gearItems)
    and READY was decided purely on rep count. Empty sets are still dropped on
    save (setHasData), so seeding three costs nothing.
    gearItems is OPTIONAL — absent, a gear-conditional exercise seeds bilateral. */
-const initSets = (id, n, gearItems) =>
-  RBTS_REPORTS.seedRows(id, n, gearItems, () => ({reps:0, bands:[], rir:RIR_TARGET}))
+const initSets = (id, n, gearItems, carryBands) =>
+  RBTS_REPORTS.seedRows(id, n, gearItems,
+    () => ({reps:0, bands:(carryBands || []).slice(), rir:RIR_TARGET}))
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
@@ -2109,12 +2111,26 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
      — so re-derive it too while it is still blank. Once a rep is typed
      rowsUntouched goes false and the stored sets come back unchanged, which is
      why a gear change can never disturb logged data. */
+  /* Reshape the card when the gear says the sidedness changed -- but only
+     while nothing is LOGGED, and carrying the picked bands across. A band is
+     equipment selection, not logged work: requiring empty bands here made the
+     feature unreachable, because picking a band is the first thing anyone
+     does on a card (Greg, in the browser, 2026-09-01). Reps, partials,
+     segments, a tapped side chip, a + SET, a removed set or a per-set flag all
+     make seedState return null and the stored rows are returned untouched
+     forever after -- which is why a gear change can never disturb logged work.
+     The want !== have test matters: reshaping when the shape is already right
+     would rebuild the rows every render and collapse per-side band choices. */
   function getOrInit(id) {
-    const seed = () => initSets(id, progDefaultSets(prog), gearItemsFor(id))
+    const seed = (carryBands) => initSets(id, progDefaultSets(prog), gearItemsFor(id), carryBands)
     const stored = exercises[id]
     if (!stored) return seed()
-    if (RBTS_REPORTS.isGearConditional(id) && RBTS_REPORTS.rowsUntouched(stored)) return seed()
-    return stored
+    if (!RBTS_REPORTS.isGearConditional(id)) return stored
+    const have = RBTS_REPORTS.seedState(stored, progDefaultSets(prog))
+    if (!have) return stored
+    const want = RBTS_REPORTS.isUnilateral(id, gearItemsFor(id)) ? 'sided' : 'bilateral'
+    if (want === have) return stored
+    return seed(RBTS_REPORTS.seedBandsOf(stored))
   }
   function updateEx(id, sets) { onExercisesChange({...exercises, [id]:sets}) }
   function addEx(id) {

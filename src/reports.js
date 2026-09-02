@@ -2356,7 +2356,7 @@
      hooked to the band. Alternating moves (105 Walking Lunge, 132 Alternating
      Hammer Curl) are excluded on purpose -- both sides happen inside one set.
 
-     EX_UNILATERAL_IF_HANDLES depends on the EQUIPMENT, which is Greg's ruling
+     EX_UNILATERAL_BY_GEAR depends on the EQUIPMENT, which is Greg's ruling
      of 2026-09-01: "if using a bar then the left and right sides operate as
      one, but when using handles or dumbbells they are individually left and
      right." Wrist pronation on a bar is one movement -- both hands are on the
@@ -2382,17 +2382,44 @@
    220, 222                // side plank row, bird dog (per-side)
   ].forEach(function (id) { EX_UNILATERAL[id] = true; });
 
-  /* 163 is absent DELIBERATELY -- it is on the unconditional list above.
-     166 Band Farmer's Carry Hold is absent DELIBERATELY too: it is held in
-     both hands at once even when those hands are on handles, so per-side rows
-     would be noise. The side chip still covers a suitcase carry. */
-  var EX_UNILATERAL_IF_HANDLES = {};
-  [48,                     // band lateral raise -- defaults to BOTH arms together
-   157, 158,               // wrist curl, reverse wrist curl
-   159, 160,               // radial deviation, ulnar deviation
-   161, 162,               // wrist pronation, wrist supination
-   164, 165                // grip crush, reverse curl (forearm focus)
-  ].forEach(function (id) { EX_UNILATERAL_IF_HANDLES[id] = true; });
+  /* The gear-conditional group, each carrying the answer for when NO gear is
+     recorded at all. Three states, not two (Greg, 2026-09-01, after testing
+     161 in the browser):
+
+         a bar             -> TOGETHER. Both hands are on one rigid object and
+                              it turns as a unit.
+         handles/dumbbells -> SEPARATE. Two independent efforts.
+         nothing recorded  -> the exercise's own default, below.
+
+     The third state is what the first implementation got wrong. It applied
+     48's default -- together -- to the whole group, and 48 is the exception,
+     not the rule: "these only occasionally use any gear that would give away
+     whether or not it's separate or together, only consider if using
+     handles/dumbbells that it should be separate, otherwise default to
+     together" (Greg, on 48 specifically). For the wrist and hand work the
+     opposite holds, because the common case is the band held DIRECTLY in the
+     hands with no gear in the path at all -- and that is one hand at a time.
+
+     Anything else in the path (a footplate, an anchor, a belt) says nothing
+     either way, so it falls through to the default too.
+
+     163 Finger Extension is absent DELIBERATELY -- it is on the unconditional
+     list, always one hand whatever is held. 166 Band Farmer's Carry Hold is
+     absent DELIBERATELY too: it is held in both hands at once even when those
+     hands are on handles, so per-side rows would be noise. The side chip still
+     covers a suitcase carry. */
+  var EX_UNILATERAL_BY_GEAR = {
+    48:  "bilateral",   // band lateral raise -- usually both arms on the band itself
+    157: "sided",       // wrist curl
+    158: "sided",       // reverse wrist curl
+    159: "sided",       // radial deviation
+    160: "sided",       // ulnar deviation
+    161: "sided",       // wrist pronation
+    162: "sided",       // wrist supination
+    164: "sided",       // grip crush -- one hand crushes
+    165: "bilateral"    // reverse curl (forearm focus) -- a curl on a band held
+                        // in both hands is a two-handed movement
+  };
 
   /* There is NO `dumbbell` gear type: inferGearType has no rule for it and
      GEAR_CATALOG has no such item, so a free-typed "Dumbbells" is typed
@@ -2414,16 +2441,28 @@
     return false;
   }
 
-  function isGearConditional(id) { return !!EX_UNILATERAL_IF_HANDLES[Number(id)]; }
-
-  /* gearItems is OPTIONAL. Absent or empty, a conditional exercise reads as
-     bilateral -- the documented default for 48, and the right answer for a
-     wrist exercise with no gear recorded. */
-  function isUnilateral(id, gearItems) {
-    var n = Number(id);
-    if (EX_UNILATERAL[n]) return true;
-    if (EX_UNILATERAL_IF_HANDLES[n]) return gearIsSided(gearItems);
+  /* A bar in the path is the one positive signal that the sides move as one. */
+  function gearHasBar(items) {
+    var arr = items || [], i;
+    for (i = 0; i < arr.length; i++) if (arr[i] && arr[i].type === "bar") return true;
     return false;
+  }
+
+  function isGearConditional(id) {
+    return EX_UNILATERAL_BY_GEAR[Number(id)] !== undefined;
+  }
+
+  /* gearItems is OPTIONAL. Absent or empty, a gear-conditional exercise falls
+     to its own default in EX_UNILATERAL_BY_GEAR -- together for 48 and the
+     reverse curl, separate for the wrist and hand work, where the common case
+     is the band held directly in the hands. */
+  function isUnilateral(id, gearItems) {
+    var n = Number(id), def = EX_UNILATERAL_BY_GEAR[n];
+    if (EX_UNILATERAL[n]) return true;
+    if (def === undefined) return false;
+    if (gearIsSided(gearItems)) return true;    // handles or dumbbells
+    if (gearHasBar(gearItems)) return false;    // one rigid object, one movement
+    return def === "sided";                     // nothing recorded -> the default
   }
 
   /* "Nothing has been logged into this card yet", which is what makes it safe
@@ -2442,6 +2481,72 @@
       if (s.partials) return false;
     }
     return true;
+  }
+
+  /* What shape is this card in, and is it still safe to RESHAPE from the gear
+     currently picked? Returns "bilateral", "sided", or null for do-not-touch.
+
+     Two bugs live in the history of this function and both are worth keeping
+     in view, because they pull in opposite directions.
+
+     1. rowsUntouched ALONE WAS TOO LOOSE. It inspects only reps, bands,
+        segments and partials, so it stayed true after a side chip was tapped,
+        after + SET (whose new row seeds reps:0, bands:[]), and after a set was
+        removed -- and the caller then discarded the stored array and re-seeded
+        on the very next render, the one the write itself triggers. On the nine
+        gear-conditional ids the side chip was inert, + SET did nothing, and
+        removing a set snapped back. Hence the row-count and side-pattern
+        checks below.
+
+     2. REQUIRING EMPTY BANDS WAS TOO STRICT, and it made the whole feature
+        unreachable. Greg added 161 in TODAY, picked a band, then picked
+        handles, and the card never changed -- because the band read as "you
+        have started logging". Picking a band is EQUIPMENT SELECTION and it is
+        the first thing anyone does on a card; typing reps is logging. So bands
+        do not disqualify a reshape, and seedBandsOf carries them across it.
+        Found in his browser, 2026-09-01, after the suite was green.
+
+     The caller must ALSO check that the wanted sidedness differs from the
+     returned one before reshaping. Reshaping when the shape is already right
+     would rewrite the rows every render, and would collapse per-side band
+     choices onto whichever side came first. */
+  function seedState(sets, n) {
+    var arr = sets, count = Math.max(1, n || 1), i, s;
+    if (!arr || !arr.length) return null;
+    for (i = 0; i < arr.length; i++) {
+      s = arr[i] || {};
+      if (s.reps > 0) return null;
+      if (s.partials) return null;
+      if (Array.isArray(s.segments)) return null;
+      if (s.drop === true) return null;
+      if (s.doubled) return null;
+      if (s.intensifier && s.intensifier !== "straight") return null;
+    }
+    if (arr.length === count) {
+      for (i = 0; i < arr.length; i++) if (arr[i] && arr[i].side) return null;
+      return "bilateral";
+    }
+    if (arr.length === count * 2) {
+      for (i = 0; i < arr.length; i++) {
+        if (!arr[i] || arr[i].side !== (i % 2 === 0 ? "L" : "R")) return null;
+      }
+      return "sided";
+    }
+    return null;
+  }
+
+  /* The band stack to carry across a reshape: the first non-empty one on the
+     card. A reshape only runs while nothing is logged and only when the
+     sidedness actually changes, so at most one distinct stack is in play --
+     the moment two sides carry different bands the shape already matches the
+     gear and seedState's caller leaves the rows alone. */
+  function seedBandsOf(sets) {
+    var arr = sets || [], i, b;
+    for (i = 0; i < arr.length; i++) {
+      b = (arr[i] || {}).bands;
+      if (b && b.length) return b.slice();
+    }
+    return [];
   }
 
   /* Decides the L/R SHAPE only. `mk` builds one row in the CALLING FORM's
@@ -5684,12 +5789,15 @@
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
     seededSetCount: seededSetCount,
     EX_UNILATERAL: EX_UNILATERAL,
-    EX_UNILATERAL_IF_HANDLES: EX_UNILATERAL_IF_HANDLES,
+    EX_UNILATERAL_BY_GEAR: EX_UNILATERAL_BY_GEAR,
+    gearHasBar: gearHasBar,
     GEAR_SIDED_RE: GEAR_SIDED_RE,
     gearIsSided: gearIsSided,
     isGearConditional: isGearConditional,
     isUnilateral: isUnilateral,
     rowsUntouched: rowsUntouched,
+    seedState: seedState,
+    seedBandsOf: seedBandsOf,
     seedRows: seedRows,
     substituteCandidates: substituteCandidates,
     standingSubsFor: standingSubsFor,
