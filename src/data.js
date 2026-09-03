@@ -132,6 +132,19 @@ export const EXERCISE_NAMES = {
      (Band Face Pull) and 236 with 43 (Standing Band Overhead Press), so each
      lands in the first band of the other's substitute list. */
   235:"Bent-Over Face Pull", 236:"Z Press",
+  /* ── Shoulder alternatives (2026-09-03) ──────────────────────────────────
+     Ten movements Greg brought back after a session that exposed shoulders as
+     his weakest area, most of them picked because they load the delt without
+     the positions that hurt. Nine come from ONE ATHLEAN-X band-shoulder video
+     (NtaPROZOcmM), each with its own clip window; 239 is an Instagram reel.
+     All ten are SHOULDERS, so substituteCandidates puts them in the FIRST
+     band for any shoulder lift already scheduled -- which is the point: no
+     program had to change for them to be reachable. */
+  237:"Lying One-Arm Press",     238:"Push Press Pull-Aparts",
+  239:"Front Raise Pull-Aparts", 240:"Stretch Front Raise",
+  241:"Kneeling Up and Overs",   242:"Short Arc Lateral Raise",
+  243:"Cross Body Lateral Raise",244:"Bent Over Rear Delt Pull",
+  245:"Banded High Pull",        246:"Hip Huggers",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +231,7 @@ export const VIDEOS = {
   48: {url:"https://www.youtube.com/watch?v=gfEyrmxbCbw", start:29, end:59},
   49:"https://www.youtube.com/shorts/xz9q5DUiC3I",
   50:"https://www.youtube.com/watch?v=NtaPROZOcmM",
-  51:"https://www.youtube.com/watch?v=cyihFNmsq-A",
+  51:"https://www.youtube.com/watch?v=I2RyubW9UsM",   // replaced cyihFNmsq-A 2026-09-03 (Greg visual): that clip was a tubular band with handles, not a loop band, and 39 had already been moved off it for the same reason
   52:"https://www.youtube.com/watch?v=NtaPROZOcmM",
   53: {url:"https://www.youtube.com/watch?v=0IOLRTdvzSM", start:46, end:100},
   54: {url:"https://www.youtube.com/watch?v=0IOLRTdvzSM", start:24, end:45},
@@ -405,6 +418,26 @@ export const VIDEOS = {
   /* No clip window on either: neither has been timed. Both play whole. */
   235:{url:"https://www.youtube.com/watch?v=2NZuRdHC9v0"},
   236:{url:"https://www.youtube.com/watch?v=cx8A2AKF_c8"},
+  /* Shoulder alternatives, 2026-09-03. Nine of the ten share ONE clip -- the
+     ATHLEAN-X band shoulder video -- each windowed to its own segment, so
+     WATCH DEMO opens on the movement instead of at the top of a 13-exercise
+     reel. Windows are Greg's, read off the video.
+     239 is an Instagram reel: resolveVideo finds no YouTube id in it, returns
+     embedUrl null, and WatchDemoButton falls back to a plain link that opens
+     in a new tab -- the same path 226's Jaquish page takes.
+     240 plays WHOLE by decision, not by omission (Greg, 2026-09-03): it is its
+     own video rather than a segment of the 13-exercise reel, so there is
+     nothing to trim past. Do not "finish" it by adding a window. */
+  237:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:95,  end:130},  // 1:35-2:10
+  238:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:137, end:160},  // 2:17-2:40
+  239:{url:"https://www.instagram.com/reels/DVo5cZckmRh/"},
+  240:{url:"https://www.youtube.com/watch?v=--Z-GbvQf6U"},
+  241:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:164, end:190},  // 2:44-3:10
+  242:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:317, end:344},  // 5:17-5:44
+  243:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:350, end:380},  // 5:50-6:20
+  244:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:459, end:517},  // 7:39-8:37
+  245:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:400, end:427},  // 6:40-7:07
+  246:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:428, end:453},  // 7:08-7:33
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1654,6 +1687,15 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   /* 235/236, 2026-08-20. Past 234 the id-range table returns MOBILITY, so the
      group is explicit. 235 matches 33 (BACK), 236 matches 43 (SHOULDERS). */
   235: GROUP_META.BACK,      236: GROUP_META.SHOULDERS,
+  /* Shoulder alternatives, 2026-09-03. All ten are SHOULDERS, and past 234
+     the id-range table returns MOBILITY, so every one needs its entry here --
+     without it they would be filed as mobility work and never offered as a
+     substitute for the shoulder lift they exist to replace. */
+  237: GROUP_META.SHOULDERS, 238: GROUP_META.SHOULDERS,
+  239: GROUP_META.SHOULDERS, 240: GROUP_META.SHOULDERS,
+  241: GROUP_META.SHOULDERS, 242: GROUP_META.SHOULDERS,
+  243: GROUP_META.SHOULDERS, 244: GROUP_META.SHOULDERS,
+  245: GROUP_META.SHOULDERS, 246: GROUP_META.SHOULDERS,
   // Panel recommendation 20 — classification errors, fixed 2026-07-30.
   // 37/38 are hip hinges: the hamstrings and glutes do the work and the back
   // holds an isometric position. Sitting in the BACK id range credited their
@@ -1671,7 +1713,14 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   231: "iso", 232: "iso", 233: "iso", 234: "iso",
   /* 235 is single-joint like the face pull it derives from. 236 is a
      multi-joint press, like 43. */
-  235: "iso", 236: "comp" };
+  235: "iso", 236: "comp",
+  /* Shoulder alternatives, 2026-09-03. The four comps are overhead presses or
+     a high pull -- multi-joint, matching 43/44/46/56. The six isos are raises
+     and rear-delt work, matching 47/48/51. The split matters beyond bookkeeping:
+     substituteCandidates' first band is same group AND same class, so an iso
+     offered for an iso is the swap Greg is actually looking for. */
+  237: "comp", 238: "comp", 239: "iso",  240: "iso", 241: "comp",
+  242: "iso",  243: "iso",  244: "iso",  245: "comp", 246: "iso" };
 
 export const exGroup = (id) => {
   id = Number(id);

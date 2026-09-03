@@ -2379,7 +2379,12 @@
    163,                    // finger extension -- the band is round ONE hand's fingers
    169,                    // single-leg calf raise
    217,                    // split squat (belt)
-   220, 222                // side plank row, bird dog (per-side)
+   220, 222,               // side plank row, bird dog (per-side)
+   /* Shoulder alternatives, 2026-09-03. Only these two of the ten are one arm
+      at a time: 237 anchors the band under ONE leg and presses with the arm on
+      that side, and 243 starts with the band drawn across the body so only the
+      far arm can abduct. The other eight are both arms at once. */
+   237, 243                // lying one-arm press, cross body lateral raise
   ].forEach(function (id) { EX_UNILATERAL[id] = true; });
 
   /* The gear-conditional group, each carrying the answer for when NO gear is
@@ -5631,8 +5636,8 @@
      This table holds ONLY the exercises whose movement disagrees with their
      muscle group's day under `push_pull`. It is deliberately small: measured
      against the real catalog, muscle routing is already correct for about 90%
-     of 236 exercises, and 81 of them (planks, crunches, dead bugs, isometric
-     neck holds, mobility) have no push/pull meaning at all. Tagging all 236
+     of 246 exercises, and 81 of them (planks, crunches, dead bugs, isometric
+     neck holds, mobility) have no push/pull meaning at all. Tagging all 246
      would invent data for a third of them.
 
      A curated table rather than a heuristic, on the BELT_EXTENDERS precedent:
@@ -5648,7 +5653,16 @@
        the exercise-id counterpart of the band-id stability rule. Both need the
        entry -- omitting 223 would leave a stale log entry on the wrong day. */
     "223": "pull",   // Band Lying Y-Raise   (SHOULDERS -> push day)
-    "233": "pull"    // Band Lying Y-Raise   (SHOULDERS -> push day)
+    "233": "pull",   // Band Lying Y-Raise   (SHOULDERS -> push day)
+    /* Shoulder alternatives, 2026-09-03. Three of the ten move the band TOWARD
+       the body and so disagree with the SHOULDERS push day. The other seven --
+       the presses and the front/lateral raises -- push it away and are already
+       routed correctly, which is why they are absent rather than tagged
+       "push". 246 is here on the 56 Band Upright Row precedent: the hands drag
+       up the body into abduction, the same shape of pull. */
+    "244": "pull",   // Bent Over Rear Delt Pull (SHOULDERS -> push day)
+    "245": "pull",   // Banded High Pull         (SHOULDERS -> push day)
+    "246": "pull"    // Hip Huggers              (SHOULDERS -> push day)
   };
 
   /* Resolve one exercise's day. Returns `muscleDayKey` unchanged unless the
