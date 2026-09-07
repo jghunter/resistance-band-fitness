@@ -1327,9 +1327,13 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
            into the table lookup. Passing the raw item fabricates a reach.
 
            The landmark list comes from what sits at the band's TOP end: a
-           racked bar can terminate at the shoulder, a belt never does. One
-           fixed list served both rigs until 2026-08-10, which is why a front
-           squat was offered three landmarks and none of them the answer.
+           BELT is worn at the waist and terminates at neither the chest nor
+           the shoulder, every other rig can reach both. One fixed list served
+           both rigs until 2026-08-10, which is why a front squat was offered
+           three landmarks and none of them the answer; the shoulder was then
+           bar-only until 2026-09-07, which is why a hammer curl on HANDLES had
+           the same three and the same problem. CHEST joined the same day, when
+           135 Drag Curl turned out to end there.
            Guarded: reports.js is generated and lags rbts_reports.js between
            syncs, and an absent list falls back to the belt keys, not a throw. */
         const top = RBTS_REPORTS.plateTopSpan(sel, gearOf)
@@ -3935,12 +3939,16 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
             Floor to each landmark, standing, in inches. Used ONLY by lifts that run a
             band under a footplate or off a belt, to work out how far the band has to
             stretch. Leave them blank and those lifts stay RATED rather than guessed.
-            With bands alone, nothing reads these. SHOULDER (BAR) is MID-shoulder,
+            With bands alone, nothing reads these. SHOULDER is MID-shoulder,
             where a racked bar actually bears — about 2in below the top of the shoulder.
+            Read by front-squat-pattern lifts and by standing curls, which finish at the
+            same height. CHEST is MID-chest, the nipple line — a drag curl ends there, and
+            two other curls finish halfway between it and the shoulder.
           </div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
             {[['kneeHeightIn','KNEE'],['midThighHeightIn','MID-THIGH'],
-              ['hipHeightIn','HIP'],['shoulderHeightIn','SHOULDER (BAR)'],
+              ['hipHeightIn','HIP'],['chestHeightIn','CHEST'],
+              ['shoulderHeightIn','SHOULDER'],
               ['handsAtRestIn','HANDS AT REST'],
               ['bodyWidthIn','WIDTH']].map(f => (
               <div key={f[0]} style={{display:'flex',flexDirection:'column',gap:2}}>

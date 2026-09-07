@@ -946,11 +946,28 @@
      shoulder, which is ~2in higher. It is added 2026-08-10 for the racked-squat
      family and is deliberately NOT offered on a belt rig: a belt never sits
      there, and one fixed list served both paths until this change, which is why
-     a front squat was offered three landmarks and none of them the answer. */
+     a front squat was offered three landmarks and none of them the answer.
+
+     It serves the STANDING CURLS too since 2026-09-07 -- the same number, read
+     for a different reason: a racked squat terminates there because the bar
+     rides on the shoulder all rep, a curl because that is where the hands
+     finish. The 2in matters equally on both, so the profile field is labelled
+     SHOULDER with the mid-shoulder meaning spelled out, not "SHOULDER (BAR)" as
+     it read while squats were the only reader.
+
+     CHEST is MID-chest, the nipple line. It arrived 2026-09-07 as a TABLE INPUT
+     ONLY -- 140 Waiter's and 141 Cross-Body interpolate from it, and the
+     handsAtRestIn rule applied: offering a button nothing terminates at would
+     always be a little wrong. It became a BUTTON later the same day, when Greg
+     ruled that 135 Drag Curl ends AT the chest: something does terminate there
+     now, so withholding it would reproduce the very defect this day's work
+     started from -- a rig whose real answer is not among the options. Like the
+     shoulder it is NOT offered on a belt rig. */
   var BODY_LANDMARKS = [
     { k: "kneeHeightIn",     l: "KNEE" },
     { k: "midThighHeightIn", l: "MID-THIGH" },
     { k: "hipHeightIn",      l: "HIP" },
+    { k: "chestHeightIn",    l: "CHEST" },
     { k: "shoulderHeightIn", l: "SHOULDER" }
   ];
 
@@ -959,12 +976,24 @@
   var BELT_LANDMARK_KEYS = ["kneeHeightIn", "midThighHeightIn", "hipHeightIn"];
 
   /* Which landmarks a rig may attach at, from what sits at the band's TOP end
-     (plateTopSpan's `kind`). A bar gets all four ON PURPOSE: a deadlift on a bar
-     terminates at the hip and a front squat on the same bar at the shoulder, so
-     the EXERCISE decides via PLATE_GRIP_DEFAULT, not the gear. */
+     (plateTopSpan's `kind`). Everything except a BELT gets all four ON PURPOSE:
+     a deadlift on a bar terminates at the hip and a front squat on the same bar
+     at the shoulder, so the EXERCISE decides via PLATE_GRIP_DEFAULT, not the
+     gear. A belt is the one rig with a STRUCTURAL reason to be excluded -- a
+     belt is worn at the waist and never sits at the shoulder, whatever the
+     movement.
+
+     INVERTED 2026-09-07, from the same reasoning that added the shoulder in the
+     first place. It was written as "bar only" when the only exercises that
+     needed it were racked squats, so `handles` and `none` returned the belt
+     three. Greg reported 131 Hammer Curl, which runs off HANDLES: the top of
+     every standing curl is the shoulder, and the picker was not offering it, so
+     the height stayed blank and the set stamped a degraded RATED. Excluding
+     handles was never a fact about handles -- it was the bar list not yet
+     having been generalised. */
   function attachLandmarkKeys(topKind) {
-    if (topKind === "bar") return BELT_LANDMARK_KEYS.concat(["shoulderHeightIn"]);
-    return BELT_LANDMARK_KEYS;
+    if (topKind === "belt") return BELT_LANDMARK_KEYS;
+    return BELT_LANDMARK_KEYS.concat(["chestHeightIn", "shoulderHeightIn"]);
   }
 
   function beltPlateOf(gearIds, gearOf) {
@@ -1260,7 +1289,71 @@
     97:  { at: "shoulderHeightIn" },   // Band Squat
     98:  { at: "shoulderHeightIn" },   // Front Squat (Band)
     101: { at: "shoulderHeightIn" },   // Narrow-Stance Band Squat
-    113: { at: "shoulderHeightIn" }    // Cyclist Squat (Heels Elevated)
+    113: { at: "shoulderHeightIn" },   // Cyclist Squat (Heels Elevated)
+    /* THE STANDING-CURL family, added 2026-09-07. Greg reported 131 Hammer
+       Curl: the top of the rep is the shoulder, the picker was not even
+       offering that landmark (see attachLandmarkKeys, inverted the same day),
+       and with no default the height sat blank and the set stamped RATED.
+
+       The SAME `shoulderHeightIn` the racked squats read -- MID-shoulder, not
+       the top of the shoulder. A curl and a front squat terminate at the same
+       height for different reasons: the squat because the bar rides there all
+       rep, the curl because that is where the hands finish.
+
+       SEVEN exercises terminate at the shoulder: SIX named by Greg 2026-09-07,
+       plus 138 Zottman confirmed the same day on a second pass. */
+    129: { at: "shoulderHeightIn" },   // Standing Bicep Curl
+    130: { at: "shoulderHeightIn" },   // Alternating Curl
+    131: { at: "shoulderHeightIn" },   // Hammer Curl
+    132: { at: "shoulderHeightIn" },   // Alternating Hammer Curl
+    134: { at: "shoulderHeightIn" },   // Reverse Curl
+    138: { at: "shoulderHeightIn" },   // Zottman Curl
+    142: { at: "shoulderHeightIn" },   // Supinated Straight-Bar Curl
+    /* TWO finish HALFWAY BETWEEN CHEST AND SHOULDER -- Greg, 2026-09-07, for
+       both. This is the first use of the interpolating {from,to,frac} shape
+       outside the hinge family, and the reason chestHeightIn exists at all:
+       there was no landmark between the hip and the shoulder, so "halfway to
+       the chest" was not expressible and the only candidates were the shoulder
+       (too high) or nothing.
+
+       frac 0.5 reads FROM chest TO shoulder, so it needs BOTH measured. An
+       unmeasured chest withholds the default rather than falling back to the
+       shoulder -- the usual rule: a missing input degrades visibly instead of
+       substituting a plausible wrong one. */
+    140: { from: "chestHeightIn", to: "shoulderHeightIn", frac: 0.5 }, // Waiter's Curl
+    141: { from: "chestHeightIn", to: "shoulderHeightIn", frac: 0.5 }, // Cross-Body Curl
+    /* AT the chest, not between it and anything -- Greg, 2026-09-07, once the
+       measurement existed to say it with. The elbows drive BACK and the bar
+       drags up the torso, so the hands finish at mid-chest and stop.
+
+       This is the FIRST rule to terminate exactly at chestHeightIn, and that
+       fact moved the landmark into the picker: CHEST was a table input only
+       while nothing ended there (the handsAtRestIn rule -- offering a button
+       nothing terminates at would always be a little wrong). A drag curl ends
+       there exactly, so withholding the button would reproduce the original
+       2026-09-07 defect one landmark down: a default the picker cannot
+       express, unfixable by hand once cleared. */
+    135: { at: "chestHeightIn" }        // Drag Curl
+    /* THE REST OF THE BICEPS RANGE IS ABSENT ON PURPOSE, and each absence is
+       its own fact rather than one blanket "unconfirmed":
+
+         139 21s -- STRUCTURALLY inexpressible, not merely unconfirmed. Greg,
+             2026-09-07: "by design [it] starts and stops at different points
+             during the exercise". The lift is three ranges in one set -- bottom
+             half, top half, then full -- so there is no single top of the rep
+             for attachHeightIn to be. A default here would not be a guess that
+             might be wrong; it would be a category error, pricing one of three
+             ranges as though it were the set. Left blank so the user picks the
+             range they care about, or takes the honest RATED degradation.
+         133 Concentration, 136 Incline, 137 Preacher, 143 Spider -- seated or
+             prone (Greg confirmed 2026-09-07). You cannot stand on a footplate
+             to do them, so there is no plate rig for a default to answer.
+
+       135 Drag Curl was the fifth absence until the chest landmark arrived. It
+       is the case that justifies enumerating this list rather than taking the
+       BICEPS id range 129-143: three different answers came out of ten standing
+       curls -- shoulder, chest, and the midpoint between them -- and a range
+       would have given all ten the first one. */
   };
 
   function plateGripDefault(exId, body) {

@@ -315,15 +315,15 @@ export const VIDEOS = {
   132:"https://www.youtube.com/watch?v=l6OlwHmll3w",
   133:"https://www.youtube.com/watch?v=uej9usJAIUw",
   134:"https://www.youtube.com/watch?v=FVCmVLwRNe0",
-  135:"https://www.youtube.com/watch?v=c9sY_1EXyvk",
+  135:"https://www.youtube.com/shorts/Itj4mRNhSRA",
   136:"https://www.youtube.com/shorts/ko7iYb4eVR8",
   137:"https://www.youtube.com/watch?v=x9QWH_1AbP8",
-  138:"https://www.youtube.com/watch?v=oXAMW-LNX_Q",
-  139:"https://www.youtube.com/watch?v=ro1zBaXaOMg",
-  140:"https://www.youtube.com/watch?v=U7p90HpfpQQ",
+  138:"https://www.youtube.com/shorts/9mz-T6jk35U",
+  139:"https://www.youtube.com/watch?v=i18jvfDPgrs",
+  140:"https://www.youtube.com/watch?v=0k6z9BKGReg",
   141:"https://www.youtube.com/watch?v=b_lGhdrvac4",
   142:"https://www.youtube.com/watch?v=PXLF19Oqe3M",
-  143:"https://www.youtube.com/watch?v=FVCmVLwRNe0",
+  143:"https://www.youtube.com/shorts/s39z6mc55cc",
   144:"https://www.youtube.com/watch?v=qjPN6ElNqpc",
   145:"https://www.youtube.com/watch?v=Yi_zNoIsNcc",
   146:"https://www.youtube.com/watch?v=a5rUdCeTtSE",
@@ -2501,7 +2501,8 @@ export function bodyMeasureNum(v) {
 /* Split out of the IIFE for the same reason as readTrainingStyle above. */
 function readBodyMeasure() {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
-                   shoulderHeightIn: null, handsAtRestIn: null, bodyWidthIn: null }
+                   chestHeightIn: null, shoulderHeightIn: null,
+                   handsAtRestIn: null, bodyWidthIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2513,6 +2514,12 @@ function readBodyMeasure() {
       midThighHeightIn: num(p.midThighHeightIn),
       hipHeightIn:      num(p.hipHeightIn),
       shoulderHeightIn: num(p.shoulderHeightIn),
+      /* Floor to MID-CHEST, standing -- the nipple line (2026-09-07). Read by
+         135 Drag Curl, which ends AT it, and by 140 and 141, which finish
+         halfway between it and the shoulder.
+         This function only READS; the BODY MEASUREMENTS panel in App.jsx
+         writes it through saveTrainingStyle, same as every other field here. */
+      chestHeightIn:    num(p.chestHeightIn),
       /* Floor to the hands, STANDING with the arms straight down (2026-08-14,
          for the shrug). Read-only here, like every other profile field in this
          app -- it is edited in fitness_app.html's TRAINING STYLE panel. */
