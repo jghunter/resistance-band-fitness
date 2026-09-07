@@ -1403,6 +1403,68 @@
     return plateGripDefault(exId, body);
   }
 
+  /* WHAT THE LOOP'S TOP CROSSES ON A SINGLED HANDLE RIG, keyed by EXERCISE id.
+
+     This closes limitation 6 for the exercises listed and ONLY those.
+
+     THE MISSING INPUT WAS NEVER THE ARITHMETIC. `beltReach` needs one number
+     for the top end: a belt supplies bodyWidthIn, a bar supplies its
+     attachSpanIn, and handles supplied nothing -- so effectiveLoad refused with
+     "a singled band on handles is not modelled". That refusal was correct as a
+     blanket rule and wrong for a whole family: the original reasoning is that
+     handles "travel AWAY FROM THE BODY through the rep, so the span between
+     them is not constant", which is true of a fly or a lateral raise and NOT
+     true of a curl, where the hands stay at the sides for the whole rep.
+
+     Greg, 2026-09-07: on a standing curl the band runs up both sides with a
+     handle in each hand, so the loop's top crosses the BODY -- the identical
+     geometric case the belt path has always modelled. Hence `at: "bodyWidthIn"`
+     rather than a new measurement: nothing new to tape, and the two paths
+     cannot drift because they read the same field.
+
+     Sensitivity, measured before this was written: sweeping the span from 10in
+     to 30in moves strain only 0.805 -> 1.049 on Greg's rig, every value inside
+     the rated window. One inch of span costs half an inch of stretch, because
+     the term is halved for the two strands. So this wants a right number, not
+     a precise one -- but the 30% spread across that sweep is the same error
+     class as the belt bug, which is why it is confirmed rather than assumed.
+
+     SAME POSTURE AS PLATE_GRIP_DEFAULT: absent means REFUSE, not guess. A fly,
+     a lateral raise and an upright row genuinely do change width mid-rep and
+     stay refused, which is the behaviour this table preserves rather than
+     overrides. The ten here are exactly the ten standing curls that resolve a
+     grip default -- 139 21s is deliberately in neither table. */
+  var HANDLE_TOP_SPAN = {
+    129: { at: "bodyWidthIn" },   // Standing Bicep Curl
+    130: { at: "bodyWidthIn" },   // Alternating Curl
+    131: { at: "bodyWidthIn" },   // Hammer Curl
+    132: { at: "bodyWidthIn" },   // Alternating Hammer Curl
+    134: { at: "bodyWidthIn" },   // Reverse Curl
+    135: { at: "bodyWidthIn" },   // Drag Curl
+    138: { at: "bodyWidthIn" },   // Zottman Curl
+    140: { at: "bodyWidthIn" },   // Waiter's Curl
+    141: { at: "bodyWidthIn" },   // Cross-Body Curl
+    142: { at: "bodyWidthIn" }    // Supinated Straight-Bar Curl
+  };
+
+  /* The span for one exercise, or null when this rig is still not modelled.
+
+     Returns null two different ways ON PURPOSE, and the caller tells them apart
+     so the user is never sent to re-measure something that was fine:
+       exercise absent   -> the rig genuinely is not modelled (unchanged)
+       field unmeasured  -> the rig IS modelled, an input is missing
+     `has` exists for exactly that, because a null return cannot carry a reason. */
+  function handleTopSpan(exId, body) {
+    if (!body) return null;
+    var rule = HANDLE_TOP_SPAN[String(exId)];
+    if (!rule) return null;
+    var v = body[rule.at];
+    return finitePos(v) ? v : null;
+  }
+  function handleTopSpanKnown(exId) {
+    return HANDLE_TOP_SPAN[String(exId)] != null;
+  }
+
   /* The day the plate/grip path shipped. Stamps are frozen at save time, so a
      workout logged before this carries a number the current model would not
      produce -- exactly like era:"pre-fold", except that nothing needs
@@ -1926,8 +1988,20 @@
           }
           topSpanIn = top.spanIn;
         } else if (top.kind === "handles") {
-          out.basis = "plate setup: a singled band on handles is not modelled";
-          return out;
+          /* Limitation 6, closed for the exercises in HANDLE_TOP_SPAN and only
+             those. Two distinct refusals, so nobody re-measures a body width
+             that was never the problem -- the same courtesy the belt and bar
+             branches above already extend. */
+          if (!handleTopSpanKnown(o.exId)) {
+            out.basis = "plate setup: a singled band on handles is not modelled";
+            return out;
+          }
+          var hSpan = handleTopSpan(o.exId, ctx.body);
+          if (hSpan == null) {
+            out.basis = "handle setup: body width not measured (a singled band spans it)";
+            return out;
+          }
+          topSpanIn = hSpan;
         } else {
           out.basis = "plate setup: nothing recorded for the band to terminate in";
           return out;
@@ -5899,6 +5973,9 @@
     attachClearMarker: attachClearMarker,
     BELT_ATTACH_DEFAULT: BELT_ATTACH_DEFAULT,
     PLATE_GRIP_DEFAULT: PLATE_GRIP_DEFAULT,
+    HANDLE_TOP_SPAN: HANDLE_TOP_SPAN,
+    handleTopSpan: handleTopSpan,
+    handleTopSpanKnown: handleTopSpanKnown,
     seededSetCount: seededSetCount,
     EX_UNILATERAL: EX_UNILATERAL,
     EX_UNILATERAL_BY_GEAR: EX_UNILATERAL_BY_GEAR,
