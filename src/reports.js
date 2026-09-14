@@ -749,6 +749,11 @@
          belt exercise to 0 lb. Belt setups are modelled by beltReach /
          beltStretch, which need nothing from the belt at all. */
       if (t === "belt")      return a;
+      /* A bench is an elevation in the PRESS path and nowhere else. Its pad
+         height is consumed by pressTerms explicitly, so leaving it on the
+         catch-all branch below would apply it a second time as a thickness.
+         Same reasoning as the belt, one line up. */
+      if (t === "bench")     return a;
       return a + 2 * (d.thicknessIn || 0) - (d.seriesIn || 0);
     }, 0);
   }
@@ -1001,6 +1006,20 @@
     for (var i = 0; i < gearIds.length; i++) {
       var g = gearOf(gearIds[i]);
       if (g && g.type === "footplate") return g;
+    }
+    return null;
+  }
+
+  /* A bench in the rig. Its own gear type since 2026-09-14: a bench is an
+     elevation in the PRESS path only, consumed there explicitly. Left on
+     gearPathDelta's catch-all branch its pad height would be read as a
+     series length and applied a second time -- the belt's 40in waist
+     circumference all over again. */
+  function pressBenchOf(gearIds, gearOf) {
+    if (!gearIds || !gearOf) return null;
+    for (var i = 0; i < gearIds.length; i++) {
+      var g = gearOf(gearIds[i]);
+      if (g && g.type === "bench") return g;
     }
     return null;
   }
@@ -1465,6 +1484,201 @@
     return HANDLE_TOP_SPAN[String(exId)] != null;
   }
 
+  /* ── THE PRESS BAND PATH ───────────────────────────────────────────────
+     A chest press ends at full arm extension, not at a height above the
+     floor. Greg reported exercise 3 asking for a HIGHEST POINT on
+     2026-09-14; the row's only gate was "a footplate is present" and it
+     never consulted the exercise.
+
+     The geometry is beltReach's, with three terms supplied differently:
+     what pins the band, what spans the top, and how far the top travels.
+     See docs/superpowers/specs/2026-09-14-press-band-path-design.md.
+
+     `strands: 1` is exercise 5 ALONE and it is not a detail. Every other
+     press has two strands travelling, which is why reach divides by two.
+     With one strand the division is wrong and the PINNED strand's length
+     becomes a term nothing else needs.
+
+     ABSENT MEANS REFUSE. 16 Band Squeeze Press, the flies and 13 Pullover
+     sweep the arms in an arc, so the hand span moves through the rep and
+     the model has no term for it -- the same exclusion HANDLE_TOP_SPAN
+     already makes. The overhead presses 43-46 are simply out of scope and
+     nothing is guessed for them. */
+  var PRESS_SETUPS_ALL  = ["body", "plate", "bench"];
+  var PRESS_SETUPS_BODY = ["body"];
+  var PRESS_SETUP_LABELS = {
+    body:  "BAND AROUND THE BODY",
+    plate: "LYING ON THE FOOTPLATE",
+    bench: "BENCH ON THE FOOTPLATE"
+  };
+  var PRESS_EXERCISES = {
+    1:  { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
+    2:  { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
+    3:  { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
+    4:  { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
+    5:  { setups: PRESS_SETUPS_ALL,  span: null,              strands: 1,
+          pinned: "singleArmHoldIn" },
+    6:  { setups: PRESS_SETUPS_BODY, span: "shoulderWidthIn", strands: 2 },
+    7:  { setups: PRESS_SETUPS_BODY, span: "shoulderWidthIn", strands: 2 },
+    8:  { setups: PRESS_SETUPS_BODY, span: "shoulderWidthIn", strands: 2 },
+    14: { setups: PRESS_SETUPS_ALL,  span: "closeGripSpanIn", strands: 2 },
+    /* No wideGripSpanIn field exists. A wide-grip press always carries a
+       bar, so the span is the bar's attachSpanIn and a hand measurement
+       would never be read (Greg, 2026-09-14). With no bar it REFUSES --
+       shoulder width is not a wide grip, and a plausible wrong number is
+       worse than a refusal that names itself. */
+    15: { setups: PRESS_SETUPS_ALL,  span: null,              strands: 2,
+          barOnly: true },
+    18: { setups: PRESS_SETUPS_BODY, span: "shoulderWidthIn", strands: 2 },
+    19: { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
+    20: { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 }
+  };
+
+  function pressExercise(exId) {
+    return PRESS_EXERCISES[String(exId)] || null;
+  }
+  function pressSetupOptions(exId) {
+    var rule = pressExercise(exId);
+    if (!rule) return [];
+    return rule.setups.map(function (k) {
+      return { k: k, l: PRESS_SETUP_LABELS[k] };
+    });
+  }
+  /* The ONE reader both the picker and effectiveLoad consult, so they can
+     never disagree about whether this exercise has a floor height. Two
+     readers of one fact is the 2026-08-14 defect and the 2026-09-07 one. */
+  function attachRowApplies(exId) {
+    return pressExercise(exId) == null;
+  }
+
+  /* What spans the top. A bar WINS: the band ends on the bar's hook points,
+     not in the palms, so the grip is irrelevant whenever one is in the rig
+     (Greg, 2026-09-14). Only with no bar does the exercise's own hand span
+     apply. Returns spanIn null with a basis naming the reason, never a
+     substituted number. */
+  function pressSpan(exId, body, gearIds, gearOf) {
+    var rule = pressExercise(exId);
+    if (!rule) return { spanIn: null, basis: "not a press" };
+    if (rule.strands === 1) return { spanIn: 0, basis: "one strand: nothing spans the top" };
+    var top = plateTopSpan(gearIds, gearOf);
+    if (top.kind === "bar") {
+      if (finitePos(top.spanIn)) return { spanIn: top.spanIn, basis: "the bar's attach span" };
+      return { spanIn: null, basis: "press setup: this bar's attach span is not measured" };
+    }
+    if (rule.barOnly) {
+      return { spanIn: null,
+               basis: "press setup: a wide grip with no bar is not modelled" };
+    }
+    if (!body) return { spanIn: null, basis: "press setup: body measurements not set" };
+    var v = body[rule.span];
+    if (!finitePos(v)) {
+      return { spanIn: null,
+               basis: "press setup: " + PRESS_FIELD_LABELS[rule.span] + " not measured" };
+    }
+    return { spanIn: v, basis: "the hand span" };
+  }
+
+  var PRESS_FIELD_LABELS = {
+    shoulderWidthIn:  "shoulder width",
+    torsoWidthIn:     "torso width",
+    chestThicknessIn: "chest depth",
+    pressReachIn:     "press reach",
+    closeGripSpanIn:  "close grip span",
+    singleArmHoldIn:  "single-arm hold"
+  };
+
+  /* What pins the band, and how far the top travels. Either may be null,
+     and the basis names the SPECIFIC field that is missing -- blaming the
+     wrong input is how someone re-measures a band that was fine. */
+  function pressTerms(exId, setupK, body, plateDims, bandPath, benchDims) {
+    var rule = pressExercise(exId);
+    var out = { consumedIn: null, travelIn: null,
+                strands: rule ? rule.strands : 2, basis: "" };
+    if (!rule) { out.basis = "not a press"; return out; }
+    if (!body) { out.basis = "press setup: body measurements not set"; return out; }
+
+    /* consumed */
+    if (setupK === "body") {
+      if (!finitePos(body.torsoWidthIn)) {
+        out.basis = "press setup: " + PRESS_FIELD_LABELS.torsoWidthIn + " not measured";
+        return out;
+      }
+      out.consumedIn = body.torsoWidthIn;
+    } else {
+      if (!plateDims) { out.basis = "press setup: no footplate in this rig"; return out; }
+      if (!bandPath || !finitePos(bandPath.consumedIn)) {
+        out.basis = "press setup: this footplate does not offer the recorded band path";
+        return out;
+      }
+      out.consumedIn = bandPath.consumedIn;
+    }
+
+    /* travel */
+    if (!finitePos(body.chestThicknessIn)) {
+      out.basis = "press setup: " + PRESS_FIELD_LABELS.chestThicknessIn + " not measured";
+      out.consumedIn = null; return out;
+    }
+    if (!finitePos(body.pressReachIn)) {
+      out.basis = "press setup: " + PRESS_FIELD_LABELS.pressReachIn + " not measured";
+      out.consumedIn = null; return out;
+    }
+    var travel = body.chestThicknessIn + body.pressReachIn;
+    if (setupK === "bench") {
+      var pad = benchDims ? benchDims.benchPadHeightIn : null;
+      if (!finitePos(pad)) {
+        out.basis = "press setup: the bench pad height is not measured";
+        out.consumedIn = null; return out;
+      }
+      travel += pad;
+    }
+    out.travelIn = travel;
+    out.basis = "press geometry";
+    return out;
+  }
+
+  /* The band's own top at zero stretch. Two strands divide by two, exactly
+     as beltReach does. ONE strand does not, and instead subtracts the
+     length of the strand that never moves. */
+  function pressReach(band, geom, exId, setupK, doubled, body, gearIds, gearOf,
+                      plateDims, bandPath, benchDims) {
+    var rule = pressExercise(exId);
+    if (!rule || !band || !body) return null;
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : (band.lengthIn || 0);
+    if (!rest) return null;
+    var d = doubled ? 2 : 1;
+    var usableC = 2 * rest / d;
+    var terms = pressTerms(exId, setupK, body, plateDims, bandPath, benchDims);
+    if (terms.consumedIn == null) return null;
+
+    if (rule.strands === 1) {
+      var pinned = body[rule.pinned];
+      if (!finitePos(pinned)) return null;
+      var r1 = usableC - terms.consumedIn - pinned;
+      return r1 > 0 ? r1 : null;
+    }
+    /* Doubled, the fold is what the hands hold, so nothing spans the top --
+       the same zero beltReach already applies. */
+    var span = 0;
+    if (!doubled) {
+      var sp = pressSpan(exId, body, gearIds, gearOf);
+      if (sp.spanIn == null) return null;
+      span = sp.spanIn;
+    }
+    var r = (usableC - terms.consumedIn - span) / 2;
+    return r > 0 ? r : null;
+  }
+
+  /* The elongation. Null at or below reach: there is no stretch there, and
+     reporting 0 lb as though it were a load is the failure this whole model
+     replaces. */
+  function pressStretch(reach, travelIn) {
+    if (reach == null || !isFinite(reach)) return null;
+    if (!finitePos(travelIn)) return null;
+    var s = travelIn - reach;
+    return s > 0 ? s : null;
+  }
+
   /* The day the plate/grip path shipped. Stamps are frozen at save time, so a
      workout logged before this carries a number the current model would not
      produce -- exactly like era:"pre-fold", except that nothing needs
@@ -1533,6 +1747,22 @@
     return !!p && Math.abs(p.consumedIn - legacy) > 1e-9;
   }
 
+  /* The day the press band path shipped. Same posture as PLATE_GEOM_CUTOFF
+     and BAND_PATH_CUTOFF: DERIVED from the entry's own date and exercise id
+     every time it is read, so nothing is written to the log and there is no
+     write path to get wrong.
+
+     Unlike the plate cutoff this needs no gear check. Every one of the
+     thirteen presses reprices -- there is no sub-case that computes
+     identically before and after -- so the exercise id alone is the whole
+     test. */
+  var PRESS_MODEL_CUTOFF = "2026-09-14";
+
+  function stampPredatesPressModel(dateISO, exId) {
+    if (!dateISO || String(dateISO) >= PRESS_MODEL_CUTOFF) return false;
+    return pressExercise(exId) != null;
+  }
+
   /* The exercise card (item q + this task) surfaces three things about a
      load figure that a printed report was silently omitting: it is a PEAK,
      not an average; some figures were computed with no range of motion at
@@ -1553,7 +1783,7 @@
       "near-slack at the bottom of a hinge and hardest at lockout, so a set can " +
       "feel far lighter than its peak.");
     var sawRomBlind = false, sawPreFold = false, sawPrePlate = false,
-        sawPreBandPath = false;
+        sawPreBandPath = false, sawPrePress = false;
     (entries || []).forEach(function (e) {
       if (!e) return;
       Object.keys(e.load || {}).forEach(function (exId) {
@@ -1567,6 +1797,7 @@
         if (stampPredatesBandPath(e.date, (e.gear || {})[exId], gearOf, exId)) {
           sawPreBandPath = true;
         }
+        if (stampPredatesPressModel(e.date, exId)) sawPrePress = true;
       });
     });
     if (sawRomBlind) {
@@ -1589,6 +1820,11 @@
         "the WHOLE plate whether or not it was rigged that way. The current " +
         "model consumes about 2in less band on the plates that have since " +
         "been measured, so it prices those sets LIGHTER.");
+    }
+    if (sawPrePress) {
+      notes.push("Some chest-press figures here were frozen before the press " +
+        "band path existed. Those stamps priced the band at a fixed reference " +
+        "stretch, or degraded for want of a floor height a press does not have.");
     }
     return notes;
   }
@@ -1888,6 +2124,124 @@
                 belowRated: false, aboveRated: false, romBlind: false };
     if (!ids.length) return out;
 
+    /* ---- press path: a chest press has no floor height -----------------
+       Taken BEFORE the plate branch, because a press on a footplate and a
+       bar would otherwise satisfy knownAttach and be asked for an
+       attachment height it does not have. opts.attachHeightIn is
+       deliberately NOT consulted here: a stray value from an entry saved
+       before this path existed must never steer the answer. */
+    var pressRule = pressExercise(o.exId);
+    if (pressRule) {
+      var setupK = o.pressSetup;
+      if (!setupK && pressRule.setups.length === 1) setupK = pressRule.setups[0];
+      if (!setupK) {
+        out.basis = "press setup: no press setup recorded";
+        return out;
+      }
+      if (pressRule.setups.indexOf(setupK) < 0) {
+        out.basis = "press setup: this exercise does not offer the recorded setup";
+        return out;
+      }
+      var pPlateDims = null, pBandPath = null, pBenchDims = null;
+      if (setupK !== "body") {
+        var pPlateItem = beltPlateOf(gearIds, ctx.gearOf);
+        if (!pPlateItem) {
+          out.basis = "press setup: no footplate in this rig";
+          return out;
+        }
+        pPlateDims = resolveGearDims(pPlateItem);
+        pBandPath = plateBandPathOf(pPlateItem, o.bandPath);
+        if (!pBandPath) {
+          out.basis = "press setup: this footplate does not offer the recorded band path";
+          return out;
+        }
+      }
+      if (setupK === "bench") {
+        var benchItem = pressBenchOf(gearIds, ctx.gearOf);
+        if (!benchItem) {
+          out.basis = "press setup: no bench in this rig";
+          return out;
+        }
+        pBenchDims = resolveGearDims(benchItem);
+      }
+      var pSpan = pressSpan(o.exId, ctx.body, gearIds, ctx.gearOf);
+      if (pSpan.spanIn == null && !o.doubled && pressRule.strands === 2) {
+        out.basis = pSpan.basis;
+        return out;
+      }
+      var pTerms = pressTerms(o.exId, setupK, ctx.body, pPlateDims, pBandPath, pBenchDims);
+      if (pTerms.travelIn == null) {
+        out.basis = pTerms.basis;
+        return out;
+      }
+      var lbP = 0, refP = 0, anyP = false, allMeasuredP = true,
+          minStrainP = Infinity, maxStrainP = 0, firstStretchP = null,
+          anyClampedP = false;
+      ids.forEach(function (id) {
+        var b = ctx.bandOf ? ctx.bandOf(id) : null;
+        if (!b) return;
+        var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
+        var reachP = pressReach(b, geom, o.exId, setupK, o.doubled, ctx.body,
+                                gearIds, ctx.gearOf, pPlateDims, pBandPath, pBenchDims);
+        var sP = pressStretch(reachP, pTerms.travelIn);
+        if (sP == null) return;
+        anyP = true;
+        if (firstStretchP == null) firstStretchP = sP;
+        var restP = (isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+          ? geom.restLengthIn : (b.lengthIn || 0);
+        var strainP = restP ? (d * sP / restP) : 0;
+        if (strainP < minStrainP) minStrainP = strainP;
+        if (strainP > maxStrainP) maxStrainP = strainP;
+        var ptsP = sanitizeMeasuredPoints(geom.measured);
+        var enoughP = ptsP.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
+        var bracketsP = enoughP && ptsP[0].stretchIn <= d * sP &&
+                        ptsP[ptsP.length - 1].stretchIn >= d * sP;
+        if (!bracketsP) allMeasuredP = false;
+        if (enoughP && !bracketsP) anyClampedP = true;
+        lbP  += d * bandForceAt(b, d * sP, geom);
+        refP += d * bandMid(b);
+      });
+      if (!anyP) {
+        out.basis = "press setup: no band in this stack can be rigged for this press";
+        return out;
+      }
+      out.lb = lbP;
+      out.rated = refP;
+      out.ratio = refP ? (lbP / refP) : 1;
+      out.stretchIn = firstStretchP;
+      /* Provenance follows the PATH, not the plate -- same rule as the
+         belt/plate branch below (`plateSpanMeasured`). A footplate may carry
+         a taped figure for one band path and a computed one for another, so
+         "are this rig's dims verified" is the wrong question; the right one
+         is "did the user measure the way THIS band is rigged". The `body`
+         setup has no plate and so no band path at all. */
+      /* An empty gearIds is not UNVERIFIED gear, it is the ABSENCE of gear --
+         same fix as gearOK2 on the reference-strain path (~line 2564).
+         6, 7, 8 and 18 offer ONLY the body setup: the band wraps the torso
+         and nothing is rigged. Without this, gearDimsVerified's own guard
+         clause (`if (!gearIds.length) return false`) refused an empty list
+         outright, so those four exercises could never reach MEASURED
+         however good the force-scale readings were. */
+      var pGearOK = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
+      var pPathMeasured = !pBandPath || pBandPath.source === "measured";
+      out.provenance = (allMeasuredP && pGearOK && pPathMeasured)
+        ? "MEASURED" : "MODELED";
+      out.belowRated = minStrainP < LOAD_MODEL.STRAIN_AT_RATED_MIN;
+      out.aboveRated = maxStrainP > LOAD_MODEL.STRAIN_AT_RATED_MAX;
+      out.romBlind = false;
+      out.attachHeightIn = null;
+      out.pressSetupK = setupK;
+      if (pBandPath) {
+        out.bandPathK = pBandPath.k;
+        out.bandPathLabel = pBandPath.l;
+      }
+      out.basis = "press geometry: " + PRESS_SETUP_LABELS[setupK].toLowerCase() +
+        ", " + pSpan.basis +
+        (anyClampedP ? ", CLAMPED to the nearest force reading" : "") +
+        (o.doubled ? ". doubled" : "");
+      return out;
+    }
+
     /* ---- absolute-stretch path: footplate (+ optionally a belt) ---------
        The band's own geometry fixes where it reaches; the attachment/grip
        height fixes the gap. REF_STRAIN is never consulted here and
@@ -1936,7 +2290,13 @@
          beltAttachDefault already applies on the belt side. */
       var gripDefault = beltOn ? null
                         : plateGripDefaultFor(o.exId, ctx.body, gearIds, ctx.gearOf);
-      var knownAttach = beltOn || gripDefault != null || top.kind === "bar";
+      /* attachRowApplies is the ONE reader of "does this exercise have a
+         floor height", shared with both apps' pickers, so the engine and
+         the picker can never disagree. A press has returned above by now;
+         this guard is belt and braces for a caller that reaches here with
+         a press id by some other route. */
+      var knownAttach = attachRowApplies(o.exId) &&
+                        (beltOn || gripDefault != null || top.kind === "bar");
       if (knownAttach) {
       /* Wording only. The arithmetic below is one path; a reader looking at a
          degraded deadlift should not be told about a "belt setup". */
@@ -2289,7 +2649,8 @@
      its own basis rather than a number borrowed from a different model.
      MEASURED and MODELED share a tier: both are real loads on the same scale,
      and picking by provenance there would report a lighter set as the top. */
-  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening, bandPath) {
+  function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening, bandPath,
+                       pressSetup) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
@@ -2297,7 +2658,8 @@
       if (!bands.length) return;
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
-                              exId: exId, opening: opening, bandPath: bandPath });
+                              exId: exId, opening: opening, bandPath: bandPath,
+                              pressSetup: pressSetup });
       var tier = e.provenance === "RATED" ? 0 : 1;
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
@@ -2354,7 +2716,8 @@
      Note the persisted stamp writes `attachIn`, while the live effectiveLoad
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
-  function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap) {
+  function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap,
+                     pressSetupMap) {
     /* THROWS on a bad ctx. It used to `return undefined`, which is the wrong
        failure mode for this function: every caller is a SAVE path, and
        applyLoadStamp treats undefined as "there was nothing to stamp". So a
@@ -2396,7 +2759,9 @@
          must DEGRADE loudly in effectiveLoad rather than be quietly dropped to
          undefined here and degrade for a different stated reason. */
       var bandPathK = bandPathMap ? bandPathMap[exId] : undefined;
-      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN, bandPathK);
+      var pressSetupK = pressSetupMap ? pressSetupMap[exId] : undefined;
+      var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN, bandPathK,
+                             pressSetupK);
       if (!best) return;
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
@@ -2426,6 +2791,13 @@
                        it: the default priced the set, but nobody selected it,
                        and a stamp claiming otherwise would outlive the reason. */
                     bandPathK: (best.bandPathK && bandPathK) ? best.bandPathK : undefined,
+                    /* Frozen only when the press path ACTUALLY priced
+                       something AND a setup was supplied -- the same two
+                       halves bandPathK uses. An exercise that offers one
+                       setup resolves it internally and is not written back
+                       as though the user had chosen it. */
+                    pressSetupK: (best.pressSetupK && pressSetupK)
+                                 ? best.pressSetupK : undefined,
                     belowRated: best.belowRated || undefined,
                     romBlind: best.romBlind || undefined };
     });
@@ -5283,6 +5655,7 @@
     { k:"hookOffsetIn", l:"Hook offset",  hint:"grip axis to band bearing surface", types:["bar"] },
     { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
     { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","other"] },
+    { k:"benchPadHeightIn", l:"Bench pad height (in)", hint:"floor to the top of the pad", types:["bench"] },
   ];
   /* Bumped 2026-08-10. A stored `dims` copy carrying an older rev is discarded
      in favour of a fresh table lookup, so this string is the ONLY way a table
@@ -5961,6 +6334,7 @@
     BELT_LANDMARK_KEYS: BELT_LANDMARK_KEYS,
     attachLandmarkKeys: attachLandmarkKeys,
     beltPlateOf: beltPlateOf,
+    pressBenchOf: pressBenchOf,
     beltBeltPresent: beltBeltPresent,
     plateTopSpan: plateTopSpan,
     beltReach: beltReach,
@@ -5976,6 +6350,16 @@
     HANDLE_TOP_SPAN: HANDLE_TOP_SPAN,
     handleTopSpan: handleTopSpan,
     handleTopSpanKnown: handleTopSpanKnown,
+    PRESS_EXERCISES: PRESS_EXERCISES,
+    PRESS_SETUP_LABELS: PRESS_SETUP_LABELS,
+    PRESS_FIELD_LABELS: PRESS_FIELD_LABELS,
+    pressExercise: pressExercise,
+    pressSetupOptions: pressSetupOptions,
+    attachRowApplies: attachRowApplies,
+    pressSpan: pressSpan,
+    pressTerms: pressTerms,
+    pressReach: pressReach,
+    pressStretch: pressStretch,
     seededSetCount: seededSetCount,
     EX_UNILATERAL: EX_UNILATERAL,
     EX_UNILATERAL_BY_GEAR: EX_UNILATERAL_BY_GEAR,
@@ -6012,6 +6396,8 @@
        live card -- user-visible text that should not be able to drift. */
     loadCaveatNotes: loadCaveatNotes,
     BAND_PATH_CUTOFF: BAND_PATH_CUTOFF,
+    PRESS_MODEL_CUTOFF: PRESS_MODEL_CUTOFF,
+    stampPredatesPressModel: stampPredatesPressModel,
     GEAR_CATALOG: GEAR_CATALOG,
     gearCatalog: gearCatalog,
     gearCatalogItem: gearCatalogItem,
