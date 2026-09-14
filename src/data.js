@@ -2508,7 +2508,9 @@ export function bodyMeasureNum(v) {
 function readBodyMeasure() {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
                    chestHeightIn: null, shoulderHeightIn: null,
-                   handsAtRestIn: null, bodyWidthIn: null }
+                   handsAtRestIn: null, bodyWidthIn: null,
+                   shoulderWidthIn: null, torsoWidthIn: null, chestThicknessIn: null,
+                   pressReachIn: null, closeGripSpanIn: null, singleArmHoldIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2531,6 +2533,20 @@ function readBodyMeasure() {
          app -- it is edited in fitness_app.html's TRAINING STYLE panel. */
       handsAtRestIn:    num(p.handsAtRestIn),
       bodyWidthIn:      num(p.bodyWidthIn),
+      /* ── THE PRESS MEASUREMENTS, added 2026-09-14 ─────────────────────
+         A chest press ends at full arm extension, so it is priced by body
+         geometry rather than by a floor landmark. Same posture as the
+         seven above: default null, absent from PROFILE_DEFAULTS so they
+         are never backfilled, written through saveTrainingStyle so they
+         land on explicitKeys, guarded by the shared bodyMeasureNum.
+         torsoWidthIn is DELIBERATELY NOT bodyWidthIn -- see fitness_app.html's
+         BODY_MEASURE comment for why reusing it would be a silent error. */
+      shoulderWidthIn:  num(p.shoulderWidthIn),
+      torsoWidthIn:     num(p.torsoWidthIn),
+      chestThicknessIn: num(p.chestThicknessIn),
+      pressReachIn:     num(p.pressReachIn),
+      closeGripSpanIn:  num(p.closeGripSpanIn),
+      singleArmHoldIn:  num(p.singleArmHoldIn),
     }
   } catch (e) { return empty }
 }

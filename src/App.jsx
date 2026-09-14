@@ -3943,14 +3943,28 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
             where a racked bar actually bears — about 2in below the top of the shoulder.
             Read by front-squat-pattern lifts and by standing curls, which finish at the
             same height. CHEST is MID-chest, the nipple line — a drag curl ends there, and
-            two other curls finish halfway between it and the shoulder.
+            two other curls finish halfway between it and the shoulder. The last six are
+            for chest presses, which end at full arm extension rather than at a floor
+            landmark. SHOULDER WIDTH is across the shoulders and is the hand span on an
+            ordinary press. TORSO WIDTH is under the armpits with the arms out of the way
+            — it is the wrap around your back and is NOT the same as WIDTH above. CHEST
+            DEPTH is front to back at chest height. PRESS REACH is mid-shoulder to the
+            middle of your closed hand with the arm straight. CLOSE GRIP is hand centre to
+            hand centre at lockout on a close-grip press with no bar. SINGLE-ARM HOLD is
+            from your back to the middle of the hand that is NOT pressing.
           </div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
             {[['kneeHeightIn','KNEE'],['midThighHeightIn','MID-THIGH'],
               ['hipHeightIn','HIP'],['chestHeightIn','CHEST'],
               ['shoulderHeightIn','SHOULDER'],
               ['handsAtRestIn','HANDS AT REST'],
-              ['bodyWidthIn','WIDTH']].map(f => (
+              ['bodyWidthIn','WIDTH'],
+              ['shoulderWidthIn','SHOULDER WIDTH'],
+              ['torsoWidthIn','TORSO WIDTH'],
+              ['chestThicknessIn','CHEST DEPTH'],
+              ['pressReachIn','PRESS REACH'],
+              ['closeGripSpanIn','CLOSE GRIP'],
+              ['singleArmHoldIn','SINGLE-ARM HOLD']].map(f => (
               <div key={f[0]} style={{display:'flex',flexDirection:'column',gap:2}}>
                 <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{f[1]}</span>
                 <input type="number" step="0.25" min="0"
