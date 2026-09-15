@@ -3108,6 +3108,20 @@ function StrengthTab({ user, log, gearInv, myBands }) {
             ! beyond this method's validated rep range — the estimate still prints, marked
           </span>
         ) : null}
+        {/* WHAT THIS METHOD COULD NOT PRICE. Without this the table shows a
+            figure from weeks ago as though it were the latest: a set too long
+            for the chosen equation is refused, drops out of the series, and
+            EST. MAX silently falls back to the newest session that could be
+            estimated. Found in a browser 2026-09-15 on a 24-rep set under
+            Brzycki. The reason comes from the engine, so it names the method,
+            the rep count, and Lombardi as the way out. */}
+        {exRows.filter(r => r.oneRm.refusedN).map(r => (
+          <span key={r.id} style={{fontFamily:'monospace',fontSize:9,color:C.amber,display:'block',marginTop:8}}>
+            NOT ESTIMATED — {r.name}: {r.oneRm.refusedN} session(s) could not be
+            estimated, the most recent on {r.oneRm.refusedLastDate}. The EST. MAX
+            above is from the last session that could be. {r.oneRm.refusedBasis}
+          </span>
+        ))}
         <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
           Load = estimated band resistance (midpoint of each band's range; doubled/stacked bands summed). Volume = load × reps. Estimates for trend tracking, not exact poundage.
         </span>

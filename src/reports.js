@@ -3983,7 +3983,7 @@
       if (!sets || !sets.length) return;
       var ld = (e.load || {})[key] || {};
       if (!finitePos(ld.lb)) return;
-      var best = null;
+      var best = null, refusal = null;
       sets.forEach(function (s) {
         /* THE FIRST SEGMENT'S REPS, NOT setReps. setReps SUMS every segment,
            so a drop set of 8+6+4 arrives as 18 -- while `ld.lb` is the TOP
@@ -3993,15 +3993,47 @@
            convention setBands already uses for the working stack. */
         var seg = setSegments(s)[0] || {};
         var est = oneRepMax(ld.lb, seg.reps || 0, s ? s.rir : null, methodK);
-        if (est.refused) return;
+        if (est.refused) {
+          /* The FIRST refusal on the session is the one reported. They are
+             near enough identical within one session -- same method, same
+             load, rep counts a set or two apart -- and a list of seven
+             near-copies tells the reader nothing the first one did not. */
+          if (refusal == null) refusal = est;
+          return;
+        }
         if (best == null || est.lb > best.lb) best = est;
       });
-      if (!best) return;
+      /* A SESSION WHERE EVERY SET WAS REFUSED STAYS IN THE SERIES, marked,
+         carrying the reason. It used to be dropped outright -- `if (!best)
+         return;` -- and that was silent in the way this project refuses.
+
+         Found in a browser 2026-09-15 on a 24-rep set. Under Lombardi the
+         series had three rows ending 2026-09-12; under Brzycki it had ONE,
+         dated 2026-07-31, because both September sessions ran past Brzycki's
+         asymptote and vanished. The screen then reported a two-month-old
+         session as the current estimated max, divided `% OF MAX` by a stale
+         load, and said nothing. Worse, the refusal basis -- which names the
+         method, the rep count and Lombardi as the way out -- was written,
+         discarded one line later, and could not be reached from either app.
+
+         Long sets are the NORMAL case on bands, so this is not an edge: it
+         fires on ordinary training as soon as the reader picks Brzycki,
+         which the picker recommends for matching other calculators.
+
+         `estMax: null` is what marks the row. Every consumer filters through
+         computedRows() below, so a refused row can never be mistaken for a
+         number -- but it can be COUNTED and REPORTED, which is the point. */
+      if (!best && !refusal) return;
       rows.push({
-        date: e.date, estMax: best.lb, topLb: ld.lb,
-        outOfRange: best.outOfRange, noRir: best.noRir,
+        date: e.date, estMax: best ? best.lb : null, topLb: ld.lb,
+        outOfRange: best ? best.outOfRange : false,
+        noRir: best ? best.noRir : !!(refusal && refusal.noRir),
         provenance: ld.provenance || "RATED", romBlind: !!ld.romBlind,
-        pctOfMax: null
+        pctOfMax: null,
+        refused: !best,
+        refusedBasis: best ? null : (refusal ? refusal.basis : null),
+        repsToFailure: best ? best.repsToFailure
+                            : (refusal ? refusal.repsToFailure : null)
       });
     });
     rows.sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
@@ -4009,10 +4041,42 @@
        a row read out of the series means the same thing the summary does. */
     var running = null;
     rows.forEach(function (r) {
+      /* A refused row carries no estimate, so it can neither raise the
+         running best nor be expressed as a percentage of it. It keeps
+         pctOfMax null and leaves `running` where the last real estimate
+         put it. */
+      if (r.estMax == null) return;
       if (running == null || r.estMax > running) running = r.estMax;
       r.pctOfMax = running ? (r.topLb / running) * 100 : null;
     });
     return rows;
+  }
+
+  /* The rows that carry a real estimate. EVERY consumer of exerciseMaxSeries
+     goes through this, so a refused row -- which is in the series on purpose,
+     see above -- can never be read as a number, counted as a session, or
+     land at rows[rows.length - 1] as "the latest estimate". */
+  function computedRows(rows) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].estMax != null) out.push(rows[i]);
+    }
+    return out;
+  }
+
+  /* What was refused, for a caller that wants to SAY so. Returns
+     { n, basis, lastDate } -- n is the number of sessions in which no set
+     could be estimated, basis is the most recent reason, lastDate the most
+     recent such session. */
+  function refusedSummary(rows) {
+    var out = { n: 0, basis: null, lastDate: null };
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i].refused) continue;
+      out.n++;
+      out.basis = rows[i].refusedBasis;
+      out.lastDate = rows[i].date;
+    }
+    return out;
   }
 
   /* The three figures the two tabs show.
@@ -4024,10 +4088,17 @@
      exercise a HIT trainee has ever logged. Against bestMax it says how
      heavy today's work was against demonstrated capacity. */
   function exerciseMaxSummary(ctx, exId) {
-    var rows = exerciseMaxSeries(ctx, exId);
+    var all = exerciseMaxSeries(ctx, exId);
+    var ref = refusedSummary(all);
+    var rows = computedRows(all);
+    /* `n` counts ESTIMATED sessions, not rows -- unchanged in meaning from
+       before refused rows entered the series, which is what keeps every
+       existing caller and assertion correct. `refusedN` is the new fact. */
     var out = { estMax: null, bestMax: null, bestMaxDate: null, pctOfMax: null,
                 mixedProvenance: false, n: rows.length,
-                outOfRange: false, noRir: false };
+                outOfRange: false, noRir: false,
+                refusedN: ref.n, refusedBasis: ref.basis,
+                refusedLastDate: ref.lastDate };
     if (!rows.length) return out;
     var last = rows[rows.length - 1];
     var bestRow = rows[0], prov = rows[0].provenance;
@@ -4061,7 +4132,11 @@
        nothing useful about them. */
     if (g === "MOBILITY" || g === "FULL BODY") return flags;
 
-    var rows = exerciseMaxSeries(ctx, exId);
+    /* computedRows FIRST, then the minimum-sessions test. Counting refused
+       rows toward ORM_MIN_SESSIONS would let three sessions that produced no
+       estimate at all satisfy the gate, and `last` would then be a row whose
+       estMax is null. */
+    var rows = computedRows(exerciseMaxSeries(ctx, exId));
     if (rows.length < ORM_MIN_SESSIONS) return flags;
 
     /* A stale lift is told to RESUME, never that its max is falling.
@@ -5545,6 +5620,12 @@
       return { id: r.id, name: r.name, group: r.group,
                estMax: sum.estMax, bestMax: sum.bestMax,
                bestMaxDate: sum.bestMaxDate, pctOfMax: sum.pctOfMax,
+               /* Carried so the REPORT can say that sessions were dropped.
+                  Without these the figure above can be months old with
+                  nothing on the page admitting it -- the defect found in a
+                  browser 2026-09-15. */
+               refusedN: sum.refusedN, refusedBasis: sum.refusedBasis,
+               refusedLastDate: sum.refusedLastDate,
                flags: flags };
     });
 
@@ -5750,6 +5831,22 @@
             r.pctOfMax == null ? "-" : Math.round(r.pctOfMax) + "%"
           ];
         }) });
+      /* WHAT THE CHOSEN METHOD COULD NOT PRICE. A section that lists only
+         what it managed to estimate presents a stale figure as current: a
+         long set the method refuses drops out, and the table's EST MAX then
+         names a session from weeks earlier without saying so. Printed
+         BEFORE the flags, because it changes how the flags should be read. */
+      var ormRefused = [];
+      res.oneRm.forEach(function (r) {
+        if (!r.refusedN) return;
+        ormRefused.push(r.name + " (#" + r.id + "): " + r.refusedN +
+          " session(s) could not be estimated, the most recent on " +
+          r.refusedLastDate + ". " + (r.refusedBasis || "") +
+          " The figure above is from the last session that COULD be estimated.");
+      });
+      if (ormRefused.length) {
+        sections.push({ heading: "NOT ESTIMATED", type: "notes", rows: ormRefused });
+      }
       var ormFlagRows = [];
       res.oneRm.forEach(function (r) {
         (r.flags || []).forEach(function (f) {
@@ -6984,6 +7081,8 @@
     resolveOneRmMethod: resolveOneRmMethod,
     oneRmMethodLabel: oneRmMethodLabel,
     exerciseMaxSeries: exerciseMaxSeries,
+    computedRows: computedRows,
+    refusedSummary: refusedSummary,
     exerciseMaxSummary: exerciseMaxSummary,
     ORM_LIGHT_PCT: ORM_LIGHT_PCT,
     oneRmFlags: oneRmFlags,
