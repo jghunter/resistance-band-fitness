@@ -1132,7 +1132,7 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1228,6 +1228,18 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
     setH(h)
   }, [selKey, attachHeightIn, opening])
 
+  /* Seeds an EMPTY field only, so a re-render can never undo a choice the
+     user made. BENCH is deliberately never seeded -- it is a fact about the
+     room, not about the gear list. */
+  useEffect(() => {
+    if (pressSetup) return
+    const opts = RBTS_REPORTS.pressSetupOptions(exId)
+    if (opts.length < 2) return
+    const gearOf = id => byId[id]
+    const k = RBTS_REPORTS.beltPlateOf(sel, gearOf) ? 'plate' : 'body'
+    ;(onPressSetupChange || (() => {}))(k)
+  }, [exId, sel.join(','), pressSetup])
+
   const typeCounts = {}
   sel.forEach(id => {
     const g = byId[id]; const t = g ? (g.type || 'other') : 'other'
@@ -1302,6 +1314,12 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
           exercise unloggable. */}
       {(() => {
         const gearOf = (id) => byId[id]
+        /* A chest press ends at full arm extension, not at a height above
+           the floor, so it is never asked for one. attachRowApplies is the
+           SAME reader effectiveLoad's knownAttach gate consults, so the
+           picker and the engine can never disagree about this -- which is
+           the 2026-08-14 and 2026-09-07 defect class. */
+        if (!RBTS_REPORTS.attachRowApplies(exId)) return null
         const plate = RBTS_REPORTS.beltPlateOf(sel, gearOf)
         if (!plate) return null
         const beltOn = RBTS_REPORTS.beltBeltPresent(sel, gearOf)
@@ -1467,6 +1485,43 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
             {shown.some(o => o.aboveRated) && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.textSec,marginTop:3}}>
                 ^ above the vendor&apos;s rated span — the linear fit understates real latex here
+              </div>
+            )}
+          </div>
+        )
+      })()}
+      {/* ── PRESS SETUP ────────────────────────────────────────────────────
+          A chest press is priced by where the band is pinned and how far the
+          hands travel, not by a floor height. Three setups; each exercise
+          declares which it offers, so an exercise with one option draws no
+          row at all -- the X3 plate's single band path, same idea.
+
+          Pre-filled from the gear list and never overwritten: no footplate
+          seeds BAND AROUND THE BODY, a footplate seeds LYING ON THE
+          FOOTPLATE, and BENCH is only ever chosen. Same rule every seeding
+          effect on this screen follows. */}
+      {(() => {
+        const opts = RBTS_REPORTS.pressSetupOptions(exId)
+        if (opts.length < 2) return null
+        const cur = pressSetup
+        return (
+          <div style={{marginTop:6}}>
+            <div style={lbl}>PRESS SETUP</div>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
+              Where the band is pinned. AROUND THE BODY wraps your back. The other two run the band under the footplate, with you on the plate or on a bench standing on it.
+            </div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {opts.map(o => (
+                <button key={o.k}
+                  onClick={() => (onPressSetupChange || (() => {}))(o.k)}
+                  style={{...btn(cur === o.k),fontSize:9,padding:'4px 8px'}}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            {!cur && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginTop:3}}>
+                PICK A SETUP — THE LOAD STAYS AT THE VENDOR MIDPOINT UNTIL YOU DO
               </div>
             )}
           </div>
@@ -1644,7 +1699,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
   scheduledId = scheduledId || null
   substituteCtx = substituteCtx || null
   onSubstitute = onSubstitute || null
@@ -1876,7 +1931,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
             bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
             attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}
             opening={opening} onOpeningChange={onOpeningChange||(()=>{})}
-            bandPath={bandPath} onBandPathChange={onBandPathChange||(()=>{})}/>
+            bandPath={bandPath} onBandPathChange={onBandPathChange||(()=>{})}
+            pressSetup={pressSetup} onPressSetupChange={onPressSetupChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -2015,7 +2071,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
         // which always passes exId) did not, so the number on screen
         // mid-workout could silently disagree with what got saved.
         const e = RBTS_REPORTS.bestSetLoad(
-          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id, opening, bandPath)
+          makeReportCtx({ log: [], gear: gearInv, myBands: [] }), sets, gear || [], attachHeightIn, id, opening, bandPath, pressSetup)
         if (!e || e.lb == null) return null
         // The chip is not decoration: RATED is a vendor midpoint at an
         // unstated stretch, MODELED is a curve fit evaluated at a gear-derived
@@ -2091,7 +2147,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, subs, onSubsChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, subs, onSubsChange }) {
   /* Defaulted in the body, not the signature: several parity assertions match
      these signatures with [^}]*, which a `= {}` default silently breaks. */
   subs = subs || {}
@@ -2167,6 +2223,10 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     if (bandPath && bandPath[String(id)] != null && onBandPathChange) {
       const b = {...bandPath}; delete b[String(id)]; onBandPathChange(b)
     }
+    // And the press setup.
+    if (pressSetup && pressSetup[String(id)] != null && onPressSetupChange) {
+      const p = {...pressSetup}; delete p[String(id)]; onPressSetupChange(p)
+    }
   }
   function updateExGear(id, ids) {
     if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
@@ -2196,6 +2256,14 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     const next = {...(bandPath||{})}
     if (typeof k !== 'string' || !k) delete next[String(id)]; else next[String(id)] = k
     onBandPathChange(next)
+  }
+  /* The press setup, same shape and same non-empty-STRING guard as the band
+     path above. */
+  function updatePressSetup(id, k) {
+    if (!onPressSetupChange) return
+    const next = {...(pressSetup||{})}
+    if (typeof k !== 'string' || !k) delete next[String(id)]; else next[String(id)] = k
+    onPressSetupChange(next)
   }
 
   function getPrevSets(exerciseId) {
@@ -2258,6 +2326,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         opening={(opening||{})[String(effId)]}
         bandPath={(bandPath||{})[String(effId)]}
         onBandPathChange={k=>updateBandPath(effId,k)}
+        pressSetup={(pressSetup||{})[String(effId)]}
+        onPressSetupChange={k=>updatePressSetup(effId,k)}
         onOpeningChange={n=>updateOpening(effId,n)}
         entryDate={todayDate}
         loadStamp={savedLoad[String(effId)]}
@@ -2303,6 +2373,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           opening={(opening||{})[String(id)]}
           bandPath={(bandPath||{})[String(id)]}
           onBandPathChange={k=>updateBandPath(id,k)}
+          pressSetup={(pressSetup||{})[String(id)]}
+          onPressSetupChange={k=>updatePressSetup(id,k)}
           onOpeningChange={n=>updateOpening(id,n)}
           entryDate={todayDate}
           loadStamp={savedLoad[String(id)]}/>
@@ -3661,6 +3733,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const [attachLogs, setAttachLogs] = useState({}) // per-exercise belt attach height {exId: heightIn}
   const [openingLogs, setOpeningLogs] = useState({}) // per-exercise adjustable-gear position {exId: n}
   const [bandPathLogs, setBandPathLogs] = useState({}) // per-exercise footplate band path {exId: k}
+  const [pressSetupLogs, setPressSetupLogs] = useState({}) // per-exercise press setup {exId: k}
   /* { scheduledExId: performedExId } -- which prescribed exercise was swapped
      for which, this session only. The ONE map keyed by the scheduled exercise;
      every other per-exercise map is keyed by the performed id. */
@@ -3716,6 +3789,11 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          blank, and the next save re-stamped without it, silently repricing the
          entry off the plate's default path. */
       setBandPathLogs(existing?.bandPath ?? {})
+      /* pressSetup was MISSING here until this task -- the same defect class
+         as bandPath above. Reopening today's saved workout came back with the
+         setup blank, and the next save re-stamped without it, silently
+         repricing the entry off the vendor midpoint. */
+      setPressSetupLogs(existing?.pressSetup ?? {})
       /* And the substitution, or reopening a saved session shows the SCHEDULED
          exercise sitting above sets that were logged against the substitute.
 
@@ -3774,6 +3852,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const k = (bandPathLogs||{})[id]
       if (typeof k === 'string' && k) cleanBandPath[id] = k
     })
+    /* The press setup, scoped and guarded identically -- a non-empty STRING,
+       never isFinite. */
+    const cleanPressSetup = {}
+    Object.keys(cleanEx).forEach(id => {
+      const k = (pressSetupLogs||{})[id]
+      if (typeof k === 'string' && k) cleanPressSetup[id] = k
+    })
     /* The substitution map, scoped by the exercise it points AT rather than by
        its own key -- the PERFORMED exercise is the one that must have real
        sets. A self-referential entry is REVERT's resting state, not a
@@ -3791,6 +3876,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       schemaVersion:2,
       exercises:cleanEx, gear:cleanGear, attach: cleanAttach, opening: cleanOpening,
       bandPath: cleanBandPath,
+      pressSetup: cleanPressSetup,
       subs: cleanSubs,
       completedAt:new Date().toISOString(),
     }
@@ -3802,7 +3888,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
        different shapes). */
     const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening, cleanBandPath)
+                           cleanOpening, cleanBandPath, cleanPressSetup)
     if (load) entry.load = load
     onSaveEntry(entry)
     setSaved(true)
@@ -4021,6 +4107,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               opening={openingLogs}
               bandPath={bandPathLogs}
               onBandPathChange={b=>{setBandPathLogs(b); setSaved(false)}}
+              pressSetup={pressSetupLogs}
+              onPressSetupChange={p=>{setPressSetupLogs(p); setSaved(false)}}
               subs={subsLogs}
               onSubsChange={sb=>{setSubsLogs(sb); setSaved(false)}}
               onOpeningChange={o=>{setOpeningLogs(o); setSaved(false)}}
@@ -4091,6 +4179,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
      opening is: re-opening a workout must not silently drop a choice that is
      already priced into its stamp. */
   const [bp, setBp] = useState(() => JSON.parse(JSON.stringify(entry.bandPath || {})))
+  /* The press setup, seeded from the entry for the same reason the band path
+     is: re-opening a workout must not silently drop a choice that is already
+     priced into its stamp. */
+  const [ps, setPs] = useState(() => JSON.parse(JSON.stringify(entry.pressSetup || {})))
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
@@ -4200,6 +4292,12 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       const k = bp[id]
       if (typeof k === 'string' && k) cleanBandPath[id] = k
     })
+    /* The press setup, scoped and guarded identically. */
+    const cleanPressSetup = {}
+    Object.keys(ex).forEach(id => {
+      const k = ps[id]
+      if (typeof k === 'string' && k) cleanPressSetup[id] = k
+    })
     /* Re-stamp load from the sets actually being saved. The freeze-at-save
        rule exists so a later band re-measurement can't rewrite what a past
        workout meant -- it does not apply here, because the user is
@@ -4209,10 +4307,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening, cleanBandPath)
+                           cleanOpening, cleanBandPath, cleanPressSetup)
     const updated = RBTS_REPORTS.applyLoadStamp(
       { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
-        opening: cleanOpening, bandPath: cleanBandPath,
+        opening: cleanOpening, bandPath: cleanBandPath, pressSetup: cleanPressSetup,
         editedAt: new Date().toISOString() },
       loadStamp)
     onSave(updated)
@@ -4254,6 +4352,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
               bandPath={bp[id]}
               onBandPathChange={k=>setBp(prev=>{const x={...prev};
                 /* Non-empty STRING, not isFinite -- a path key is a string. */
+                if (typeof k !== 'string' || !k) delete x[id]; else x[id]=k; return x})}
+              pressSetup={ps[id]}
+              onPressSetupChange={k=>setPs(prev=>{const x={...prev};
                 if (typeof k !== 'string' || !k) delete x[id]; else x[id]=k; return x})}/>
           </div>
           {(sets||[]).map((s,i) => {
