@@ -2165,6 +2165,25 @@
         pBenchDims = resolveGearDims(benchItem);
       }
       var pSpan = pressSpan(o.exId, ctx.body, gearIds, ctx.gearOf);
+      /* TWO DIFFERENT REFUSALS WORE ONE CONDITION until 2026-09-15, and the
+         `!o.doubled` exemption was right for one of them and wrong for the
+         other.
+
+         "The span is UNKNOWN" is genuinely irrelevant when the band is
+         folded: the fold is what the hands hold, so the span term is never
+         consulted and skipping the refusal is correct.
+
+         "This RIG CANNOT EXIST" is not about the span at all, and folding the
+         band does not bring it into existence. A wide-grip press requires a
+         wide bar -- Greg's ruling 2026-09-15, "there is no wide grip without a
+         bar, it can only exist on a wide bar" -- so a barOnly exercise with no
+         bar must be refused whether it is singled or doubled. Doubled, the old
+         condition PRICED it, on the premise that the hands hold the fold
+         together, which is the one thing a wide grip is not. */
+      if (pressRule.barOnly && plateTopSpan(gearIds, ctx.gearOf).kind !== "bar") {
+        out.basis = "press setup: a wide grip with no bar is not modelled";
+        return out;
+      }
       if (pSpan.spanIn == null && !o.doubled && pressRule.strands === 2) {
         out.basis = pSpan.basis;
         return out;
@@ -2235,8 +2254,24 @@
         out.bandPathK = pBandPath.k;
         out.bandPathLabel = pBandPath.l;
       }
+      /* pSpan.basis is a REFUSAL string whenever spanIn is null, and reaching
+         here with a null span is legitimate -- a doubled stack, or the single
+         strand of exercise 5, never consults it. Interpolating it anyway
+         printed a refusal as the reason for a number the model is confident
+         about: a MODELED 231.25 lb reading "a wide grip with no bar is not
+         modelled" sent the reader to re-measure a field that did not affect
+         the set. A refusal that names itself is the whole design here, so
+         attaching one to a success inverts it. */
+      /* Describe what the arithmetic ACTUALLY used, not what was available.
+         A DOUBLED press never consults the span -- pressReach sets it to zero
+         because the fold is what the hands hold -- so quoting "the hand span"
+         there names an input that had no effect on the number. */
+      var pSpanText = (pressRule.strands === 1)
+        ? "one strand: nothing spans the top"
+        : (o.doubled ? "the fold spans the top"
+                     : (pSpan.spanIn == null ? "no span consulted" : pSpan.basis));
       out.basis = "press geometry: " + PRESS_SETUP_LABELS[setupK].toLowerCase() +
-        ", " + pSpan.basis +
+        ", " + pSpanText +
         (anyClampedP ? ", CLAMPED to the nearest force reading" : "") +
         (o.doubled ? ". doubled" : "");
       return out;
