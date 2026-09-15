@@ -3311,7 +3311,15 @@
     var kPrev = pathPrev ? pathPrev.k : null;
     var kNow  = pathNow  ? pathNow.k  : null;
     var pathChanged = kPrev !== kNow;
-    if (a === b && !pathChanged) return null;
+    /* A PRESS SETUP change moves the load with the gear id list AND the band
+       path both untouched -- swapping the band from round the torso to under
+       the footplate changes what pins it, which is a different `consumed`
+       entirely. Without this in the identity test the banner never fires for
+       it: `a === b` and nothing else noticed. */
+    var isPress = pressExercise(o.exId) != null;
+    var setupChanged = isPress &&
+      ((o.prevPressSetup || null) !== (o.pressSetup || null));
+    if (a === b && !pathChanged && !setupChanged) return null;
     var names = function (list) {
       return (list || []).map(function (id) {
         var g = ctx.gearOf ? ctx.gearOf(id) : null;
@@ -3319,6 +3327,31 @@
       });
     };
     var out = { changed: true, prev: names(prevGearIds), now: names(nowGearIds) };
+
+    /* A PRESS IS NOT PRICED BY EITHER CURRENCY THIS FUNCTION SPEAKS, so it
+       refuses to quantify rather than quoting the wrong one. Measured by the
+       whole-branch review 2026-09-15: a handles-to-bar swap on a press fell
+       through to the `path` branch and reported `deltaIn -0.375, lighter` off
+       gearPathDelta -- the reference-strain model that no longer prices this
+       exercise -- when the press model makes that swap HEAVIER (the bar's
+       20.375in attach span against a 20in shoulder span takes stretch from
+       10.875 to 11.0625).
+
+       This is the third time a banner has quoted a mechanism the engine had
+       stopped using: the belt path on 2026-08-03, the taped band paths on
+       2026-08-14, and now the press. Each time the honest answer was the same
+       one the belt-gain and unknown-path branches below already give -- state
+       that the setup changed and decline to put a number on it. Building a
+       press delta here would be a second implementation of the press
+       arithmetic living outside effectiveLoad, which is the divergence class
+       this module keeps deleting. */
+    if (isPress) {
+      out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      out.reason = setupChanged
+        ? "a chest press is priced by where the band is pinned and how far the hands travel, and that pinning just changed"
+        : "a chest press is priced by its own band path, which this comparison does not model";
+      return out;
+    }
 
     var beltBefore = !!(beltPlateOf(prevGearIds, ctx.gearOf) &&
                         beltBeltPresent(prevGearIds, ctx.gearOf));
