@@ -1231,14 +1231,18 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
   /* Seeds an EMPTY field only, so a re-render can never undo a choice the
      user made. BENCH is deliberately never seeded -- it is a fact about the
      room, not about the gear list. */
-  useEffect(() => {
-    if (pressSetup) return
-    const opts = RBTS_REPORTS.pressSetupOptions(exId)
-    if (opts.length < 2) return
-    const gearOf = id => byId[id]
-    const k = RBTS_REPORTS.beltPlateOf(sel, gearOf) ? 'plate' : 'body'
-    ;(onPressSetupChange || (() => {}))(k)
-  }, [exId, sel.join(','), pressSetup])
+  /* THE PRESS SETUP SEED USED TO LIVE HERE AND IT NEVER WORKED. React runs
+     CHILD effects before PARENT ones, so this fired, wrote the default, and
+     the parent's own load effect wiped the whole map in the same commit. It
+     never recovered either: its deps watched `pressSetup`, which went
+     undefined -> undefined, so nothing ever changed and it did not re-run.
+     Every press opened unset, and a press logged without tapping the row
+     stamped a degraded RATED midpoint.
+
+     Found in a browser 2026-09-15 with the whole suite green. The seed now
+     happens in the PARENT load effect, against THE GEAR THAT BRANCH IS ABOUT
+     TO SET -- reading gear from state is one render too early and seeds
+     "body" even with a footplate present. Do not put it back here. */
 
   const typeCounts = {}
   sel.forEach(id => {
@@ -3793,7 +3797,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          as bandPath above. Reopening today's saved workout came back with the
          setup blank, and the next save re-stamped without it, silently
          repricing the entry off the vendor midpoint. */
-      setPressSetupLogs(existing?.pressSetup ?? {})
+      /* Seeded against `existing.gear`, the gear THIS branch is about to set
+         -- not the gear state, which is one render behind here. */
+      setPressSetupLogs(RBTS_REPORTS.seedPressSetups(
+        existing?.pressSetup ?? {},
+        Object.keys(existing?.exercises ?? {}),
+        existing?.gear ?? {},
+        id => (gearInv || []).find(g => g.id === id)))
       /* And the substitution, or reopening a saved session shows the SCHEDULED
          exercise sitting above sets that were logged against the substitute.
 

@@ -1547,6 +1547,44 @@
   /* The ONE reader both the picker and effectiveLoad consult, so they can
      never disagree about whether this exercise has a floor height. Two
      readers of one fact is the 2026-08-14 defect and the 2026-09-07 one. */
+  /* Fill an EMPTY press setup for each id, from the gear that id carries:
+     no footplate means the band wraps the body, a footplate means the lifter
+     is on it. A BENCH is never seeded -- that is a fact about the room, not
+     about the gear list.
+
+     NEVER OVERWRITES. A value already present is a choice the user made, or
+     one restored from a draft or a saved entry, and must survive. Returns the
+     SAME object when nothing was added, so a functional setState is a no-op
+     and this cannot loop.
+
+     CALL IT WITH THE GEAR MAP THE CALLER IS ABOUT TO SET, NOT WITH GEAR READ
+     FROM STATE. An effect reading the gear state runs one render too early --
+     the load effect has only QUEUED its update, so the closure still holds the
+     previous, empty map and every press seeds "body" even with a footplate in
+     the draft. It never self-corrects, because this function does not
+     overwrite. Measured in a browser 2026-09-15; both the too-early read and
+     the child-effect version before it produced exactly that. */
+  function seedPressSetups(prev, ids, gearMap, gearOf) {
+    var base = prev || {};
+    var next = null;
+    (ids || []).forEach(function (rawId) {
+      var id = String(rawId);
+      if (base[id]) return;
+      if (pressSetupOptions(id).length < 2) return;
+      var picked = (gearMap || {})[id] || [];
+      var k = beltPlateOf(picked, gearOf) ? "plate" : "body";
+      if (!next) next = shallowCopy(base);
+      next[id] = k;
+    });
+    return next || base;
+  }
+
+  function shallowCopy(o) {
+    var out = {}, k;
+    for (k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) out[k] = o[k]; }
+    return out;
+  }
+
   function attachRowApplies(exId) {
     return pressExercise(exId) == null;
   }
@@ -6444,6 +6482,7 @@
     pressExercise: pressExercise,
     pressSetupOptions: pressSetupOptions,
     attachRowApplies: attachRowApplies,
+    seedPressSetups: seedPressSetups,
     pressSpan: pressSpan,
     pressTerms: pressTerms,
     pressReach: pressReach,
