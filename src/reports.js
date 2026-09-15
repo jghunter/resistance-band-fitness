@@ -2766,7 +2766,20 @@
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
          both under the same name. See the note above. */
-      var isBelt = best.attachHeightIn != null;
+      /* WHICH KIND OF NUMBER `best.stretchIn` IS. On the reference-strain
+         path it is a signed GEAR delta; on an absolute-stretch path it is the
+         real elongation. They go under different keys because a consumer
+         cannot otherwise tell a -35in gear delta from a 35in real pull.
+
+         `attachHeightIn != null` was the whole test until 2026-09-15, and it
+         silently mislabelled every PRESS. A press takes the absolute-stretch
+         path but deliberately sets attachHeightIn = null -- a chest press ends
+         at arm extension, not at a height above the floor -- so its real
+         elongation was being frozen under `deltaIn`. Stamps are permanent and
+         this project never rewrites history, so each one would have carried a
+         mislabelled record for good. Nothing reads the field yet, which is
+         exactly why no suite saw it. */
+      var isAbs = best.attachHeightIn != null || best.pressSetupK != null;
       /* Frozen only when it actually PRICED something: a value naming no real
          position, or a rig with nothing adjustable in it, must not leave a
          number on the permanent record implying an opening was in play. */
@@ -2775,8 +2788,8 @@
       out[exId] = { lb: Math.round(best.lb * 10) / 10, rated: Math.round(best.rated * 10) / 10,
                     ratio: Math.round(best.ratio * 1000) / 1000,
                     provenance: best.provenance,
-                    deltaIn: isBelt ? undefined : best.stretchIn,
-                    stretchIn: isBelt ? best.stretchIn : undefined,
+                    deltaIn: isAbs ? undefined : best.stretchIn,
+                    stretchIn: isAbs ? best.stretchIn : undefined,
                     doubled: best.doubled || undefined,
                     attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
                     openingN: openingUsed ? openingN : undefined,
