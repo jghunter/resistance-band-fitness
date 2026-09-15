@@ -1551,6 +1551,15 @@
     return pressExercise(exId) == null;
   }
 
+  var PRESS_FIELD_LABELS = {
+    shoulderWidthIn:  "shoulder width",
+    torsoWidthIn:     "torso width",
+    chestThicknessIn: "chest depth",
+    pressReachIn:     "press reach",
+    closeGripSpanIn:  "close grip span",
+    singleArmHoldIn:  "single-arm hold"
+  };
+
   /* What spans the top. A bar WINS: the band ends on the bar's hook points,
      not in the palms, so the grip is irrelevant whenever one is in the rig
      (Greg, 2026-09-14). Only with no bar does the exercise's own hand span
@@ -1578,14 +1587,6 @@
     return { spanIn: v, basis: "the hand span" };
   }
 
-  var PRESS_FIELD_LABELS = {
-    shoulderWidthIn:  "shoulder width",
-    torsoWidthIn:     "torso width",
-    chestThicknessIn: "chest depth",
-    pressReachIn:     "press reach",
-    closeGripSpanIn:  "close grip span",
-    singleArmHoldIn:  "single-arm hold"
-  };
 
   /* What pins the band, and how far the top travels. Either may be null,
      and the basis names the SPECIFIC field that is missing -- blaming the
@@ -1756,7 +1757,13 @@
      thirteen presses reprices -- there is no sub-case that computes
      identically before and after -- so the exercise id alone is the whole
      test. */
-  var PRESS_MODEL_CUTOFF = "2026-09-14";
+  /* 2026-09-15, NOT the 14th, and the extra day is deliberate. The test is
+     `>=`, so a cutoff of the 14th does not flag a press logged EARLIER THAT
+     DAY -- which was priced by the old model. Greg reported this bug while
+     logging on the 14th, so his own session is the likely case. A day of
+     over-flagging costs a caveat line; a day of under-flagging hides a stamp
+     that no longer matches the model. */
+  var PRESS_MODEL_CUTOFF = "2026-09-15";
 
   function stampPredatesPressModel(dateISO, exId) {
     if (!dateISO || String(dateISO) >= PRESS_MODEL_CUTOFF) return false;
@@ -5736,7 +5743,7 @@
     { k:"hookOffsetIn", l:"Hook offset",  hint:"grip axis to band bearing surface", types:["bar"] },
     { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
     { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","other"] },
-    { k:"benchPadHeightIn", l:"Bench pad height (in)", hint:"floor to the top of the pad", types:["bench"] },
+    { k:"benchPadHeightIn", l:"Bench pad height", hint:"floor to the top of the pad", types:["bench"] },
   ];
   /* Bumped 2026-08-10. A stored `dims` copy carrying an older rev is discarded
      in favour of a fresh table lookup, so this string is the ONLY way a table

@@ -4022,7 +4022,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
         <div style={{marginTop:12}}>
           <div style={lbl}>BODY MEASUREMENTS</div>
           <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6,marginBottom:8}}>
-            Floor to each landmark, standing, in inches. Used ONLY by lifts that run a
+            Floor to each landmark, standing, in inches. The first seven are used by lifts that run a
             band under a footplate or off a belt, to work out how far the band has to
             stretch. Leave them blank and those lifts stay RATED rather than guessed.
             With bands alone, nothing reads these. SHOULDER is MID-shoulder,
