@@ -2478,6 +2478,10 @@ function makeReportCtx({ log, gear, myBands }) {
        landmarks withheld, balance judged on prescribed share). Mirrors
        fitness_app.html; set there, read here. */
     volumeModel: TRAINING_STYLE.volumeModel,
+    /* The one-rep-max equation, as a KEY STRING. Not to be confused with
+       RBTS_REPORTS.oneRmMethod, the LOOKUP FUNCTION that turns this key into
+       a method object. Same word, two different things. */
+    oneRmMethod: TRAINING_STYLE.oneRmMethod,
     bandOf: (id) => BANDS.find(b => b.id === id) || null,
     gearOf: (id) => gearList.find(g => g.id === id) || null,
     /* Band calibration -- rest length and Tension Master readings. Without
@@ -2662,6 +2666,14 @@ function entryStats(entry) {
 }
 function fmtNum(n) { n = Math.round(n||0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
 function fmtPct(p) { if (p == null || !isFinite(p)) return '—'; return (p>=0?'+':'') + p.toFixed(0) + '%' }
+/* The one-rep-max cells. An em dash for a figure the history cannot support,
+   and a trailing `!` where the last session's rep count sat outside the
+   method's validated range -- the estimate still prints, MARKED, because
+   withholding it there would hide a number the reader can judge for
+   themselves. fmtPct is wrong for these: it signs its output, and a
+   percentage OF a max is not a change. Mirrors fitness_app.html. */
+function fmtRm(v, mark) { if (v == null || !isFinite(v)) return '—'; return fmtNum(v) + (mark ? ' !' : '') }
+function fmtRmPct(p) { if (p == null || !isFinite(p)) return '—'; return Math.round(p) + '%' }
 
 // ── ANALYZE TAB ───────────────────────────────────────────────────────────
 // Narrative progress analysis. STRENGTH stays the raw-numbers dashboard; this
@@ -2872,8 +2884,12 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
   )
 }
 
-function StrengthTab({ log }) {
+function StrengthTab({ user, log, gearInv, myBands }) {
   const [win, setWin] = useState('30')
+  /* TRAINING_STYLE is a mutable module-level holder, not React state, so a
+     method change has to announce itself. Same tick the TRAINING STYLE panel
+     uses, and for the same reason. */
+  const [tsTick, setTsTick] = useState(0)
   const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
 
   if (data.length === 0) {
@@ -2929,6 +2945,8 @@ function StrengthTab({ log }) {
     if(!exMap[exId]) exMap[exId]=[]
     exMap[exId].push({ date:e.date, top:top })
   }))
+  /* ONCE, above the map -- never inside it. Mirrors fitness_app.html. */
+  const rmCtx = makeReportCtx({ log, gear: gearInv, myBands })
   let exRows = Object.keys(exMap).map(exId => {
     const arr = exMap[exId].sort((a,b)=>a.date.localeCompare(b.date))
     const first = arr[0], last = arr[arr.length-1]
@@ -2937,6 +2955,10 @@ function StrengthTab({ log }) {
       startLoad:first.top, lastLoad:last.top,
       delta: first.top ? ((last.top-first.top)/first.top)*100 : null,
       best: allBest[exId]||0, isPR: last.top>0 && last.top>=(allBest[exId]||0),
+      /* All-time, like `best` beside it -- NOT the window. The estimated max
+         is a statement about demonstrated capacity, and a 7-day window would
+         report a different max every time the window button moved. */
+      oneRm: RBTS_REPORTS.exerciseMaxSummary(rmCtx, exId),
     }
   }).sort((a,b) => b.n-a.n || b.lastLoad-a.lastLoad)
 
@@ -2968,6 +2990,43 @@ function StrengthTab({ log }) {
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {/* ── ONE-REP MAX METHOD ──────────────────────────────
+          The picker sits here, where the numbers are and where the question
+          arises. It ships in BOTH apps, unlike every other profile editor:
+          Daniel, Jaclyn and Mike run the PWA, and the seven descriptions
+          exist so the reader picks for themselves rather than being handed
+          one equation and no way to tell what it assumes. */}
+      <details style={widget}>
+        <summary style={{...lbl,cursor:'pointer'}}>
+          1RM METHOD — {RBTS_REPORTS.oneRmMethodLabel(TRAINING_STYLE.oneRmMethod)}
+        </summary>
+        <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+          lineHeight:1.6,margin:'8px 0'}}>
+          Every one of these equations was fitted on FREE WEIGHTS, where the load is
+          the same pound figure at every point of the range. A band is not: its force
+          rises as it stretches, and the figure this app reports is the load at the
+          HARDEST point of the rep. So an estimated max off band reps is a real,
+          trackable number, and it is NOT the same quantity as a barbell one-rep max.
+        </div>
+        {RBTS_REPORTS.ONE_RM_METHODS.map(m => {
+          const on = TRAINING_STYLE.oneRmMethod === m.k
+          return (
+            <div key={m.k} style={{marginBottom:10}}>
+              <button onClick={()=>{ saveTrainingStyle({oneRmMethod:m.k}, user?.uid); setTsTick(tsTick+1) }}
+                style={{...btn(on),fontSize:10,padding:'4px 10px'}}>
+                {m.name} ({m.year})
+              </button>
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+                marginTop:3,lineHeight:1.6}}>
+                {m.equation} · {m.curve} · best at {m.bestAt}<br/>
+                GOOD: {m.advantage}<br/>
+                BAD: {m.disadvantage}
+              </div>
+            </div>
+          )
+        })}
+      </details>
+
       <div style={{...widget,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
         <span style={{...lbl,marginBottom:0,marginRight:6}}>WINDOW</span>
         {WINDOWS.map(w => (
@@ -3022,6 +3081,9 @@ function StrengthTab({ log }) {
                 <th style={{padding:'4px 6px'}}>LATEST</th>
                 <th style={{padding:'4px 6px'}}>Δ LOAD</th>
                 <th style={{padding:'4px 6px'}}>BEST</th>
+                <th style={{padding:'4px 6px'}}>EST. MAX</th>
+                <th style={{padding:'4px 6px'}}>BEST MAX</th>
+                <th style={{padding:'4px 6px'}}>% OF MAX</th>
               </tr>
             </thead>
             <tbody>
@@ -3033,11 +3095,19 @@ function StrengthTab({ log }) {
                   <td style={{padding:'4px 6px'}}>{fmtNum(r.lastLoad)}</td>
                   <td style={{padding:'4px 6px',color:(r.delta==null?C.dimGray:(r.delta>=0?C.green:C.amber))}}>{fmtPct(r.delta)}</td>
                   <td style={{padding:'4px 6px',color:C.green}}>{fmtNum(r.best)}</td>
+                  <td style={{padding:'4px 6px',color:C.text}}>{fmtRm(r.oneRm.estMax, r.oneRm.outOfRange)}</td>
+                  <td style={{padding:'4px 6px',color:C.green}}>{fmtRm(r.oneRm.bestMax)}</td>
+                  <td style={{padding:'4px 6px'}}>{fmtRmPct(r.oneRm.pctOfMax)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {exRows.some(r => r.oneRm.outOfRange) ? (
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+            ! beyond this method's validated rep range — the estimate still prints, marked
+          </span>
+        ) : null}
         <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
           Load = estimated band resistance (midpoint of each band's range; doubled/stacked bands summed). Volume = load × reps. Estimates for trend tracking, not exact poundage.
         </span>
@@ -6085,7 +6155,15 @@ export default function App() {
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
         {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user} onProgramsChanged={handleProgramsChanged}/>}
-        {tab==='strength' && <StrengthTab log={log}/>}
+        {/* gearInv and myBands because makeReportCtx REQUIRES all three, and
+            `gear: []` would pass every test while being wrong: the load a
+            1RM is read off was frozen on the entry at save time, so an empty
+            inventory changes nothing TODAY and everything later. `user`
+            because saveTrainingStyle without a uid skips the Firestore push
+            AND the profile-uid stamp, and reconcileProfiles then treats an
+            unstamped local profile as the machine seed -- so a method chosen
+            here would be discarded at the next sign-in, silently. */}
+        {tab==='strength' && <StrengthTab user={user} log={log} gearInv={gear} myBands={myBands}/>}
         {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='programs' && <ProgramsTab onProgramsChanged={handleProgramsChanged}/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}

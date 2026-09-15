@@ -2472,8 +2472,13 @@ function readTrainingStyle() {
     return {
       defaultSets: (p && typeof p.defaultSets === 'number' && p.defaultSets > 0) ? p.defaultSets : null,
       volumeModel: (p && p.volumeModel === 'hit') ? 'hit' : 'standard',
+      /* The catch below builds a WHOLE SECOND OBJECT, so this field has to be
+         written twice. Miss the catch and the method silently reverts to
+         undefined for any user whose stored profile fails to parse. */
+      oneRmMethod: (p && p.oneRmMethod) || 'epley',
     }
-  } catch (e) { return { defaultSets: null, volumeModel: 'standard' } }
+  } catch (e) { return { defaultSets: null, volumeModel: 'standard',
+                         oneRmMethod: 'epley' } }
 }
 export const TRAINING_STYLE = readTrainingStyle()
 

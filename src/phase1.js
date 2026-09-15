@@ -264,6 +264,11 @@
        absolute landmark comparison is suppressed rather than firing UNDER on
        every group forever. Nothing else about the analyzer changes. */
     volumeModel: "standard",   // standard | hit
+    /* Which equation turns a set into an estimated one-rep max. A method HAS
+       a sane neutral default and a body measurement does not, which is why
+       this sits here and the six press measurements are deliberately absent.
+       Epley: the most widely used, the simplest, and it never runs away. */
+    oneRmMethod: "epley",
   };
 
   /* ----------------------------------------------------------------------
