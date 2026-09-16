@@ -3302,8 +3302,20 @@
     161: "sided",       // wrist pronation
     162: "sided",       // wrist supination
     164: "sided",       // grip crush -- one hand crushes
-    165: "bilateral"    // reverse curl (forearm focus) -- a curl on a band held
-                        // in both hands is a two-handed movement
+    /* 165 flipped from "bilateral" to "sided" on 2026-09-15, Greg: "the
+       reverse curl should be handled the same way." It STAYS gear-conditional
+       rather than joining 234 on the structural list, and the difference is
+       real: a bar CAN perform a reverse curl, with both hands on one rigid
+       object, so the bar rule must keep working here. 234 is structural only
+       because no bar can perform a forearm twist at all.
+
+       What changed is the answer when NO gear is recorded. The old
+       "bilateral" assumed the band is held in both hands, which is one way to
+       do it; Greg's ruling is that the honest fallback for this whole family
+       is one side then the other. It now matches 157-162 and 164, so every
+       wrist and forearm move in the group answers the same way when nothing
+       is known -- the inconsistency was the thing worth removing. */
+    165: "sided"        // reverse curl (forearm focus)
   };
 
   /* There is NO `dumbbell` gear type: inferGearType has no rule for it and
