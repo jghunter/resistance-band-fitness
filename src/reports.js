@@ -3251,6 +3251,15 @@
       promoted later needs all THREE checked, not two. */
    227, 229, 231, 232,     // cross block, Copenhagen plank, resisted
                            // dorsiflexion, posterior tibialis
+   /* 234 Forearm Twist is STRUCTURAL even though every other forearm and
+      wrist move is gear-conditional. Greg, 2026-09-15: "for the forearm
+      twist you can't do it with a bar so it's always one side then the
+      other." The gear-conditional rule exists ONLY because a bar makes two
+      hands act as one rigid unit; an exercise a bar cannot perform has
+      nothing for that rule to switch on, so it belongs here instead. Putting
+      it in EX_UNILATERAL_BY_GEAR would let a bar that happens to be logged
+      for another lift in the same session read it as bilateral. */
+   234,                    // forearm twist -- no bar can do it
    /* Shoulder alternatives, 2026-09-03. Only these two of the ten are one arm
       at a time: 237 anchors the band under ONE leg and presses with the arm on
       that side, and 243 starts with the band drawn across the body so only the
