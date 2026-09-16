@@ -3229,15 +3229,28 @@
    169,                    // single-leg calf raise
    217,                    // split squat (belt)
    220, 222,               // side plank row, bird dog (per-side)
-   /* 227 Cross Block, added 2026-09-15 on Greg's report from doing it: the
-      move works one side and THEN the other, so it is two efforts and needs
-      two rows. Same shape as 220 and 222 above, and the same reason the
+   /* FOUR FROM THE PROMOTED 226-234 BLOCK, added 2026-09-15 on Greg's report
+      from doing them: 227 Cross Block "works one side and then the other",
+      and 229, 231 and 232 "are all generally one side at a time".
+
+      All four are STRUCTURAL, not gear-conditional. 229 Copenhagen Plank is
+      one side by the shape of the position. 231 and 232 put the band around
+      ONE foot, and no gear in this app distinguishes one foot from two -- a
+      footplate or an anchor says nothing about sidedness, and a bar is not
+      involved in a dorsiflexion at all. So EX_UNILATERAL_BY_GEAR would add a
+      switch that nothing can ever flip, which is worse than no switch.
+
+      227 is the same shape as 220 and 222 above, and the same reason the
       Pallof family and the woodchops are here -- a core exercise can be
-      per-side without involving one arm or one leg. It was missed when
-      226-234 were promoted out of the custom range on 2026-08-12, because
-      that promotion moved ids and carried the group/class overrides but
-      never revisited sidedness. */
-   227,                    // cross block -- one side, then the other
+      per-side without involving one arm or one leg.
+
+      WHY ALL FOUR WERE MISSED AT ONCE: 226-234 were promoted out of the
+      >=1000 custom range on 2026-08-12. That promotion moved ids and carried
+      EX_GROUP_OVERRIDE and EX_CLASS_OVERRIDE across, but sidedness lives in
+      a different file and a different list, and was never revisited. Anything
+      promoted later needs all THREE checked, not two. */
+   227, 229, 231, 232,     // cross block, Copenhagen plank, resisted
+                           // dorsiflexion, posterior tibialis
    /* Shoulder alternatives, 2026-09-03. Only these two of the ten are one arm
       at a time: 237 anchors the band under ONE leg and presses with the arm on
       that side, and 243 starts with the band drawn across the body so only the
