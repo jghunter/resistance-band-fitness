@@ -3229,6 +3229,15 @@
    169,                    // single-leg calf raise
    217,                    // split squat (belt)
    220, 222,               // side plank row, bird dog (per-side)
+   /* 227 Cross Block, added 2026-09-15 on Greg's report from doing it: the
+      move works one side and THEN the other, so it is two efforts and needs
+      two rows. Same shape as 220 and 222 above, and the same reason the
+      Pallof family and the woodchops are here -- a core exercise can be
+      per-side without involving one arm or one leg. It was missed when
+      226-234 were promoted out of the custom range on 2026-08-12, because
+      that promotion moved ids and carried the group/class overrides but
+      never revisited sidedness. */
+   227,                    // cross block -- one side, then the other
    /* Shoulder alternatives, 2026-09-03. Only these two of the ten are one arm
       at a time: 237 anchors the band under ONE leg and presses with the arm on
       that side, and 243 starts with the band drawn across the body so only the
