@@ -285,7 +285,13 @@
    *   >>> no population rule added later can regress it.
    *
    * Layering, lowest precedence first:
-   *     PROFILE_DEFAULTS  <  POPULATION_DEFAULTS[population]  <  explicit
+   *     PROFILE_DEFAULTS  <  POPULATION_DEFAULTS[population]
+   *                       <  VOLUME_MODEL_DEFAULTS[volumeModel]  <  explicit
+   *
+   * The volume-model layer arrived 2026-09-17 and sits ABOVE population on
+   * purpose: a training philosophy the user selected is more specific than a
+   * demographic suggestion. It still loses to an explicit choice, like every
+   * other layer here.
    * -------------------------------------------------------------------- */
   var POPULATION_DEFAULTS = {
     general: {},
@@ -374,16 +380,40 @@
     });
   }
 
+  /* A TRAINING PHILOSOPHY implies its own RIR, and it is more specific than an
+     age band -- so this layer is applied AFTER POPULATION_DEFAULTS and still
+     loses to an explicit choice, exactly like that one.
+
+     HIT is one set carried to momentary muscular failure (Yates / Mentzer /
+     Jones). Failure is RIR 0. Before 2026-09-17 nothing in either app connected
+     the two: the 2026-08-20 HIT rule governs the seeded SET COUNT only, so a
+     new HIT user started at the base default of 2 -- two reps short of the
+     method they had just selected -- with no editor for the field anywhere.
+
+     A layer rather than a branch inside resolveProfile, so adding a second
+     model's implications later is data, not code. */
+  var VOLUME_MODEL_DEFAULTS = {
+    hit: { rirTarget: 0 },
+  };
+
   /* The effective profile: population fills in only what the profile left at
-     the base default. Pure - does not mutate or persist anything. */
+     the base default, and volume model provides a more specific default still.
+     Pure - does not mutate or persist anything. */
   function resolveProfile(p) {
     if (!p) return Object.assign({}, PROFILE_DEFAULTS);
     var pop = POPULATION_DEFAULTS[p.population] || {};
+    var vm = VOLUME_MODEL_DEFAULTS[p.volumeModel] || {};
     var explicit = explicitKeysOf(p);
     var out = Object.assign({}, p);
     Object.keys(pop).forEach(function (k) {
       if (explicit.indexOf(k) >= 0) return;              // profile wins, always
       out[k] = pop[k];
+    });
+    /* AFTER the population layer on purpose: a method chosen deliberately is
+       more specific than a demographic suggestion. Still loses to explicit. */
+    Object.keys(vm).forEach(function (k) {
+      if (explicit.indexOf(k) >= 0) return;
+      out[k] = vm[k];
     });
     return out;
   }
@@ -655,6 +685,7 @@
     SPLITS: SPLITS,
     PROFILE_DEFAULTS: PROFILE_DEFAULTS,
     POPULATION_DEFAULTS: POPULATION_DEFAULTS,
+    VOLUME_MODEL_DEFAULTS: VOLUME_MODEL_DEFAULTS,
     makeProfile: makeProfile,
     resolveProfile: resolveProfile,
     explicitKeysOf: explicitKeysOf,

@@ -26,13 +26,20 @@
 
   /* ---- tunable constants ------------------------------------------------ */
   var CONST = {
-    /* PROG_REPS and RIR_TARGET are FALLBACKS ONLY. Both apps override them
-       per profile (_ACTIVE_PROFILE.progressReps / .rirTarget) and Greg's
-       profile sets rirTarget to 1. Every judgment reads ctx.progressReps /
-       ctx.rirTarget first - see threshOf() and progressionState(). */
+    /* PROG_REPS is a FALLBACK ONLY. Both apps override it per profile
+       (_ACTIVE_PROFILE.progressReps), and every rep judgment reads
+       ctx.progressReps first - see threshOf() and progressionState().
+
+       RIR_TARGET HAS NO READER SINCE 2026-09-17 and is kept only so that
+       CONST stays a stable exported shape. It was the fallback for a CAP:
+       sideReady used to refuse any set whose logged RIR exceeded
+       ctx.rirTarget. That cap is gone - a logged RIR now RAISES the rep bar
+       instead (reps >= thresh + rir), so nothing needs a fallback for it.
+       ctx.rirTarget is still supplied by both apps and is still what a new
+       set row SEEDS from; it simply no longer decides anything here. */
     PROG_REPS:    12,   // fallback rep threshold for progression-ready
     PROG_SECS:    30,   // time-based (seconds) threshold - not profile-tunable
-    RIR_TARGET:    2,   // fallback: logged RIR above this means reps left over
+    RIR_TARGET:    2,   // UNUSED since 2026-09-17 - see the note above
     STALL_N:       3,   // consecutive working sessions with no gain = stalled
     TREND_BAND:    1,   // +/- percent per session that still counts as FLAT
     NEAR_REPS:     2,   // "close to threshold" window, in reps
@@ -89,6 +96,14 @@
     return (typeof progressReps === "number") ? progressReps : CONST.PROG_REPS;
   }
   function repUnit(id) { return isTimeBased(id) ? "sec" : "r"; }
+  /* ONE wording for the bar, used by every verdict line so they cannot drift.
+     At rirAdd 0 it is BYTE-IDENTICAL to the wording that shipped before the
+     sliding bar existed, so an RIR-0 profile sees no change at all. */
+  function barPhrase(bar, target, rirAdd, unit) {
+    if (!rirAdd) return target + unit + " target";
+    return bar + unit + " bar (" + target + unit + " target, +" + rirAdd +
+           " for the reps you left in reserve)";
+  }
 
   /* ---- band resistance math -------------------------------------------- */
   /* Mirrors fitness_app.html's parseResRange exactly: strips + < ~ decorations,
@@ -1093,8 +1108,15 @@
     if (!rest) return null;
     var d = doubled ? 2 : 1;
     var usableC = 2 * rest / d;
+    /* topSpanIn === 0 is an EXPLICIT zero -- a one-sided set on handles,
+       where the loop's top has no span at all (2026-09-17) -- and must be
+       used as 0, not treated the same as "not supplied" and refilled from
+       body width. finitePos alone can't tell the two apart: it rejects 0
+       along with null and undefined. Only a caller that means "unset"
+       passes null, so the fallback still applies there exactly as before. */
     var width = doubled ? 0
-              : (finitePos(topSpanIn) ? topSpanIn : (body.bodyWidthIn || 0));
+              : ((topSpanIn === 0 || finitePos(topSpanIn)) ? topSpanIn
+                                                            : (body.bodyWidthIn || 0));
     /* `path.consumedIn` is the WHOLE path Greg taped -- top edge, down, under,
        up, top edge -- so it already contains both edge crossings and any
        channel drop, and must NOT have 2*thickness and channelIn added to it.
@@ -1352,7 +1374,84 @@
        there exactly, so withholding the button would reproduce the original
        2026-09-07 defect one landmark down: a default the picker cannot
        express, unfixable by hand once cleared. */
-    135: { at: "chestHeightIn" }        // Drag Curl
+    135: { at: "chestHeightIn" },       // Drag Curl
+
+    /* ── ADDED 2026-09-17, after Greg reported six exercises being asked for a
+       HIGHEST POINT the question could not answer. The row's gate never
+       consulted the exercise beyond the press list, and the engine's bar
+       avenue treated "a bar is present" as proof the lift ends at a floor
+       landmark -- which it is not for a row, a seated row or an overhead press.
+       Spec: 2026-09-17-rir-progression-and-grip-heights-design.md ───────── */
+
+    /* THE ROWS. Greg: the band runs under the plate, up the side of the leg,
+       to the bar, and stops when the bar meets the torso. The SEATED row
+       stands the footplate on its side -- an orientation the plate's own
+       bandPaths already declares -- so the band travel is the same as a
+       bent-over row's and one measurement serves all of them.
+
+       21 Standing Band Row is measured BENT OVER like the rest. Greg ruled
+       31.75 close enough for it standing; a decision, not an oversight. */
+    21:  { at: "rowTopHeightIn" },   // Standing Band Row
+    22:  { at: "rowTopHeightIn" },   // Seated Band Row
+    23:  { at: "rowTopHeightIn" },   // Bent-Over Band Row
+    24:  { at: "rowTopHeightIn" },   // Single-Arm Band Row
+    25:  { at: "rowTopHeightIn" },   // Wide-Grip Band Row
+    26:  { at: "rowTopHeightIn" },   // Close-Grip Band Row
+    27:  { at: "rowTopHeightIn" },   // Meadows Row
+
+    /* THE OVERHEAD PRESSES. plusField, not plusIn: the distance past
+       mid-shoulder is a fact about the LIFTER. Greg's is 16-20in depending on
+       what his right shoulder allows that day; 18 is the working figure and
+       the +/-2in spread is worth about 2.5 lb on his rig, well inside an error
+       the fitted curve already admits to. */
+    43:  { at: "shoulderHeightIn", plusField: "overheadReachIn" }, // Standing Band Overhead Press
+    44:  { at: "shoulderHeightIn", plusField: "overheadReachIn" }, // Single-Arm Overhead Press
+    45:  { at: "shoulderHeightIn", plusField: "overheadReachIn" }, // Arnold Press with Band
+    46:  { at: "shoulderHeightIn", plusField: "overheadReachIn" }, // Push Press with Band
+
+    /* THE Z PRESS is done sitting on the floor, so the same overhead reach is
+       added to the SEATED shoulder instead. Greg measured that directly --
+       21 7/8 -- rather than deriving it from (shoulder - hip) + 3, which
+       predicted 22. Two inferences replaced by one tape reading. */
+    236: { at: "seatedShoulderHeightIn", plusField: "overheadReachIn" }, // Z Press
+
+    /* 133 CONCENTRATION CURL finishes at the seated shoulder -- the same
+       measurement the Z press reads, for a different reason: the Z press
+       because that is where the press starts, this because the torso is
+       upright over the thigh and the hand finishes there. Greg reported it
+       asking for a height on 2026-09-17; he had a footplate on it. The
+       absence note below used to name 133 and now names only the other
+       three. */
+    133: { at: "seatedShoulderHeightIn" },  // Concentration Curl
+
+    /* THE WRIST GROUP is NOT the press case. Greg: there IS travel, about
+       3-4in, and the band's top end sits at the hand -- roughly hip height
+       standing with the band under the foot or on the plate. The model wants
+       the HEIGHT at the hardest point, not the travel, so the small range of
+       motion does not make the question unanswerable. */
+    157: { at: "hipHeightIn" },   // Wrist Curl
+    158: { at: "hipHeightIn" },   // Reverse Wrist Curl
+    159: { at: "hipHeightIn" },   // Radial Deviation
+    160: { at: "hipHeightIn" },   // Ulnar Deviation
+    161: { at: "hipHeightIn" },   // Wrist Pronation
+    162: { at: "hipHeightIn" },   // Wrist Supination
+    163: { at: "hipHeightIn" },   // Finger Extension
+    164: { at: "hipHeightIn" },   // Grip Crush
+
+    /* 165 IS A CURL, filed under forearms for the muscle it targets. The hands
+       travel from the hip to the shoulder, exactly as on 134 Reverse Curl,
+       which already reads shoulderHeightIn. Hip height would price the bottom
+       of the rep and nothing else. Greg, 2026-09-17. */
+    165: { at: "shoulderHeightIn" }  // Reverse Curl (Forearm Focus)
+
+    /* STILL ABSENT, each for its own reason, all asserted in
+       test_plate_geometry.cjs so adding one is a deliberate act:
+         136 Incline, 137 Preacher, 143 Spider -- seated or prone, each in a
+             DIFFERENT position from 133, and none of them ruled on.
+         166 Band Farmer's Carry Hold -- a static hold. Nothing travels.
+         139 21s -- structurally inexpressible, unchanged (see above).
+         114 Box Squat -- offered to Greg 2026-08-10 and declined. */
+
     /* THE REST OF THE BICEPS RANGE IS ABSENT ON PURPOSE, and each absence is
        its own fact rather than one blanket "unconfirmed":
 
@@ -1364,9 +1463,15 @@
              might be wrong; it would be a category error, pricing one of three
              ranges as though it were the set. Left blank so the user picks the
              range they care about, or takes the honest RATED degradation.
-         133 Concentration, 136 Incline, 137 Preacher, 143 Spider -- seated or
-             prone (Greg confirmed 2026-09-07). You cannot stand on a footplate
-             to do them, so there is no plate rig for a default to answer.
+         136 Incline, 137 Preacher, 143 Spider -- seated or prone (Greg
+             confirmed 2026-09-07). No plate rig exists for a default to
+             answer, and each sits in a DIFFERENT position from the others,
+             so none of them inherits 133's answer.
+             133 Concentration was the fourth name on this line until
+             2026-09-17, when Greg reported it asking for a height -- he had a
+             footplate on it. It now terminates at the seated shoulder, above.
+             The other three are untouched: one of four turning out to have a
+             plate rig says nothing about the remaining three.
 
        135 Drag Curl was the fifth absence until the chest landmark arrived. It
        is the case that justifies enumerating this list rather than taking the
@@ -1379,23 +1484,41 @@
     if (!body) return null;
     var rule = PLATE_GRIP_DEFAULT[String(exId)];
     if (!rule) return null;
-    /* Two forms, both guarded through finitePos so an empty input box, a null
-       and an imported "55.5" are all refused rather than coerced.
+    /* The OFFSET, resolved before either shape uses it.
 
-       `at`   -- the rep ends at ONE landmark. A racked squat terminates at the
-                 shoulder and nowhere else; writing that as frac:0 between two
-                 copies of the same field would be a lie about the movement.
-       `from/to/frac` -- interpolates, for the hinge family where the hands
-                 finish somewhere between two landmarks. */
+       plusIn is a CONSTANT and is right where the number is a fact about the
+       MOVEMENT -- a shrug raises the hands about 1.5in whoever is doing it
+       (41, 201). plusField names a profile field instead, for a number that is
+       a fact about the LIFTER: Greg's overhead reach past mid-shoulder is 18in
+       and it varies 16-20 even for him, so a constant here would be wrong for
+       everybody else and silently so.
+
+       A declared plusField that is not measured WITHHOLDS the default -- it
+       never falls back to the base landmark. Pricing a standing overhead press
+       at the shoulder would be 18in of stretch short and perfectly plausible
+       on screen, which is the exact failure this table exists to prevent. Same
+       rule the two interpolated curls already follow for their landmarks.
+
+       A RULE CARRIES ONE OR THE OTHER, NEVER BOTH. If one ever carried both,
+       plusField wins and plusIn is ignored in silence -- stated here because
+       the table keeps growing and nothing enforces it. */
+    var plus = 0;
+    if (rule.plusField) {
+      var pv = body[rule.plusField];
+      if (!finitePos(pv)) return null;
+      plus = pv;
+    } else if (rule.plusIn) {
+      plus = rule.plusIn;
+    }
     if (rule.at) {
       var at = body[rule.at];
       if (!finitePos(at)) return null;
-      var ha = at + (rule.plusIn || 0);
+      var ha = at + plus;
       return finitePos(ha) ? ha : null;
     }
     var from = body[rule.from], to = body[rule.to];
     if (!finitePos(from) || !finitePos(to)) return null;
-    var h = from + (to - from) * rule.frac + (rule.plusIn || 0);
+    var h = from + (to - from) * rule.frac + plus;
     return finitePos(h) ? h : null;
   }
 
@@ -1463,7 +1586,29 @@
     138: { at: "bodyWidthIn" },   // Zottman Curl
     140: { at: "bodyWidthIn" },   // Waiter's Curl
     141: { at: "bodyWidthIn" },   // Cross-Body Curl
-    142: { at: "bodyWidthIn" }    // Supinated Straight-Bar Curl
+    142: { at: "bodyWidthIn" },   // Supinated Straight-Bar Curl
+
+    /* ── ADDED 2026-09-17. Only the genuinely TWO-HANDED movements need an
+       entry: a one-sided set has no span at all and effectiveLoad handles it
+       before this table is ever consulted. That is why 24, 27, 44, 133, 163
+       and the whole 157-165 wrist group are absent -- 24/27/44/133/163 are
+       structurally one-sided and the wrist group defaults to sided on
+       handles. On a BAR those wrist exercises read TOGETHER, and a bar
+       supplies its own attachSpanIn, so there is no gap there either. */
+    21:  { at: "bodyWidthIn" },     // Standing Band Row
+    22:  { at: "bodyWidthIn" },     // Seated Band Row
+    23:  { at: "bodyWidthIn" },     // Bent-Over Band Row
+    25:  { at: "bodyWidthIn" },     // Wide-Grip Band Row
+    26:  { at: "bodyWidthIn" },     // Close-Grip Band Row
+
+    /* SHOULDER width, not body width: the hands NARROW as they travel
+       overhead, so the loop's top crosses the shoulders rather than the
+       waist. The field already exists -- it arrived with the press model on
+       2026-09-14 as the ordinary press hand span. */
+    43:  { at: "shoulderWidthIn" }, // Standing Band Overhead Press
+    45:  { at: "shoulderWidthIn" }, // Arnold Press with Band
+    46:  { at: "shoulderWidthIn" }, // Push Press with Band
+    236: { at: "shoulderWidthIn" }  // Z Press
   };
 
   /* The span for one exercise, or null when this rig is still not modelled.
@@ -1587,6 +1732,51 @@
 
   function attachRowApplies(exId) {
     return pressExercise(exId) == null;
+  }
+
+  /* THE AVENUE CHECK -- is there any known way to price a floor/grip height
+     for this rig at all? Shared by attachRowShown below and by
+     effectiveLoad's knownAttach, so the two can never derive different
+     answers. Deliberately body-independent on its own terms: a missing
+     `body` only reaches this through plateGripDefaultFor, which already
+     returns null with none supplied, exactly as it always did. Kept
+     unexported -- effectiveLoad calls it directly so a caller with no body
+     measurements can still enter the branch below and get the named
+     degradation ("...body measurements not set") instead of silently
+     falling through to the reference-strain path. */
+  function attachAvenueKnown(exId, gearIds, gearOf, body) {
+    if (!attachRowApplies(exId)) return false;
+    if (!gearIds || !gearIds.length || !gearOf) return false;
+    if (!beltPlateOf(gearIds, gearOf)) return false;
+    if (beltBeltPresent(gearIds, gearOf)) return true;
+    if (plateGripDefaultFor(exId, body, gearIds, gearOf) != null) return true;
+    return plateTopSpan(gearIds, gearOf).kind === "bar";
+  }
+
+  /* DOES THE PICKER HAVE A QUESTION WORTH ASKING? The same condition
+     effectiveLoad's knownAttach gate applies, exported so both apps' pickers
+     read it instead of re-deriving a looser one.
+
+     Until 2026-09-17 the picker asked whenever the exercise was not a press
+     and a footplate was in the rig -- and the engine then DISCARDED the answer
+     for any rig with no belt, no PLATE_GRIP_DEFAULT entry and no bar. Measured
+     on exercise 23 with a Qdeck and handles, Serious Steel Red singled: 33.2 lb
+     at h=null, h=40 and h=20 alike. The user typed a number into a field that
+     could not reach the arithmetic.
+
+     Two readers of one fact is the 2026-08-14 and 2026-09-07 defect class.
+     This is the third instance and the last one in this row.
+
+     NOTE the deliberate asymmetry with effectiveLoad: this takes `body` only
+     to refuse when nothing is measured, because the picker has a separate
+     message for that case. It does NOT repeat effectiveLoad's per-field
+     degradations -- those produce a named RATED result the user can read, and
+     hiding the row would hide the reason. effectiveLoad's own knownAttach
+     calls attachAvenueKnown directly rather than this wrapper, precisely so
+     the `!body` refusal here never suppresses that named degradation. */
+  function attachRowShown(exId, gearIds, gearOf, body) {
+    if (!body) return false;
+    return attachAvenueKnown(exId, gearIds, gearOf, body);
   }
 
   var PRESS_FIELD_LABELS = {
@@ -1808,6 +1998,34 @@
     return pressExercise(exId) != null;
   }
 
+  /* Adding a PLATE_GRIP_DEFAULT entry makes knownAttach newly true, so these
+     22 exercises move from the ROM-blind reference-strain path onto real
+     geometry whenever a footplate was in the rig. Saved stamps therefore
+     reprice on a HISTORY re-save, and a reader deserves to be told.
+
+     THE 18th, NOT THE 17th, for the same reason PRESS_MODEL_CUTOFF is the
+     15th: the test is `>=`, so a cutoff of the 17th would not flag a session
+     logged earlier that day -- and Greg logged the 2026-09-17 workout that
+     produced this report under the old model. A day of over-flagging costs a
+     caveat line; a day of under-flagging hides a stamp that no longer matches
+     the model.
+
+     DERIVED from the entry every time it is read. Nothing is written, so
+     there is no write path to get wrong -- the same posture as
+     stampPredatesPlateGeom, stampPredatesBandPath and
+     stampPredatesPressModel. */
+  var GRIP_TABLE_CUTOFF = "2026-09-18";
+  var GRIP_TABLE_ADDED_2026_09_17 = {
+    21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 26: 1, 27: 1,
+    43: 1, 44: 1, 45: 1, 46: 1, 236: 1, 133: 1,
+    157: 1, 158: 1, 159: 1, 160: 1, 161: 1, 162: 1, 163: 1, 164: 1, 165: 1
+  };
+
+  function stampPredatesGripTable(dateISO, exId) {
+    if (!dateISO || String(dateISO) >= GRIP_TABLE_CUTOFF) return false;
+    return GRIP_TABLE_ADDED_2026_09_17[String(exId)] === 1;
+  }
+
   /* The exercise card (item q + this task) surfaces three things about a
      load figure that a printed report was silently omitting: it is a PEAK,
      not an average; some figures were computed with no range of motion at
@@ -1828,7 +2046,7 @@
       "near-slack at the bottom of a hinge and hardest at lockout, so a set can " +
       "feel far lighter than its peak.");
     var sawRomBlind = false, sawPreFold = false, sawPrePlate = false,
-        sawPreBandPath = false, sawPrePress = false;
+        sawPreBandPath = false, sawPrePress = false, sawPreGrip = false;
     (entries || []).forEach(function (e) {
       if (!e) return;
       Object.keys(e.load || {}).forEach(function (exId) {
@@ -1843,6 +2061,7 @@
           sawPreBandPath = true;
         }
         if (stampPredatesPressModel(e.date, exId)) sawPrePress = true;
+        if (stampPredatesGripTable(e.date, exId)) sawPreGrip = true;
       });
     });
     if (sawRomBlind) {
@@ -1870,6 +2089,13 @@
       notes.push("Some chest-press figures here were frozen before the press " +
         "band path existed. Those stamps priced the band at a fixed reference " +
         "stretch, or degraded for want of a floor height a press does not have.");
+    }
+    if (sawPreGrip) {
+      notes.push("Some figures here are for exercises that had no grip height " +
+        "before " + GRIP_TABLE_CUTOFF + " -- rows, overhead presses, the Z " +
+        "press, the concentration curl and the wrist group. Those stamps " +
+        "priced the band at a fixed reference stretch, or degraded for want " +
+        "of a height the app could not then work out.");
     }
     return notes;
   }
@@ -2587,13 +2813,17 @@
          beltAttachDefault already applies on the belt side. */
       var gripDefault = beltOn ? null
                         : plateGripDefaultFor(o.exId, ctx.body, gearIds, ctx.gearOf);
-      /* attachRowApplies is the ONE reader of "does this exercise have a
-         floor height", shared with both apps' pickers, so the engine and
-         the picker can never disagree. A press has returned above by now;
-         this guard is belt and braces for a caller that reaches here with
-         a press id by some other route. */
-      var knownAttach = attachRowApplies(o.exId) &&
-                        (beltOn || gripDefault != null || top.kind === "bar");
+      /* attachAvenueKnown is the ONE reader of "is there a known avenue to a
+         height for this rig", shared with attachRowShown (both apps'
+         pickers), so the engine and the picker can never disagree. It is
+         called directly here rather than through attachRowShown, because
+         attachRowShown refuses outright with no body measurements and this
+         branch still needs to run in that case to report the named
+         degradation ("...body measurements not set") below rather than
+         falling through to the reference-strain path in silence. A press has
+         returned above by now; this guard is belt and braces for a caller
+         that reaches here with a press id by some other route. */
+      var knownAttach = attachAvenueKnown(o.exId, gearIds, ctx.gearOf, ctx.body);
       if (knownAttach) {
       /* Wording only. The arithmetic below is one path; a reader looking at a
          degraded deadlift should not be told about a "belt setup". */
@@ -2623,8 +2853,25 @@
       }
       /* SINGLED ONLY -- beltReach genuinely does not consult the top span when
          the band is doubled, because the top end is the fold. Each branch names
-         the input that is missing, so nobody re-measures a band that was fine. */
+         the input that is missing, so nobody re-measures a band that was fine.
+
+         A ONE-SIDED SET HAS NO SPAN -- Greg, 2026-09-17: "one of the main
+         advantages of using handles is to work the left and right separately.
+         If you're working only left or only right there is no span."
+
+         One hand means both strands of the loop converge there, so nothing
+         crosses the body and the term is 0 -- the SAME constant a doubled set
+         already uses, where the fold is what the hands hold. The true span is
+         the width of a handle, one to two inches; using 0 enlarges `reach` by
+         under an inch and therefore reads LIGHT, which is the direction this
+         model already errs in. A fourteenth body measurement for a sub-1 lb
+         effect would not be worth what it costs the user.
+
+         This closes the single-arm question outright: 24, 27, 44, 133 and 163
+         are structurally one-sided and 157-162, 164, 165 default to sided on
+         handles, so none of them needs a HANDLE_TOP_SPAN entry at all. */
       var topSpanIn = null;
+      var oneSided = (o.side === "L" || o.side === "R");
       if (!o.doubled) {
         if (top.kind === "belt") {
           /* Load-bearing: `body.bodyWidthIn || 0` turned an unmeasured width
@@ -2645,20 +2892,49 @@
           }
           topSpanIn = top.spanIn;
         } else if (top.kind === "handles") {
-          /* Limitation 6, closed for the exercises in HANDLE_TOP_SPAN and only
-             those. Two distinct refusals, so nobody re-measures a body width
-             that was never the problem -- the same courtesy the belt and bar
-             branches above already extend. */
-          if (!handleTopSpanKnown(o.exId)) {
-            out.basis = "plate setup: a singled band on handles is not modelled";
-            return out;
+          /* ONE-SIDED WINS FIRST: a hand span only exists because TWO hands
+             hold the two strands apart. One hand means both strands converge
+             in that one hand, so the term is 0 outright -- no table lookup,
+             no refusal, for ANY exercise on handles. This is what lets 24,
+             27, 44, 133 and 163 (absent from HANDLE_TOP_SPAN on purpose,
+             see the table) price on one side with no entry at all. */
+          if (oneSided) {
+            topSpanIn = 0;
+          } else {
+            /* Limitation 6, closed for the exercises in HANDLE_TOP_SPAN and
+               only those. Two distinct refusals, so nobody re-measures a
+               body width that was never the problem -- the same courtesy
+               the belt and bar branches above already extend. */
+            if (!handleTopSpanKnown(o.exId)) {
+              out.basis = "plate setup: a singled band on handles is not modelled";
+              return out;
+            }
+            var hSpan = handleTopSpan(o.exId, ctx.body);
+            if (hSpan == null) {
+              out.basis = "handle setup: body width not measured (a singled band spans it)";
+              return out;
+            }
+            topSpanIn = hSpan;
           }
-          var hSpan = handleTopSpan(o.exId, ctx.body);
-          if (hSpan == null) {
-            out.basis = "handle setup: body width not measured (a singled band spans it)";
-            return out;
-          }
-          topSpanIn = hSpan;
+        } else if (oneSided) {
+          /* NOTHING AT THE TOP END, BUT ONE HAND -- the band held directly,
+             no bar and no handles. This refused until 2026-09-17 and it is
+             the COMMON case for the wrist group: Greg, asked how he sets
+             those up, said they "can be in the hands directly or using a bar
+             or using handles", and the gear-conditional L/R rule already
+             treats bare hands as SIDED for 157-162, 164 and 165 precisely
+             because one hand at a time is the usual way.
+
+             The refusal was asking an unanswerable question of a rig that
+             answers it. The span term exists only to say how far apart the
+             two strands are held; with one hand they converge in it, so the
+             term is 0 whatever is -- or is not -- recorded above. There is
+             nothing left to be unknown.
+
+             It stays a refusal for a BILATERAL set, where the span really is
+             unknown, and the exercise must still resolve a height through
+             PLATE_GRIP_DEFAULT to reach this branch at all. */
+          topSpanIn = 0;
         } else {
           out.basis = "plate setup: nothing recorded for the band to terminate in";
           return out;
@@ -2956,7 +3232,10 @@
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
                               exId: exId, opening: opening, bandPath: bandPath,
-                              pressSetup: pressSetup });
+                              pressSetup: pressSetup,
+                              /* Per-SET, like `doubled`. A one-sided set has no
+                                 top span at all -- see effectiveLoad. */
+                              side: setSide(s) });
       var tier = e.provenance === "RATED" ? 0 : 1;
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
@@ -3912,6 +4191,17 @@
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
+  /* A LOGGED RIR, or 0 when there is none to read. A non-numeric, negative,
+     boolean or NaN value counts as ABSENT rather than as a refusal -- this
+     judgment has no refusal path, and folding a malformed value to 0 leaves
+     the set judged on its reps alone, which is how every entry logged before
+     the sliding bar existed is already treated. (The one-rep-max guard takes
+     the opposite posture and REFUSES a malformed rir; it can, because it has
+     somewhere to report the refusal to.) */
+  function setRir(s) {
+    return (s && typeof s.rir === "number" && isFinite(s.rir) && s.rir >= 0)
+           ? s.rir : 0;
+  }
   function setPartials(s) { return (s && s.partials > 0) ? s.partials : 0; }
   /* Top load = heaviest single phase of the set (not the last, not the sum). */
   function setTopLoad(s, bandOf) {
@@ -4275,18 +4565,55 @@
         return !seenTop;          // lighter sets BEFORE the top set still count
       });
     }
-    /* Profile-driven, NOT hardcoded: both apps let a profile override the rep
-       target and the RIR cap, and Greg's profile sets rirTarget to 1. */
-    var thresh = threshOf(exId, ctx.progressReps);
-    var rirCap = (typeof ctx.rirTarget === "number") ? ctx.rirTarget : CONST.RIR_TARGET;
+    /* READY means you have OUTGROWN the range, not that you reached its top --
+       Greg, 2026-09-17. progressReps is the top of the target range (12 for
+       him), so the bar is one above it. Time-based exercises keep PROG_SECS
+       exactly as before; threshOf already branches on isTimeBased. */
+    var timeBased = isTimeBased(exId);
+    var thresh = timeBased ? threshOf(exId, ctx.progressReps)
+                           : threshOf(exId, ctx.progressReps) + 1;
+    /* THE REPS RULE AND THE RIR RULE USED TO BE TWO INDEPENDENT LOOPS, and a
+       set at RIR 1 against a cap of 0 could never qualify however many reps it
+       carried. Reps in reserve are reps you did not do, so they RAISE the bar
+       rather than closing the gate: 13 at RIR 0, 14 at RIR 1, 15 at RIR 2.
+       Greg's rule, 2026-09-17.
+
+       `rir` ABSENT CONTRIBUTES 0, so every entry logged before this keeps its
+       current meaning and there is no migration. A non-numeric rir (a string
+       from an import, a boolean) is treated as absent for the same reason the
+       one-rep-max guard refuses it -- see the 2026-09-15 RIR guard work.
+
+       ctx.rirTarget is NO LONGER CONSULTED HERE. It is what you aim for: it
+       seeds new set rows and prints on the prescription line. The logged RIR is
+       what moves the bar. That split is what makes a HIT profile's target of 0
+       safe -- it no longer disqualifies a RIR-1 set, it asks for one more rep. */
     function sideReady(list) {
       if (!list.length) return false;
       var i;
-      for (i = 0; i < list.length; i++) if (setReps(list[i]) < thresh) return false;
       for (i = 0; i < list.length; i++) {
-        if (list[i].rir != null && list[i].rir > rirCap) return false;
+        var s = list[i];
+        var rir = setRir(s);
+        var bar = timeBased ? thresh : thresh + rir;
+        if (setReps(s) < bar) return false;
       }
       return true;
+    }
+    /* THE BAR THE USER ACTUALLY FACED, so the analyzer can name it. sideReady
+       applies `thresh + rir` PER SET; `threshold` alone is the base and
+       understates what a set with reps in reserve had to clear. Reporting only
+       the base made NEAR give wrong advice -- a lift at 12 reps and RIR 3 is 4
+       short of a bar of 16, and the old line said "1r short ... push 1-2 more
+       reps". Greg's ruling, 2026-09-17.
+
+       The LARGEST rir among the judged sets, because every set must clear its
+       own bar, so the highest one is what the exercise has to reach. Always 0
+       for a time-based exercise, which ignores rir entirely. */
+    var rirAdd = 0;
+    if (!timeBased) {
+      working.forEach(function (s) {
+        var r = setRir(s);
+        if (r > rirAdd) rirAdd = r;
+      });
     }
     var bySide = { B: [], L: [], R: [] };
     working.forEach(function (s) { bySide[setSide(s) || "B"].push(s); });
@@ -4304,6 +4631,8 @@
          because flat reps at a heavier stack is load progression. */
       stalled: !ready && isStalled(ctx.log, exId, beforeDate, deloadOf),
       threshold: thresh,
+      rirAdd: rirAdd,
+      barApplied: thresh + rirAdd,
       /* Set when the rep target was met but the load had come down, so callers
          can explain the withheld READY instead of just not showing it. */
       loadDropped: loadDropped,
@@ -5021,6 +5350,7 @@
   /* Priority-ordered, first match wins. READY outranks STALLED: if the lift has
      earned a load increase, that is the action, not a stall remedy. */
   function exerciseVerdict(ctx, row) {
+    var phrase = barPhrase(row.barApplied, row.thresh, row.rirAdd, row.unit);
     /* Staleness first. progressionState judges the most recent session however
        old it is, so a lift abandoned weeks ago would otherwise be told to "add a
        band". Past the dormant threshold the only useful advice is to resume it.
@@ -5029,13 +5359,13 @@
     if (row.daysSince != null && row.daysSince >= CONST.DORMANT_DAYS) {
       return { code: "EX_DORMANT", text: "Not trained in " + row.daysSince +
         " days. Resume it before judging progression - the last session reached " +
-        row.bestReps + row.unit + " against a " + row.thresh + row.unit + " target." };
+        row.bestReps + row.unit + " against a " + phrase + "." };
     }
     if (row.ready) {
       var sug = ctx.suggestOf ? ctx.suggestOf(row.lastBands || []) : null;
       var how = sug ? (sug.add || sug.swap) : null;
-      return { code: "READY", text: "Hit the " + row.thresh + row.unit +
-        " target - progress the load: " + (how || "add the lightest band you own") + "." };
+      return { code: "READY", text: "Hit the " + phrase +
+        " - progress the load: " + (how || "add the lightest band you own") + "." };
     }
     /* isStalled measures REPS only (the app's inherited rule for the in-workout
        badge). Under double progression, flat reps with RISING top load is load
@@ -5063,10 +5393,10 @@
       return { code: "DECLINING", text: "Top load is falling (" + fmtDelta(row.deltaPct) +
         " across " + row.n + " sessions). Hold the load and rebuild reps, and check recovery." };
     }
-    if (row.trend === "FLAT" && row.bestReps < row.thresh &&
-        row.bestReps >= row.thresh - CONST.NEAR_REPS) {
-      return { code: "NEAR", text: (row.thresh - row.bestReps) + " " + row.unit +
-        " short of the " + row.thresh + row.unit + " target and flat - push 1-2 more reps before adding load." };
+    if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
+        row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
+      return { code: "NEAR", text: (row.barApplied - row.bestReps) + row.unit +
+        " short of the " + phrase + " and flat - push 1-2 more reps before adding load." };
     }
     if (row.trend === "GROWING") {
       return { code: "GROWING", text: "Progressing (" + fmtDelta(row.deltaPct) +
@@ -5074,7 +5404,7 @@
     }
     return { code: "HOLDING", text: row.n < 3
       ? "Only " + row.n + " session(s) in this window - insufficient data for a trend."
-      : "Holding steady. Keep accumulating reps toward the " + row.thresh + row.unit + " target." };
+      : "Holding steady. Keep accumulating reps toward the " + phrase + "." };
   }
 
   function analyzeExercises(ctx, win) {
@@ -5146,6 +5476,8 @@
         trend: classifyTrend(sp),
         bestReps: arr.reduce(function (m, x) { return x.best > m ? x.best : m; }, 0),
         thresh: ps.threshold,
+        rirAdd: ps.rirAdd,
+        barApplied: ps.barApplied,
         unit: repUnit(exId),
         volume: arr.reduce(function (a, x) { return a + x.vol; }, 0),
         allTimeBest: allBest[exId] || 0,
@@ -5850,7 +6182,7 @@
           fmtNum(r.firstTop) + " -> " + fmtNum(r.lastTop),
           fmtDelta(r.deltaPct),
           r.trend + (r.isPR ? " PR" : ""),
-          r.bestReps + r.unit + " / " + r.thresh + r.unit,
+          r.bestReps + r.unit + " / " + r.barApplied + r.unit,
           r.verdict.code
         ]);
       });
@@ -6959,6 +7291,7 @@
     isTimeBased: isTimeBased,
     threshOf: threshOf,
     repUnit: repUnit,
+    barPhrase: barPhrase,
     parseResRange: parseResRange,
     sumRes: sumRes,
     bandMid: bandMid,
@@ -7057,6 +7390,7 @@
     pressExercise: pressExercise,
     pressSetupOptions: pressSetupOptions,
     attachRowApplies: attachRowApplies,
+    attachRowShown: attachRowShown,
     seedPressSetups: seedPressSetups,
     pressSpan: pressSpan,
     pressTerms: pressTerms,
@@ -7100,6 +7434,8 @@
     BAND_PATH_CUTOFF: BAND_PATH_CUTOFF,
     PRESS_MODEL_CUTOFF: PRESS_MODEL_CUTOFF,
     stampPredatesPressModel: stampPredatesPressModel,
+    GRIP_TABLE_CUTOFF: GRIP_TABLE_CUTOFF,
+    stampPredatesGripTable: stampPredatesGripTable,
     GEAR_CATALOG: GEAR_CATALOG,
     gearCatalog: gearCatalog,
     gearCatalogItem: gearCatalogItem,
