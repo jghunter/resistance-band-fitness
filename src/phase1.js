@@ -370,12 +370,43 @@
     return src.map(function (p) {
       if (!p || p.id !== activeId) return p;
       var next = Object.assign({}, p);
-      keys.forEach(function (k) { next[k] = patch[k]; });
+      /* NULL ON A KEY THAT HAS A DEFAULT MEANS "CLEAR MY CHOICE", NOT "CHOOSE
+         NULL" -- it is the panel's PROFILE button. So the key is DELETED and
+         unmarked, which is the only way the resolver's layers can answer for
+         it again: explicitKeysOf skips a key that is ABSENT from the profile
+         (`!(k in p)`), but a stored null DIFFERS from the default and so gets
+         re-marked explicit by the very heuristic that protects a real choice.
+
+         Storing null and marking it explicit made the button do the opposite
+         of its label. resolveProfile skipped BOTH the population and
+         volume-model layers, the answer stayed null, and the app fell back to
+         a hardcoded number: a fresh HIT profile resolved rirTarget 0, and one
+         tap on PROFILE resolved 1. Found 2026-09-17 by a reviewer, reproduced
+         before it was believed.
+
+         Scoped to keys that HAVE a PROFILE_DEFAULTS entry. A body measurement
+         has no layer to fall through to, so clearing one still stores null and
+         still counts as deliberate -- unchanged, and asserted. */
+      var cleared = [];
+      keys.forEach(function (k) {
+        if (patch[k] === null && Object.prototype.hasOwnProperty.call(PROFILE_DEFAULTS, k)) {
+          delete next[k];
+          cleared.push(k);
+          return;
+        }
+        next[k] = patch[k];
+      });
       /* markExplicit seeds from explicitKeysOf, NOT from [] -- the whole point.
          Seeding from [] is what replaced a nine-field inferred protection with a
          two-field recorded one on 2026-08-03, so rirTarget: 1 lost to
-         older_adult's suggested 2 for three days with nothing on screen. */
-      next.explicitKeys = markExplicit(p, keys);
+         older_adult's suggested 2 for three days with nothing on screen.
+
+         Seeded from `next`, not `p`, so a key just deleted is already gone from
+         the inferred half; then the cleared names are dropped from the recorded
+         half too. Every OTHER key keeps its protection. */
+      next.explicitKeys = markExplicit(next, keys.filter(function (k) {
+        return cleared.indexOf(k) < 0;
+      })).filter(function (k) { return cleared.indexOf(k) < 0; });
       return next;
     });
   }
