@@ -235,6 +235,18 @@ const _ACTIVE_PROFILE = (() => { try {
 } catch { return null } })()
 const PROG_TARGET_REPS = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.progressReps === 'number') ? _ACTIVE_PROFILE.progressReps : PROG_REPS
 const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'number') ? _ACTIVE_PROFILE.rirTarget : DEFAULT_RIR
+/* THE LIVE VALUE, added 2026-09-17, mirrors fitness_app.html's rirTargetNow().
+   RIR_TARGET above is snapshotted once at module load, which was fine while
+   nothing could edit it -- the TRAINING STYLE panel now has an RIR control
+   that writes TRAINING_STYLE.rirTarget (the mutable holder), so a caller that
+   kept reading RIR_TARGET would show the old target until the next reload.
+   null in the holder means PROFILE, so it falls through to the load-time
+   snapshot, which already resolved VOLUME_MODEL_DEFAULTS. */
+function rirTargetNow() {
+  return (TRAINING_STYLE && typeof TRAINING_STYLE.rirTarget === 'number'
+          && TRAINING_STYLE.rirTarget >= 0)
+         ? TRAINING_STYLE.rirTarget : RIR_TARGET
+}
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
@@ -275,7 +287,10 @@ const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
    gearItems is OPTIONAL — absent, a gear-conditional exercise seeds bilateral. */
 const initSets = (id, n, gearItems, carryBands) =>
   RBTS_REPORTS.seedRows(id, n, gearItems,
-    () => ({reps:0, bands:(carryBands || []).slice(), rir:RIR_TARGET}))
+    /* rirTargetNow(), not RIR_TARGET -- see the 2026-09-17 comment above. A
+       fresh exercise seeded through the stale snapshot would ignore the RIR
+       control until the page reloaded. */
+    () => ({reps:0, bands:(carryBands || []).slice(), rir:rirTargetNow()}))
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
@@ -1318,12 +1333,17 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
           exercise unloggable. */}
       {(() => {
         const gearOf = (id) => byId[id]
-        /* A chest press ends at full arm extension, not at a height above
-           the floor, so it is never asked for one. attachRowApplies is the
-           SAME reader effectiveLoad's knownAttach gate consults, so the
-           picker and the engine can never disagree about this -- which is
-           the 2026-08-14 and 2026-09-07 defect class. */
-        if (!RBTS_REPORTS.attachRowApplies(exId)) return null
+        /* ONE reader, shared with effectiveLoad's knownAttach gate since
+           2026-09-17 -- see the same comment in fitness_app.html. The old
+           gate (attachRowApplies alone -- not a press) was LOOSER than the
+           engine's, so a rig with no belt, no table entry and no bar asked
+           for a height the engine then discarded.
+           Guarded: reports.js is generated and lags between syncs. */
+        if (RBTS_REPORTS.attachRowShown) {
+          if (!RBTS_REPORTS.attachRowShown(exId, sel, gearOf, BODY_MEASURE)) return null
+        } else {
+          if (!RBTS_REPORTS.attachRowApplies(exId)) return null
+        }
         const plate = RBTS_REPORTS.beltPlateOf(sel, gearOf)
         if (!plate) return null
         const beltOn = RBTS_REPORTS.beltBeltPresent(sel, gearOf)
@@ -1927,7 +1947,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       <div style={{borderTop:'1px solid rgba(255,255,255,0.07)',paddingTop:8}}>
         <span style={{...lbl,marginBottom:2}}>LOG SETS</span>
         <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginBottom:6}}>
-          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{PROG_TARGET_REPS} AT RIR ≤{RIR_TARGET} → MOVE UP A BAND
+          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{PROG_TARGET_REPS + 1} REPS, +1 PER RIR → MOVE UP A BAND
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
@@ -2473,7 +2493,10 @@ function makeReportCtx({ log, gear, myBands }) {
     programs: PROGRAMS,
     // Profile-driven progression targets, NOT the module's fallbacks.
     progressReps: PROG_TARGET_REPS,
-    rirTarget: RIR_TARGET,
+    // rirTargetNow(), not RIR_TARGET -- read live so a RIR control edit
+    // reaches READY / STALLED without a reload. See the 2026-09-17 comment
+    // above rirTargetNow's definition.
+    rirTarget: rirTargetNow(),
     /* "standard" (weekly set landmarks apply) | "hit" (one set to failure —
        landmarks withheld, balance judged on prescribed share). Mirrors
        fitness_app.html; set there, read here. */
@@ -4112,6 +4135,34 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               ))}
             </div>
           </div>
+          <div>
+            <span style={lbl}>REPS IN RESERVE TARGET</span>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+              margin:'2px 0 4px 0',maxWidth:320,lineHeight:1.6}}>
+              What a new set row starts at. 0 means carried to failure. It is
+              what you AIM for — it does not gate progression. A set that
+              leaves reps in reserve simply needs that many more reps before
+              READY fires.
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {/* PROFILE writes null, so the value falls through to the
+                  resolver: VOLUME_MODEL_DEFAULTS gives a HIT profile 0, and
+                  everyone else lands on the population or base default. For a
+                  HIT profile PROFILE and 0 therefore do the same thing, which
+                  is the same accepted side effect the SETS control carries. */}
+              <button style={{...btn(TRAINING_STYLE.rirTarget==null),fontSize:10,padding:'3px 7px'}}
+                onClick={()=>{ saveTrainingStyle({rirTarget:null}, user?.uid); setTsTick(tsTick+1) }}>
+                PROFILE
+              </button>
+              {[0,1,2,3].map(n => (
+                <button key={n}
+                  style={{...btn(TRAINING_STYLE.rirTarget===n),fontSize:10,padding:'3px 7px'}}
+                  onClick={()=>{ saveTrainingStyle({rirTarget:n}, user?.uid); setTsTick(tsTick+1) }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div style={{marginTop:12}}>
           <div style={lbl}>BODY MEASUREMENTS</div>
@@ -4132,6 +4183,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
             middle of your closed hand with the arm straight. CLOSE GRIP is hand centre to
             hand centre at lockout on a close-grip press with no bar. SINGLE-ARM HOLD is
             from your back to the middle of the hand that is NOT pressing.
+            The last three arrived on 2026-09-17. OVERHEAD REACH is how far above
+            mid-shoulder your hands finish at lockout on an overhead press — measure
+            the distance, not the height off the floor. SEATED SHOULDER is floor to
+            mid-shoulder sitting on the floor in the Z-press position. ROW TOP is
+            floor to the bar at the moment it touches your torso while rowing; the
+            same number serves a seated row and a bent-over row, because the band
+            travels the same way in both.
           </div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
             {[['kneeHeightIn','KNEE'],['midThighHeightIn','MID-THIGH'],
@@ -4144,7 +4202,10 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               ['chestThicknessIn','CHEST DEPTH'],
               ['pressReachIn','PRESS REACH'],
               ['closeGripSpanIn','CLOSE GRIP'],
-              ['singleArmHoldIn','SINGLE-ARM HOLD']].map(f => (
+              ['singleArmHoldIn','SINGLE-ARM HOLD'],
+              ['overheadReachIn','OVERHEAD REACH'],
+              ['seatedShoulderHeightIn','SEATED SHOULDER'],
+              ['rowTopHeightIn','ROW TOP']].map(f => (
               <div key={f[0]} style={{display:'flex',flexDirection:'column',gap:2}}>
                 <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{f[1]}</span>
                 <input type="number" step="0.25" min="0"

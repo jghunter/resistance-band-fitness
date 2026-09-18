@@ -2476,9 +2476,14 @@ function readTrainingStyle() {
          written twice. Miss the catch and the method silently reverts to
          undefined for any user whose stored profile fails to parse. */
       oneRmMethod: (p && p.oneRmMethod) || 'epley',
+      /* Added 2026-09-17, mirrors fitness_app.html. 0 is a real, meaningful
+         RIR target (train to failure), not an absent one -- so the guard is
+         >= 0, unlike defaultSets' > 0. null falls through to the resolver,
+         which reads VOLUME_MODEL_DEFAULTS for a HIT profile. */
+      rirTarget: (p && typeof p.rirTarget === 'number' && p.rirTarget >= 0) ? p.rirTarget : null,
     }
   } catch (e) { return { defaultSets: null, volumeModel: 'standard',
-                         oneRmMethod: 'epley' } }
+                         oneRmMethod: 'epley', rirTarget: null } }
 }
 export const TRAINING_STYLE = readTrainingStyle()
 
@@ -2515,7 +2520,8 @@ function readBodyMeasure() {
                    chestHeightIn: null, shoulderHeightIn: null,
                    handsAtRestIn: null, bodyWidthIn: null,
                    shoulderWidthIn: null, torsoWidthIn: null, chestThicknessIn: null,
-                   pressReachIn: null, closeGripSpanIn: null, singleArmHoldIn: null }
+                   pressReachIn: null, closeGripSpanIn: null, singleArmHoldIn: null,
+                   overheadReachIn: null, seatedShoulderHeightIn: null, rowTopHeightIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2552,6 +2558,19 @@ function readBodyMeasure() {
       pressReachIn:     num(p.pressReachIn),
       closeGripSpanIn:  num(p.closeGripSpanIn),
       singleArmHoldIn:  num(p.singleArmHoldIn),
+      /* ── ADDED 2026-09-17, mirrors fitness_app.html ─────────────────────
+         Same posture as the other thirteen: default null, ABSENT from
+         PROFILE_DEFAULTS so an unset field is never backfilled, written
+         through saveTrainingStyle so they land on explicitKeys, guarded by
+         the shared bodyMeasureNum. OVERHEAD REACH is a fact about the
+         LIFTER -- fitness_app.html's PLATE_GRIP_DEFAULT reads it through
+         plusField rather than a constant, since it varies with what Greg's
+         shoulder allows that day. SEATED SHOULDER serves the Z Press. ROW
+         TOP serves all seven rows, seated and bent-over alike, because the
+         band travel is the same. */
+      overheadReachIn:        num(p.overheadReachIn),
+      seatedShoulderHeightIn: num(p.seatedShoulderHeightIn),
+      rowTopHeightIn:         num(p.rowTopHeightIn),
     }
   } catch (e) { return empty }
 }
