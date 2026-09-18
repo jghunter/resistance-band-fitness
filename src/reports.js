@@ -97,8 +97,9 @@
   }
   function repUnit(id) { return isTimeBased(id) ? "sec" : "r"; }
   /* ONE wording for the bar, used by every verdict line so they cannot drift.
-     At rirAdd 0 it is BYTE-IDENTICAL to the wording that shipped before the
-     sliding bar existed, so an RIR-0 profile sees no change at all. */
+     At rirAdd 0 the WORDING is byte-identical to what shipped before the
+     sliding bar existed. The NUMBER still moved for everyone, because the
+     base bar went from the range top to one rep above it. */
   function barPhrase(bar, target, rirAdd, unit) {
     if (!rirAdd) return target + unit + " target";
     return bar + unit + " bar (" + target + unit + " target, +" + rirAdd +
@@ -1421,7 +1422,18 @@
        upright over the thigh and the hand finishes there. Greg reported it
        asking for a height on 2026-09-17; he had a footplate on it. The
        absence note below used to name 133 and now names only the other
-       three. */
+       three.
+
+       IT NEEDS A SHORT BAND, and the entry is right even though a long one
+       degrades. A seated shoulder is roughly 22in off the floor, which is
+       BELOW a singled 41in band's own reach on a Qdeck (26.5in) -- the band
+       is already slack there and the model refuses rather than reporting a
+       fabricated load. That is the physics, not a table error: the lift is
+       done seated, low to the floor, so it wants a short band or a folded
+       one. Worth knowing because the one-sided refusal reads "no band in
+       this stack can be rigged on this footplate", which sounds like a band
+       fault and is really a height fault. Flagged by the 2026-09-17
+       whole-branch review. */
     133: { at: "seatedShoulderHeightIn" },  // Concentration Curl
 
     /* THE WRIST GROUP is NOT the press case. Greg: there IS travel, about
@@ -1627,6 +1639,64 @@
   }
   function handleTopSpanKnown(exId) {
     return HANDLE_TOP_SPAN[String(exId)] != null;
+  }
+
+  /* ── THE PICKER'S TOP SPAN ─────────────────────────────────────────────
+     Added 2026-09-17, after the whole-branch review.
+
+     `effectiveLoad` reads the span term per SET, because `side` is a per-set
+     field. The HIGHEST POINT picker draws ONE row of buttons for the whole
+     exercise and so needs ONE answer, and until now it simply handed
+     `plateTopSpan().spanIn` to `beltReach` -- which refills a null from
+     `bodyWidthIn`. On a one-sided set the engine uses 0 instead, and on
+     Greg's own rig (Qdeck, 41in Serious Steel Red, singled, bodyWidthIn
+     17.25) the two disagreed by 8.625in of REACH: every stretch figure on
+     every button was out by that much, every `!` / `^` rated-span marker was
+     computed off the wrong strain, and the picker OFFERED a KNEE landmark
+     the engine then refused with a message that blames the band.
+
+     That is the THIRD time the picker and the engine have priced the same
+     rig differently (2026-08-14, 2026-09-07, now). So the arithmetic moves
+     here, where one function answers for both, rather than being mirrored a
+     third time in two apps.
+
+     `null` means "not supplied, fall back" and is returned in exactly two
+     kinds of case: where the engine also ignores the term (doubled, or a
+     belt at the top), and where the engine REFUSES outright. In a refusal
+     the load degrades to RATED and no picker figure describes anything the
+     engine computed, so the old body-width fallback is left alone there. */
+  function setsOneSided(sets) {
+    var arr = sets || [], i, s;
+    if (!arr.length) return false;
+    for (i = 0; i < arr.length; i++) {
+      s = arr[i] || {};
+      /* EVERY row must carry a side. A card with one bilateral row still has
+         a set whose two hands hold the two strands apart, and that wider
+         span -- the one the picker already drew -- is the honest one to show
+         for a row of buttons that has to serve both. */
+      if (s.side !== "L" && s.side !== "R") return false;
+    }
+    return true;
+  }
+
+  function attachTopSpan(exId, top, body, doubled, oneSided) {
+    if (doubled) return null;              /* the top end is the FOLD */
+    if (!top) return null;
+    if (top.kind === "belt") return null;  /* the belt rule owns the width */
+    if (top.kind === "bar") {
+      /* NOT side-dependent, and this is the branch it is easy to get wrong:
+         a bar is rigid, so a singled band is hooked at two points ACROSS it
+         whether one hand or two are on it. The engine does not consult
+         `side` here either. */
+      return finitePos(top.spanIn) ? top.spanIn : null;
+    }
+    if (top.kind === "handles") {
+      if (oneSided) return 0;
+      return handleTopSpanKnown(exId) ? handleTopSpan(exId, body) : null;
+    }
+    /* Nothing recorded at the top end. One hand converges both strands, so
+       the term is a real 0; bilateral, the engine refuses. */
+    return oneSided ? 0 : null;
   }
 
   /* ── THE PRESS BAND PATH ───────────────────────────────────────────────
@@ -2438,8 +2508,8 @@
 
   /* One estimate. `rir` null or undefined means none was recorded, which is
      MARKED rather than assumed -- ignoring RIR understates the max by about
-     three percent per rep held back, consistently and invisibly, against a
-     profile whose rirTarget is 1.
+     three percent per rep held back, consistently and invisibly, however
+     low the profile's rirTarget is set.
 
      RIR 0 IS A RECORDED VALUE. A falsy check here would treat a set taken
      to true failure as an unrecorded one, which is backwards. */
@@ -4526,7 +4596,8 @@
     for (var i = 1; i < best.length; i++) if (best[0] > best[i]) return false;
     return true;
   }
-  /* Double progression, RIR-gated. L and R sets are evaluated INDEPENDENTLY
+  /* Double progression; a logged RIR raises the rep bar rather than gating it.
+     L and R sets are evaluated INDEPENDENTLY
      (reps can legitimately differ per side); untagged sets keep the legacy
      bilateral behavior. Single source of truth for the flag - both the
      in-workout exercise card and the setup sheet call this. */
@@ -4537,8 +4608,8 @@
     var working = h.length ? h[0].sets.filter(isPlainSet) : [];
 
     /* --- load awareness -------------------------------------------------
-       The rep rule alone cannot tell "hit 12 at the same stack" (a genuine
-       progression signal) from "hit 12 because the stack got lighter". Two
+       The rep rule alone cannot tell "hit the bar at the same stack" (a genuine
+       progression signal) from "hit the bar because the stack got lighter". Two
        corrections, both from panel recommendation 18:
 
        1. BACK-OFF SETS. Sets after the heaviest one, at a lighter stack, are
@@ -7384,6 +7455,8 @@
     HANDLE_TOP_SPAN: HANDLE_TOP_SPAN,
     handleTopSpan: handleTopSpan,
     handleTopSpanKnown: handleTopSpanKnown,
+    setsOneSided: setsOneSided,
+    attachTopSpan: attachTopSpan,
     PRESS_EXERCISES: PRESS_EXERCISES,
     PRESS_SETUP_LABELS: PRESS_SETUP_LABELS,
     PRESS_FIELD_LABELS: PRESS_FIELD_LABELS,

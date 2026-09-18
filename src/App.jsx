@@ -222,10 +222,11 @@ const DEFAULT_RIR = (() => { try {
   return (p && typeof p.rirTarget === 'number') ? p.rirTarget : 1
 } catch { return 1 } })()
 // ── Phase 3: active-profile-driven progression targets (default to legacy globals) ──
-/* Resolved through `population`: PROFILE_DEFAULTS < POPULATION_DEFAULTS <
-   whatever the profile set explicitly. A population default NEVER overrides an
-   explicit field — Greg's rirTarget of 1 stays 1 under older_adult, which
-   would otherwise suggest 2. Mirrors fitness_app.html. */
+/* Resolved through `population` and `volumeModel`: PROFILE_DEFAULTS <
+   POPULATION_DEFAULTS < VOLUME_MODEL_DEFAULTS < whatever the profile set
+   explicitly. Neither layer EVER overrides an explicit field — Greg's
+   rirTarget of 1 stays 1 under older_adult, which would otherwise suggest 2,
+   and under "hit", which would otherwise suggest 0. Mirrors fitness_app.html. */
 const _ACTIVE_PROFILE = (() => { try {
   const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
   const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -240,12 +241,26 @@ const RIR_TARGET = (_ACTIVE_PROFILE && typeof _ACTIVE_PROFILE.rirTarget === 'num
    nothing could edit it -- the TRAINING STYLE panel now has an RIR control
    that writes TRAINING_STYLE.rirTarget (the mutable holder), so a caller that
    kept reading RIR_TARGET would show the old target until the next reload.
-   null in the holder means PROFILE, so it falls through to the load-time
-   snapshot, which already resolved VOLUME_MODEL_DEFAULTS. */
+   null in the holder means PROFILE, and that branch RE-RESOLVES from storage
+   rather than reading the snapshot. Reading the snapshot was wrong for the one
+   case the button exists to serve: tapping PROFILE on a HIT profile that
+   carried an explicit rirTarget DELETES the stored key, so the resolver
+   answers VOLUME_MODEL_DEFAULTS' 0 while the snapshot still holds the old
+   explicit value -- PROFILE would seed the number it had just cleared. */
+function rirTargetResolved() {
+  try {
+    const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const raw = ps.find(x => x.id === ap) || null
+    if (!raw) return RIR_TARGET
+    const r = (RBTS_PHASE1 && RBTS_PHASE1.resolveProfile) ? RBTS_PHASE1.resolveProfile(raw) : raw
+    return (r && typeof r.rirTarget === 'number') ? r.rirTarget : RIR_TARGET
+  } catch { return RIR_TARGET }
+}
 function rirTargetNow() {
   return (TRAINING_STYLE && typeof TRAINING_STYLE.rirTarget === 'number'
           && TRAINING_STYLE.rirTarget >= 0)
-         ? TRAINING_STYLE.rirTarget : RIR_TARGET
+         ? TRAINING_STYLE.rirTarget : rirTargetResolved()
 }
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
@@ -1147,7 +1162,7 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange }) {
+function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange }) {
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1379,6 +1394,18 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
            Guarded: reports.js is generated and lags rbts_reports.js between
            syncs, and an absent list falls back to the belt keys, not a throw. */
         const top = RBTS_REPORTS.plateTopSpan(sel, gearOf)
+        /* THE SPAN THE ENGINE WILL USE, not the raw plateTopSpan figure.
+           effectiveLoad reads `side` per set and drops the span term to 0 on
+           a one-sided set; this picker draws one row of buttons and used to
+           hand beltReach a null, which refills from bodyWidthIn. On Greg's
+           Qdeck with a singled 41in band that was 8.625in of reach out, on
+           exactly the wrist exercises that default to L/R. attachTopSpan is
+           the one place the rule now lives.
+           Guarded: reports.js is generated and lags rbts_reports.js between
+           syncs; the fallback is the pre-2026-09-17 behaviour. */
+        const spanIn = RBTS_REPORTS.attachTopSpan
+          ? RBTS_REPORTS.attachTopSpan(exId, top, BODY_MEASURE, !!doubled, !!oneSided)
+          : top.spanIn
         const lmKeys = RBTS_REPORTS.attachLandmarkKeys
           ? RBTS_REPORTS.attachLandmarkKeys(top.kind) : undefined
         /* `plate` is the gear ITEM; resolveGearDims(plate) is its dims. The
@@ -1394,7 +1421,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const opts = RBTS_REPORTS.beltAttachOptions(
           band, getLocalBandGeom()[band.id] || null,
           RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE,
-          lmKeys, top.spanIn, bPath)
+          lmKeys, spanIn, bPath)
         const setAttach = onAttachChange || (()=>{})
         /* CUSTOM, added 2026-08-03 in place of a MID-SHIN landmark: a Harambe
            belt fed through a rope or strap hangs at a VARIABLE height that no
@@ -1407,7 +1434,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
         const custom = (attachHeightIn != null && !isLm)
           ? RBTS_REPORTS.beltAttachAt(band, getLocalBandGeom()[band.id] || null,
               RBTS_REPORTS.resolveGearDims(plate), !!doubled, BODY_MEASURE, attachHeightIn,
-              top.spanIn, bPath)
+              spanIn, bPath)
           : null
         const shown = opts.concat(custom ? [custom] : [])
         return (
@@ -1430,7 +1457,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, attachHeightIn, o
               const noReach = RBTS_REPORTS.beltReach(
                 band, getLocalBandGeom()[band.id] || null,
                 RBTS_REPORTS.resolveGearDims(plate), !!doubled,
-                BODY_MEASURE, top.spanIn, bPath) == null
+                BODY_MEASURE, spanIn, bPath) == null
               return (
                 <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,marginBottom:4}}>
                   {noReach
@@ -1967,6 +1994,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
           <GearPicker inv={gearInv} selected={gear||[]} onChange={onGearChange||(()=>{})} exId={id}
             bands={setBandsOf(refSet())} doubled={!!refSet().doubled}
+            oneSided={RBTS_REPORTS.setsOneSided ? RBTS_REPORTS.setsOneSided(sets) : false}
             attachHeightIn={attachHeightIn} onAttachChange={onAttachChange||(()=>{})}
             opening={opening} onOpeningChange={onOpeningChange||(()=>{})}
             bandPath={bandPath} onBandPathChange={onBandPathChange||(()=>{})}
@@ -2510,6 +2538,12 @@ function makeReportCtx({ log, gear, myBands }) {
     // rirTargetNow(), not RIR_TARGET -- read live so a RIR control edit
     // reaches READY / STALLED without a reload. See the 2026-09-17 comment
     // above rirTargetNow's definition.
+    /* KEPT, and UNREAD by the module since 2026-09-17. The sliding bar reads
+       each set's OWN logged rir, so nothing in rbts_reports.js consults this
+       any more. It stays on the ctx because it is the profile's aim, it costs
+       one property, and a reader that wants to PRINT the target should find
+       it here rather than reach for a global. Do not mistake it for live
+       wiring. */
     rirTarget: rirTargetNow(),
     /* "standard" (weekly set landmarks apply) | "hit" (one set to failure —
        landmarks withheld, balance judged on prescribed share). Mirrors
@@ -4515,6 +4549,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
             <GearPicker inv={gearInv} selected={gr[id]||[]} exId={id}
               onChange={ids=>setGr(prev=>({...prev,[id]:ids}))}
               bands={setBandsOf(refSetOf(id))} doubled={!!refSetOf(id).doubled}
+              oneSided={RBTS_REPORTS.setsOneSided ? RBTS_REPORTS.setsOneSided(ex[id]||[]) : false}
               attachHeightIn={at[id]} onAttachChange={h=>updateAttach(id,h)}
               opening={op[id]}
               onOpeningChange={n=>setOp(prev=>{const x={...prev}; if(n==null) delete x[id]; else x[id]=n; return x})}
