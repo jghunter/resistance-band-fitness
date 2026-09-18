@@ -1737,7 +1737,21 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
     const last = sets[sets.length-1]
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
     const lr = last ? (Array.isArray(last.segments) ? 0 : (last.reps||0)) : 0
-    const n = {reps: lr, bands: [...lb]}
+    /* rir is SEEDED, not left absent -- matching fitness_app.html's
+       LoggedExCard.addSet, which has always done this. The PWA's did not, and
+       from 2026-09-17 that stopped being cosmetic: the progression bar is now
+       `reps >= thresh + rir`, and setRir folds an ABSENT rir to 0, which is the
+       LOWEST bar there is. So a + SET on the phone was judged as though the set
+       had been carried to failure, and the same workout could read READY here
+       and not on the desktop.
+
+       Seeding a real, visible, editable value makes the judgment run against
+       something the user actually saw. LogPastSession's own addSet below is
+       deliberately NOT changed -- the HTML app's equivalent does not seed
+       either, and making only this one match is what restores parity rather
+       than trading one divergence for another. */
+    const n = {reps: lr, bands: [...lb],
+               rir: (last && last.rir != null) ? last.rir : rirTargetNow()}
     /* Carry the fold with the stack it belongs to: a new set seeded from a
        doubled band that arrives marked SINGLED stamps a fraction of the real
        load, silently. */
