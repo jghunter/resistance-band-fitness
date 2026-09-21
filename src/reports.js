@@ -4273,6 +4273,38 @@
            ? s.rir : 0;
   }
   function setPartials(s) { return (s && s.partials > 0) ? s.partials : 0; }
+  /* SINGLED or DOUBLED, for display only. `doubled` is a PER-SET flag meaning
+     the WHOLE STACK was folded over on itself; it is an axis independent of
+     how many bands are in the stack (see CLAUDE.md, "Doubled: two axes").
+
+     null means "this set has no fold to report" -- a bodyweight or timed set
+     names no band, and printing SINGLED there reads as a claim about
+     equipment that was not used.
+
+     An ABSENT flag is SINGLED, not unknown. migrateFoldEncoding ran on
+     2026-08-04 over every entry at or before the cutoff, converted the old
+     duplicate-band-id encoding into a real `doubled` flag, and stamped
+     foldMigrated:true on each entry it examined. After that, absence means
+     the stack was not folded.
+
+     The band test walks EVERY segment rather than calling setBands, which
+     returns only the first segment's list -- a drop set whose first phase was
+     logged empty would otherwise report no fold while carrying a real stack. */
+  function foldLabel(s) {
+    var segs = setSegments(s), any = false, i;
+    for (i = 0; i < segs.length; i++) {
+      if (((segs[i] && segs[i].bands) || []).length) { any = true; break; }
+    }
+    if (!any) return null;
+    return (s && s.doubled) ? "DOUBLED" : "SINGLED";
+  }
+  /* An identity for "the stack this set used", for asking whether two sets
+     used the same one. Band ids are SORTED because order in the stored list
+     carries no meaning, and the fold is appended because a folded stack and
+     the same bands unfolded are different setups. */
+  function stackKeyOf(s) {
+    return setBands(s).slice().sort().join(",") + "|" + ((s && s.doubled) ? "D" : "S");
+  }
   /* Top load = heaviest single phase of the set (not the last, not the sum). */
   function setTopLoad(s, bandOf) {
     return setSegments(s).reduce(function (m, g) {
@@ -4759,13 +4791,24 @@
     var out = [];
     if (r.technique) out.push({ k: "TECHNIQUE", v: r.technique, cls: "flag" });
     if (r.lastDate) {
-      out.push({ k: "Last (" + r.lastDate + ")", v: r.lastReps || "-", cls: "" });
+      var n = (r.lastSets || []).length;
+      out.push({ k: "Last (" + r.lastDate + ")", v: n + (n === 1 ? " set" : " sets"),
+                 cls: "" });
+      /* One line per logged set, verbatim from setLines -- the same strings
+         the history report prints. cls "setline" is what tells the two
+         renderers to preserve the alignment. */
+      (r.lastSets || []).forEach(function (t) {
+        out.push({ k: "", v: t, cls: "setline" });
+      });
     } else {
       out.push({ k: "Last", v: "no prior log - first session", cls: "warn" });
     }
     if (r.deloadWarn) {
       out.push({ k: "", v: "(deload - was reduced load)", cls: "warn" });
     }
+    /* Only when EVERY set used the same stack and the same fold; otherwise
+       buildSetupDoc sets these to null and the per-set lines above carry the
+       truth on their own. */
     if (r.bands) out.push({ k: "Bands", v: r.bands + (r.res ? "   (" + r.res + ")" : ""), cls: "" });
     if (r.gear) out.push({ k: "Gear", v: r.gear, cls: "" });
     (r.flags || []).forEach(function (f) {
@@ -4822,6 +4865,9 @@
         (sec.rows || []).forEach(function (r) {
           L.push("### " + exTitle(r) + "  `#" + r.id + "`");
           exLines(r).forEach(function (ln) {
+            /* Inline code, so the run of spaces that aligns the columns
+               survives markdown -- the same trick blanksLine already uses. */
+            if (ln.cls === "setline") { L.push("- `" + ln.v + "`"); return; }
             L.push("- " + (ln.k ? "**" + ln.k + ":** " : "") + ln.v);
           });
           var bl = blanksLine(r);
@@ -4869,6 +4915,7 @@
     "#rbts-print-root th{background:#eee;}",
     "#rbts-print-root .ex{page-break-inside:avoid;margin-bottom:7pt;}",
     "#rbts-print-root .ln{margin-left:14pt;}",
+    "#rbts-print-root .setline{margin-left:14pt;white-space:pre;font-size:9pt;}",
     "#rbts-print-root .flag{font-weight:bold;}",
     "#rbts-print-root .warn{font-style:italic;}",
     "#rbts-print-root .blanks{margin-left:14pt;margin-top:2pt;}",
@@ -5045,8 +5092,56 @@
       var rawLu = entriesFor(ctx.log, id, opts.date)[0];
       if (rawLu) rawEntries.push(rawLu);
       var ps = progressionState(ctx, id, opts.date);
+      /* SET ONE's stack, and deliberately so: this feeds ctx.suggestOf, which
+         answers "what do I ADD to the working stack". What to CARRY is a
+         different question, answered by pullBands below. */
       var bandIds = lu ? setBands(lu.sets[0]) : [];
       var gearIds = lu ? (lu.gear || []) : [];
+      /* WHAT TO CARRY TO THE RACK: the maximum count of each band id across
+         segments within a set, then across sets. Never a sum -- the same rule
+         pullList applies across exercises. A drop set that removes bands
+         between phases must not read as needing twice as many. */
+      var pullBands = [];
+      if (lu) {
+        var maxC = {}, bOrder = [];
+        lu.sets.forEach(function (s) {
+          var perSet = {};
+          setSegments(s).forEach(function (g) {
+            var perSeg = {};
+            ((g && g.bands) || []).forEach(function (bid) {
+              perSeg[bid] = (perSeg[bid] || 0) + 1;
+            });
+            Object.keys(perSeg).forEach(function (bid) {
+              if (perSet[bid] == null || perSeg[bid] > perSet[bid]) perSet[bid] = perSeg[bid];
+            });
+          });
+          Object.keys(perSet).forEach(function (bid) {
+            if (maxC[bid] == null) { maxC[bid] = 0; bOrder.push(bid); }
+            if (perSet[bid] > maxC[bid]) maxC[bid] = perSet[bid];
+          });
+        });
+        bOrder.forEach(function (bid) {
+          for (var q = 0; q < maxC[bid]; q++) pullBands.push(bid);
+        });
+      }
+      /* One formatted line per set, from the SAME function the history report
+         uses, so the two printouts cannot drift. */
+      var lastSets = [];
+      if (lu) {
+        lu.sets.forEach(function (s, si) {
+          setLines(s, si, id, ctx).forEach(function (t) { lastSets.push(t); });
+        });
+      }
+      /* The exercise-level band summary survives only when every set agrees,
+         stack AND fold. A summary contradicting the per-set lines printed
+         directly beneath it is worse than no summary. */
+      var sameStack = true;
+      if (lu && lu.sets.length > 1) {
+        var key0 = stackKeyOf(lu.sets[0]);
+        for (var ki = 1; ki < lu.sets.length; ki++) {
+          if (stackKeyOf(lu.sets[ki]) !== key0) { sameStack = false; break; }
+        }
+      }
       var flags = [];
       if (ps.ready) {
         var sug = ctx.suggestOf ? ctx.suggestOf(bandIds) : null;
@@ -5082,16 +5177,16 @@
         cls: ctx.classOf(id) || null,
         technique: techKey ? ctx.techLabelOf(techKey) : null,
         lastDate: lu ? lu.date : null,
-        lastReps: lu ? repsLabel(lu.sets, id) : null,
-        bands: bandIds.length ? bandStackLabel(bandIds, ctx.bandOf) : null,
-        res: sumRes(bandIds, ctx.bandOf),
+        lastSets: lastSets,
+        bands: (sameStack && bandIds.length) ? bandStackLabel(bandIds, ctx.bandOf) : null,
+        res: sameStack ? sumRes(bandIds, ctx.bandOf) : null,
         gear: gearIds.length ? gearLabel(gearIds, ctx.gearOf) : null,
         deloadWarn: !!(lu && lu.isDeload),
         unit: repUnit(id),
         flags: flags,
         blanks: blanks
       });
-      perEx.push({ bandIds: bandIds, gearIds: gearIds });
+      perEx.push({ bandIds: pullBands, gearIds: gearIds });
     });
 
     var pl = pullList(perEx);
@@ -5162,8 +5257,13 @@
     return (p >= 0 ? "+" : "") + Math.round(p) + "%";
   }
   /* One text line per set: intensifier, RIR, reps (+partials), side, bands,
-     summed resistance. Drop-set segments become their own indented lines so the
-     printed log shows the same shape the on-screen card does. */
+     the FOLD, summed resistance. Drop-set segments become their own indented
+     lines so the printed log shows the same shape the on-screen card does.
+
+     buildSetupDoc calls this too, since 2026-09-21. The setup sheet used to
+     format its own summary from set ONE's bands, which was wrong whenever the
+     sets differed, and carried no fold and no intensifier. There is one
+     formatter now because there is one reader, minutes apart. */
   function setLines(s, i, exId, ctx) {
     var out = [], u = repUnit(exId);
     var kind = setIntens(s);
@@ -5174,13 +5274,21 @@
     var side = setSide(s), p = setPartials(s);
     var segs = setSegments(s);
     var isSeg = Array.isArray(s.segments) && s.segments.length > 0;
+    /* The fold is WHOLE-SET, so a drop set carries it once on the head line
+       and never on a phase. migrateFoldEncoding migrates a segmented set
+       all-or-nothing, so a per-phase fold would imply a distinction the
+       stored data cannot hold. */
+    var fold = foldLabel(s);
     var head = "S" + (i + 1) + "  " + setReps(s) + u +
       (p ? " +" + p + "p" : "") + (side ? " " + side : "") + (isSeg ? " total" : "");
     if (!isSeg) {
       var bl = bandStackLabel(setBands(s), ctx.bandOf);
       var rs = sumRes(setBands(s), ctx.bandOf);
       if (bl) head += "   " + bl;
+      if (fold) head += "   " + fold;
       if (rs) head += "   (" + rs + ")";
+    } else if (fold) {
+      head += "   " + fold;
     }
     if (tags.length) head += "   [" + tags.join(" ") + "]";
     out.push(head);
@@ -7397,6 +7505,7 @@
     fmtDelta: fmtDelta,
     setLines: setLines,
     rangeExTable: rangeExTable,
+    foldLabel: foldLabel,
     buildHistoryDoc: buildHistoryDoc,
     daysBetween: daysBetween,
     shiftISO: shiftISO,

@@ -5060,6 +5060,14 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                           <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}</span>
                           {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                           {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
+                          {/* The fold, 2026-09-21. Matches fitness_app.html's
+                              history line. No !segs guard: foldLabel walks every
+                              segment, so a drop set names its fold too. */}
+                          {RBTS_REPORTS.foldLabel(s) && (
+                            <span title="Whether the whole band stack was folded over on itself"
+                              style={{color:C.textSec,fontSize:9,letterSpacing:'0.06em'}}>
+                              {' '}{RBTS_REPORTS.foldLabel(s)}</span>
+                          )}
                         </div>
                         {segs && segs.map((g,j) => (
                           <div key={j} style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,paddingLeft:18}}>
