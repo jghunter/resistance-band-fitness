@@ -12,7 +12,7 @@ import {
   getTechMap, getWeekTechniques,
   progSplitDays, progLengthWeeks, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
   sessionForIdx, weekForIdx, wpw,
-  SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
+  SCHED_PRESETS, WEEKDAY_ABBR, schedKeyForDays, schedLabel,
   SCHED_CYCLE_PRESETS, schedIsCycle, cyclePatternOf,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
   saveCustomProgram, deleteCustomProgram, getCustomPrograms, mergeCustomPrograms,
@@ -160,10 +160,30 @@ function ScheduleCalendar({ prog, sched, startDate }) {
   const months = outlookMonths(rows)
   const firstDeload = rows.find(r => r.isDeload) || null
   /* One letter for the session, from the split's own day name. */
+  /* A SHORT, UNIQUE code per session. A blind first letter collided on the
+     very split a fresh install lands on: body_part_5's CHEST, BACK, TRICEPS,
+     BICEPS, CORE+LEGS gave C B T B C, so four of the five sessions could not
+     be told apart. RBTS_REPORTS.sessionCodes lengthens only what collides, so
+     the common splits keep one letter. Built ONCE per split, not per cell, and
+     the session NAME is on the tooltip as well -- the tooltip named no session
+     at all before. */
+  const splitDays = progSplitDays(prog)
+  const codeList = RBTS_REPORTS.sessionCodes(
+    splitDays.map(k => dayName(prog, k) || k))
+  const codeOf = {}
+  splitDays.forEach((k, ci) => { codeOf[k] = codeList[ci] })
   const sessionLetter = r => {
     if (!r.isWk) return ''
-    const nm = dayName(prog, r.sKey) || r.sKey || ''
-    return nm.charAt(0).toUpperCase()
+    return codeOf[r.sKey] || String(r.sKey || '').charAt(0).toUpperCase()
+  }
+  const cellTitle = r => {
+    if (r.isWk) {
+      return r.date + '  ' + (dayName(prog, r.sKey) || r.sKey) +
+             '  workout #' + r.num + '  week ' + r.week +
+             (r.isDeload ? '  DELOAD' : '')
+    }
+    /* A training day the program has not reached yet is NOT a rest day. */
+    return r.date + (r.preStart ? '  before your first workout' : '  rest')
   }
   return (
     <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:4}}>
@@ -185,10 +205,7 @@ function ScheduleCalendar({ prog, sched, startDate }) {
               const fg = r.isWk ? C.bgDeep : C.dimGray
               return (
                 <span key={r.date}
-                  title={r.date + (r.isWk
-                    ? '  workout #' + r.num + '  week ' + r.week +
-                      (r.isDeload ? '  DELOAD' : '')
-                    : '  rest')}
+                  title={cellTitle(r)}
                   style={{fontFamily:'monospace',height:30,borderRadius:3,
                     display:'flex',flexDirection:'column',alignItems:'center',
                     justifyContent:'center',lineHeight:1.1,background:bg,color:fg}}>
@@ -201,7 +218,7 @@ function ScheduleCalendar({ prog, sched, startDate }) {
         </div>
       ))}
       <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.6}}>
-        filled = workout day, with the first letter of its session · empty = rest
+        filled = workout day, with its session code · empty = rest
         {firstDeload ? '  ·  DELOAD begins ' + firstDeload.date
                      : '  ·  no deload in this window'}
       </span>

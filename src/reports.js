@@ -7770,6 +7770,65 @@
      The running workout number is counted ONCE and carried forward. Calling
      schedCountUpTo per row would be a calendar walk per day, which is what the
      closed form in schedCountUpTo exists to avoid. */
+  /* A SHORT, UNIQUE code per session, for a calendar cell too small to hold a
+     name. A blind first letter collides on the split a fresh install lands on:
+     body_part_5's CHEST, BACK, TRICEPS, BICEPS, CORE+LEGS gives C B T B C, so
+     four of the five sessions could not be told apart and the cell's tooltip
+     named no session at all.
+     Pass 1 takes the initial of each WORD, which already separates UPPER A
+     from UPPER B and turns CORE+LEGS into CL. Any code still shared is then
+     lengthened from its first word -- BACK and BICEPS become BA and BI, PUSH
+     and PULL need three and become PUS and PUL. A code that survives all that
+     falls back to its 1-based position, which cannot collide. */
+  function sessionCodes(names) {
+    var out = [], i, len;
+    for (i = 0; i < names.length; i++) out.push(schedInitials(names[i]));
+    /* The duplicate flags are taken from a SNAPSHOT. Reading them off the list
+       being written lengthens only the FIRST member of each pair -- BACK
+       became BA while BICEPS, no longer matching anything, stayed B. */
+    for (len = 2; len <= 4; len++) {
+      if (!schedHasDup(out)) break;
+      var snap = out.slice();
+      for (i = 0; i < out.length; i++) {
+        if (schedDupAt(snap, i)) out[i] = schedPrefixCode(names[i], len);
+      }
+    }
+    if (schedHasDup(out)) {
+      var snap2 = out.slice();
+      for (i = 0; i < out.length; i++) {
+        if (schedDupAt(snap2, i)) out[i] = String(i + 1);
+      }
+    }
+    return out;
+  }
+  function schedWords(name) {
+    return String(name || "").toUpperCase().split(/[^A-Z0-9]+/).filter(
+      function (w) { return !!w; });
+  }
+  function schedInitials(name) {
+    var w = schedWords(name), i, out = "";
+    for (i = 0; i < w.length; i++) out += w[i].charAt(0);
+    return out || "?";
+  }
+  /* The first word cut to `len`, plus the initials of any words after it, so
+     UPPER A stays distinct from UPPER B however far the first word is cut. */
+  function schedPrefixCode(name, len) {
+    var w = schedWords(name), i, out;
+    if (!w.length) return "?";
+    out = w[0].slice(0, len);
+    for (i = 1; i < w.length; i++) out += w[i].charAt(0);
+    return out;
+  }
+  function schedHasDup(list) {
+    var i;
+    for (i = 0; i < list.length; i++) if (schedDupAt(list, i)) return true;
+    return false;
+  }
+  function schedDupAt(list, i) {
+    var j;
+    for (j = 0; j < list.length; j++) if (j !== i && list[j] === list[i]) return true;
+    return false;
+  }
   function scheduleOutlook(raw, prog, startStr, fromDate, months, ctx) {
     var res = schedResolve(raw);
     var from = schedMidnight(fromDate);
@@ -7790,18 +7849,33 @@
        WEEK 0 and the wrong session. Reachable: the start date is editable,
        and a program that begins next week is exactly when this is opened. */
     if (n > 0 && isWorkoutDay(res, from)) n -= 1;
-    var rows = [], d = new Date(from), idx;
+    /* A training day that falls BEFORE the program's start date belongs to the
+       schedule but not to the program, so it carries NO number, week or
+       session -- `preStart` says why the cell is blank.
+       Without this the loop counted those days too, so on a start date one
+       week away the calendar numbered 2026-09-23 as WORKOUT #1 and the REAL
+       workout #1 as #3, with the wrong session and a DELOAD date five days
+       early -- disagreeing with the app's own TODAY tab about the same day.
+       The SETUP wizard's FIRST WORKOUT ON/AFTER field sits beside the chooser
+       that draws this calendar, so a start date in the future is the ordinary
+       first-run case, and it reached WEEKDAY schedules exactly as much as
+       cycles. */
+    var startAt = schedMidnight(startStr);
+    var rows = [], d = new Date(from), idx, early;
     while (d < end) {
-      if (isWorkoutDay(res, d)) {
+      early = d < startAt;
+      if (isWorkoutDay(res, d) && !early) {
         n += 1;
         idx = n - 1;
         rows.push({ date: schedIso(d), isWk: true, num: n,
                     sKey: ctx.sessionForIdx(prog, idx),
                     week: ctx.weekForIdx(prog, idx),
-                    isDeload: ctx.isDeloadWorkout(prog, idx) });
+                    isDeload: ctx.isDeloadWorkout(prog, idx),
+                    preStart: false });
       } else {
         rows.push({ date: schedIso(d), isWk: false, num: null,
-                    sKey: null, week: null, isDeload: false });
+                    sKey: null, week: null, isDeload: false,
+                    preStart: early });
       }
       d.setDate(d.getDate() + 1);
     }
@@ -7823,6 +7897,7 @@
     schedNextDay: schedNextDay,
     schedLabel: schedLabel,
     scheduleOutlook: scheduleOutlook,
+    sessionCodes: sessionCodes,
     schedSimpleRuns: schedSimpleRuns,
     CONST: CONST,
     SET_LANDMARKS: SET_LANDMARKS,
