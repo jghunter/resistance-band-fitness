@@ -7461,8 +7461,315 @@
     return out;
   }
 
+  /* ---- schedules: weekday sets AND cycles -------------------------------
+     A stored schedule is one of:
+       "MWF"                   a preset weekday key
+       "C:1,2,4,5"             a custom weekday set
+       "Y:11100@2026-06-01"    a CYCLE -- the pattern, then the date its day 1
+                               falls on
+     schedResolve is the ONE parser. Everything below is built on it, and both
+     apps route countWkDays / nextWkDay / calcToday / wpw through these, so the
+     two apps cannot disagree about what a schedule means. That is the point:
+     the 2026-08-29 `CHEST (C) (C)` bug is on record as what happens when one
+     rule is expressed twice.
+
+     A cycle cannot be written as a set of weekdays. Its training days move
+     through the week and never repeat on a seven-day period, which is why the
+     weekday array stops being the interface here. */
+  var SCHED_DAYS = {
+    MWF:    [1,3,5],
+    TTS:    [2,4,6],
+    MTThF:  [1,2,4,5],
+    MTWThF: [1,2,3,4,5],
+    MON_SAT:[1,2,3,4,5,6]
+  };
+  var SCHED_PRESETS = [
+    { key:"MWF",     label:"Mon/Wed/Fri",     sub:"3 day" },
+    { key:"TTS",     label:"Tue/Thu/Sat",     sub:"3 day" },
+    { key:"MTThF",   label:"Mon/Tue/Thu/Fri", sub:"4 day" },
+    { key:"MTWThF",  label:"Mon–Fri",    sub:"5 day" },
+    { key:"MON_SAT", label:"Mon–Sat",    sub:"6 day" }
+  ];
+  /* The cycle shapes Greg named. The chooser also takes any free pattern. */
+  var SCHED_CYCLE_PRESETS = [
+    { label:"1 on / 1 off", on:1, off:1 },
+    { label:"2 on / 2 off", on:2, off:2 },
+    { label:"3 on / 2 off", on:3, off:2 },
+    { label:"3 on / 3 off", on:3, off:3 }
+  ];
+  var WEEKDAY_ABBR = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  var SCHED_CYCLE_PREFIX = "Y:";
+  var SCHED_FALLBACK_DAYS = [1,3,5];     /* Mon/Wed/Fri, the long-standing default */
+
+  /* Strip the JSON quotes useLS adds when it stringifies a plain string. */
+  function schedUnquote(v) {
+    if (v == null) return v;
+    v = String(v);
+    if (v.length >= 2 && v.charAt(0) === '"' && v.charAt(v.length - 1) === '"')
+      v = v.slice(1, -1);
+    return v;
+  }
+  /* A plain character test rather than a regular expression: this file is
+     inlined into fitness_app.html by a Python script, and every backslash on
+     that path is one more thing to get wrong. */
+  function schedValidIso(s) {
+    if (!s || s.length !== 10) return false;
+    if (s.charAt(4) !== "-" || s.charAt(7) !== "-") return false;
+    var i, c;
+    for (i = 0; i < 10; i++) {
+      if (i === 4 || i === 7) continue;
+      c = s.charAt(i);
+      if (c < "0" || c > "9") return false;
+    }
+    /* Shape is not existence. "2026-13-01" passes every check above, and
+       new Date("2026-13-01T00:00:00") is an Invalid Date -- schedDaysBetween
+       then returns NaN, pattern[NaN] is undefined, EVERY day reads as rest,
+       schedNextDay returns undefined and the workout number prints as NaN.
+       A schedule with no training days at all is exactly what the fallback
+       exists to prevent, so the anchor has to be a real date. */
+    return !isNaN(new Date(s + "T00:00:00").getTime());
+  }
+  function schedIsArray(v) {
+    return Object.prototype.toString.call(v) === "[object Array]";
+  }
+  /* Filtered, not trusted. "C:" yields Number("") === 0, a Sunday-only
+     schedule; "C:1.5" yields a day that never arrives, so schedNextDay
+     returns undefined; a caller may also hand in [] or [99] directly, since
+     countWkDays and nextWkDay deliberately still accept a plain array.
+     An empty result after filtering falls back rather than standing. */
+  function schedWeekly(days) {
+    var clean = [], i, x;
+    for (i = 0; i < days.length; i++) {
+      x = days[i];
+      if (typeof x === "number" && x >= 0 && x <= 6 && Math.floor(x) === x)
+        clean.push(x);
+    }
+    if (!clean.length) clean = SCHED_FALLBACK_DAYS.slice();
+    return { kind: "weekly", days: clean.sort(function (a, b) { return a - b; }) };
+  }
+  function schedResolve(raw) {
+    /* Already resolved: hand it straight back, so a caller in a loop can
+       resolve once and not re-parse per day. */
+    if (raw && raw.kind === "weekly" && schedIsArray(raw.days)) return raw;
+    if (raw && raw.kind === "cycle" && schedIsArray(raw.pattern)) return raw;
+    if (schedIsArray(raw)) return schedWeekly(raw);
+    var v = schedUnquote(raw);
+    if (v && v.indexOf(SCHED_CYCLE_PREFIX) === 0) {
+      var rest = v.slice(SCHED_CYCLE_PREFIX.length);
+      var at = rest.indexOf("@");
+      var bits = at >= 0 ? rest.slice(0, at) : "";
+      var anchor = at >= 0 ? rest.slice(at + 1) : "";
+      var pattern = [], on = 0, i, c;
+      for (i = 0; i < bits.length; i++) {
+        c = bits.charAt(i);
+        if (c === "1") { pattern.push(1); on++; }
+        else if (c === "0") { pattern.push(0); }
+        else { pattern = []; break; }          /* any stray character voids it */
+      }
+      if (pattern.length && on > 0 && schedValidIso(anchor))
+        return { kind: "cycle", pattern: pattern, anchor: anchor };
+      /* A malformed cycle token is neither a crash nor a silent empty
+         schedule. It falls through to the weekly fallback below, exactly as
+         an unknown preset key always has. */
+    }
+    /* hasOwnProperty, not a truthy lookup: "constructor", "toString",
+       "valueOf", "hasOwnProperty", "__proto__" and "isPrototypeOf" all
+       resolve on Object.prototype, and schedWeekly would then call .slice()
+       on a function. Inherited from the old schedDaysOf, but this parser is
+       now the single funnel for both apps. */
+    if (v && Object.prototype.hasOwnProperty.call(SCHED_DAYS, v))
+      return schedWeekly(SCHED_DAYS[v]);
+    if (v && v.indexOf("C:") === 0) {
+      /* Drop EMPTY pieces before Number(). Number("") is 0, a perfectly valid
+         weekday, so "C:" alone used to resolve to a Sunday-only schedule and
+         "C:,,," to four Sundays -- neither of which anyone chose. */
+      var picked = v.slice(2).split(",").filter(function (t) {
+        return String(t).replace(/^\s+|\s+$/g, "") !== "";
+      }).map(Number);
+      if (picked.length) return schedWeekly(picked);
+    }
+    return schedWeekly(SCHED_FALLBACK_DAYS);
+  }
+  /* The inverse of schedResolve's cycle branch. */
+  function schedTokenForCycle(pattern, anchor) {
+    var bits = "", i;
+    for (i = 0; i < pattern.length; i++) bits += (pattern[i] === 1 ? "1" : "0");
+    return SCHED_CYCLE_PREFIX + bits + "@" + anchor;
+  }
+  function schedIsCycle(raw) { return schedResolve(raw).kind === "cycle"; }
+
+  function schedMidnight(d) {
+    var t = (typeof d === "string") ? new Date(d + "T00:00:00") : new Date(d);
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }
+  /* Whole days between two local midnights. Math.round absorbs the 23- and
+     25-hour days a daylight-saving change produces; Hawaii has none, but the
+     app is not only Greg's. */
+  function schedDaysBetween(aStr, bDate) {
+    return Math.round((schedMidnight(bDate) - schedMidnight(aStr)) / 86400000);
+  }
+  function schedPhase(res, dateObj) {
+    var L = res.pattern.length;
+    var d = schedDaysBetween(res.anchor, dateObj);
+    return ((d % L) + L) % L;        /* the doubled modulo is NOT decoration */
+  }
+  function isWorkoutDay(raw, dateObj) {
+    var res = schedResolve(raw);
+    var d = schedMidnight(dateObj);
+    if (res.kind === "cycle") return res.pattern[schedPhase(res, d)] === 1;
+    return res.days.indexOf(d.getDay()) >= 0;
+  }
+  function schedWorkoutsPerWeek(raw) {
+    var res = schedResolve(raw), n = 0, i;
+    if (res.kind === "cycle") {
+      for (i = 0; i < res.pattern.length; i++) if (res.pattern[i] === 1) n++;
+    } else {
+      n = res.days.length;
+    }
+    /* Floored at 1 so weekForIdx can never divide by zero, however a schedule
+       reached storage. */
+    return n > 0 ? n : 1;
+  }
+  /* ON days at pattern indices [0, k). */
+  function schedPrefixOn(pattern, k) {
+    var n = 0, i;
+    for (i = 0; i < k; i++) if (pattern[i] === 1) n++;
+    return n;
+  }
+  /* The SIGNED count of ON days lying between the anchor and `offset` days
+     after it: positive ahead of the anchor, negative behind it. Differencing
+     two of these gives the count over any span, in either direction, with no
+     day loop. Math.floor rounds toward negative infinity, which is what makes
+     the negative side come out right. */
+  function schedOnBefore(res, offset) {
+    var L = res.pattern.length;
+    var per = schedPrefixOn(res.pattern, L);
+    var whole = Math.floor(offset / L);
+    var rem = offset - whole * L;             /* always 0 .. L-1 */
+    return whole * per + schedPrefixOn(res.pattern, rem);
+  }
+  function schedCountUpTo(raw, startStr, upTo) {
+    var res = schedResolve(raw);
+    var e = schedMidnight(upTo);
+    if (res.kind === "cycle") {
+      var a = schedDaysBetween(res.anchor, schedMidnight(startStr));
+      var b = schedDaysBetween(res.anchor, e);
+      if (b < a) return 0;
+      return schedOnBefore(res, b + 1) - schedOnBefore(res, a);
+    }
+    var d = schedMidnight(startStr), n = 0;
+    while (d <= e) {
+      if (res.days.indexOf(d.getDay()) >= 0) n++;
+      d.setDate(d.getDate() + 1);
+    }
+    return n;
+  }
+  /* Searches max(7, pattern length) days, not 7. A 1 on / 10 off cycle has a
+     gap wider than a week, and the old seven-day search returned undefined --
+     which calcToday then handed to at() as a date. */
+  function schedNextDay(raw, from) {
+    var res = schedResolve(raw);
+    var span = res.kind === "cycle" ? Math.max(7, res.pattern.length) : 7;
+    var d = schedMidnight(from), i;
+    for (i = 1; i <= span; i++) {
+      d.setDate(d.getDate() + 1);
+      if (isWorkoutDay(res, d)) return new Date(d);
+    }
+  }
+  /* One run of ON days followed by one run of OFF days, or null. */
+  function schedSimpleRuns(pattern) {
+    var L = pattern.length, i = 0;
+    while (i < L && pattern[i] === 1) i++;
+    var on = i;
+    while (i < L && pattern[i] === 0) i++;
+    if (i !== L || on === 0) return null;
+    return { on: on, off: L - on };
+  }
+  function schedLabel(raw) {
+    var res = schedResolve(raw);
+    if (res.kind === "cycle") {
+      var L = res.pattern.length;
+      var on = schedWorkoutsPerWeek(res);
+      var simple = schedSimpleRuns(res.pattern);
+      var head = simple
+        ? (simple.on + " on, " + simple.off + " off")
+        : res.pattern.map(function (x) { return x === 1 ? "ON" : "OFF"; }).join(" ");
+      return head + " — " + L + " day cycle, " + on + " workout day" +
+             (on === 1 ? "" : "s") + " (from " + res.anchor + ")";
+    }
+    return res.days.map(function (x) { return WEEKDAY_ABBR[x]; }).join(", ") +
+           " (" + res.days.length + " day)";
+  }
+
+  function schedIso(d) {
+    function p2(x) { return (x < 10 ? "0" : "") + x; }
+    return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
+  }
+  /* One row per calendar day, for BOTH kinds of schedule. Drawing the grid is
+     each app's job; deciding what falls on which day is this function's.
+
+     ctx supplies sessionForIdx, weekForIdx and isDeloadWorkout -- they live in
+     each app and read app globals, so they arrive by injection like every
+     other app-dependent value this module uses.
+
+     The running workout number is counted ONCE and carried forward. Calling
+     schedCountUpTo per row would be a calendar walk per day, which is what the
+     closed form in schedCountUpTo exists to avoid. */
+  function scheduleOutlook(raw, prog, startStr, fromDate, months, ctx) {
+    var res = schedResolve(raw);
+    var from = schedMidnight(fromDate);
+    var end = schedMidnight(fromDate);
+    /* Number(), so a string argument cannot walk past the loop guard --
+       "2" produced 2527 rows. A calendar month is not a fixed length, so a
+       two-month window is 59 to 62 days and may spill a day or two into a
+       third calendar month; that is a property of months, not a bug. */
+    end.setMonth(end.getMonth() + (Number(months) || 2));
+    var n = schedCountUpTo(res, startStr, from);
+    /* schedCountUpTo INCLUDES `from`. If `from` is itself a training day its
+       number is that count, so step back one and let the loop add it again --
+       otherwise the first workout of the calendar is numbered one too high. */
+    /* `n > 0` matters: schedCountUpTo returns 0 when `from` is EARLIER than
+       the program start date, and stepping back from 0 gives idx -1 --
+       weekForIdx(prog,-1) is 0 and sessionForIdx(prog,-1) wraps to the LAST
+       day of the split, so the calendar's first row would read WORKOUT #0,
+       WEEK 0 and the wrong session. Reachable: the start date is editable,
+       and a program that begins next week is exactly when this is opened. */
+    if (n > 0 && isWorkoutDay(res, from)) n -= 1;
+    var rows = [], d = new Date(from), idx;
+    while (d < end) {
+      if (isWorkoutDay(res, d)) {
+        n += 1;
+        idx = n - 1;
+        rows.push({ date: schedIso(d), isWk: true, num: n,
+                    sKey: ctx.sessionForIdx(prog, idx),
+                    week: ctx.weekForIdx(prog, idx),
+                    isDeload: ctx.isDeloadWorkout(prog, idx) });
+      } else {
+        rows.push({ date: schedIso(d), isWk: false, num: null,
+                    sKey: null, week: null, isDeload: false });
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    return rows;
+  }
+
   /* ---- public API ------------------------------------------------------- */
   var API = {
+    SCHED_DAYS: SCHED_DAYS,
+    SCHED_PRESETS: SCHED_PRESETS,
+    SCHED_CYCLE_PRESETS: SCHED_CYCLE_PRESETS,
+    WEEKDAY_ABBR: WEEKDAY_ABBR,
+    schedResolve: schedResolve,
+    schedTokenForCycle: schedTokenForCycle,
+    schedIsCycle: schedIsCycle,
+    isWorkoutDay: isWorkoutDay,
+    schedWorkoutsPerWeek: schedWorkoutsPerWeek,
+    schedCountUpTo: schedCountUpTo,
+    schedNextDay: schedNextDay,
+    schedLabel: schedLabel,
+    scheduleOutlook: scheduleOutlook,
+    schedSimpleRuns: schedSimpleRuns,
     CONST: CONST,
     SET_LANDMARKS: SET_LANDMARKS,
     TIME_BASED: TIME_BASED,
