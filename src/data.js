@@ -2015,21 +2015,14 @@ export const GEAR = [
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEDULE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-export const SCHED_DAYS = {
-  MWF:    [1,3,5],          // Mon/Wed/Fri  — 3 day (classic full-body)
-  TTS:    [2,4,6],          // Tue/Thu/Sat  — 3 day
-  MTThF:  [1,2,4,5],        // Mon/Tue/Thu/Fri — 4 day (upper/lower, push/pull)
-  MTWThF: [1,2,3,4,5],      // Mon–Fri — 5 day
-  MON_SAT:[1,2,3,4,5,6],    // Mon–Sat — 6 day (one rest day)
-};
-export const SCHED_PRESETS = [
-  { key:"MWF",     label:"Mon/Wed/Fri",     sub:"3 day" },
-  { key:"TTS",     label:"Tue/Thu/Sat",     sub:"3 day" },
-  { key:"MTThF",   label:"Mon/Tue/Thu/Fri", sub:"4 day" },
-  { key:"MTWThF",  label:"Mon\u2013Fri",     sub:"5 day" },
-  { key:"MON_SAT", label:"Mon\u2013Sat",     sub:"6 day" },
-];
-export const WEEKDAY_ABBR = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+/* The tables live in RBTS_REPORTS so the two apps share ONE copy. schedResolve
+   must be able to turn "MWF" into [1,3,5], which means the module has to hold
+   the preset table -- and a second copy here is exactly the drift this design
+   exists to prevent. Same reasoning as GEAR_CATALOG on 2026-08-24. */
+export const SCHED_DAYS = RBTS_REPORTS.SCHED_DAYS
+export const SCHED_PRESETS = RBTS_REPORTS.SCHED_PRESETS
+export const SCHED_CYCLE_PRESETS = RBTS_REPORTS.SCHED_CYCLE_PRESETS
+export const WEEKDAY_ABBR = RBTS_REPORTS.WEEKDAY_ABBR
 function unquoteSched(v) {
   if (v == null) return v;
   v = String(v);
@@ -2038,46 +2031,38 @@ function unquoteSched(v) {
 }
 // Resolve any stored schedule value (preset key, "C:1,2,4,5" custom, array, or a
 // JSON-quoted version) into a sorted array of weekday numbers (0=Sun..6=Sat).
+/* Resolve any stored schedule value into a sorted array of weekday numbers.
+   A CYCLE returns an EMPTY ARRAY, because there is no honest weekday answer
+   for a pattern whose training days move through the week. Every caller that
+   can see a cycle goes through the RBTS_REPORTS.sched* functions instead;
+   the callers left on this one belong to the weekday half of the chooser. */
 export function schedDaysOf(raw) {
-  if (Array.isArray(raw)) return raw.slice().sort((a,b)=>a-b);
-  const v = unquoteSched(raw);
-  if (v && SCHED_DAYS[v]) return SCHED_DAYS[v].slice();
-  if (v && v.indexOf("C:") === 0)
-    return v.slice(2).split(",").map(Number).filter(x => x>=0 && x<=6).sort((a,b)=>a-b);
-  return SCHED_DAYS.MWF.slice();
+  const res = RBTS_REPORTS.schedResolve(raw)
+  return res.kind === "cycle" ? [] : res.days.slice()
 }
+export function schedIsCycle(raw) { return RBTS_REPORTS.schedIsCycle(raw) }
 export function schedKeyForDays(daysArr) {
   const sorted = daysArr.slice().sort((a,b)=>a-b).join(",");
   for (const k in SCHED_DAYS) if (SCHED_DAYS[k].slice().sort((a,b)=>a-b).join(",") === sorted) return k;
   return "C:" + sorted;
 }
-export function schedLabel(raw) {
-  const d = schedDaysOf(raw);
-  return d.map(x => WEEKDAY_ABBR[x]).join(", ") + " (" + d.length + " day)";
-}
+// "Mon, Tue, Thu, Fri (4 day)", or for a cycle the on/off form with its anchor.
+export function schedLabel(raw) { return RBTS_REPORTS.schedLabel(raw) }
 
+/* Both KEEP accepting a plain weekday array as well as a raw schedule value,
+   because schedResolve accepts either. That is what lets every existing call
+   site stay untouched while the ones that can see a cycle pass `sched`. */
 export function countWkDays(startStr, days, upTo) {
-  const s = new Date(startStr + "T00:00:00");
-  const e = new Date(upTo); e.setHours(0,0,0,0);
-  let n = 0;
-  const d = new Date(s);
-  while (d <= e) {
-    if (days.includes(d.getDay())) n++;
-    d.setDate(d.getDate()+1);
-  }
-  return n;
+  return RBTS_REPORTS.schedCountUpTo(days, startStr, upTo)
 }
 
 export function nextWkDay(from, days) {
-  const d = new Date(from);
-  for (let i=1; i<=7; i++) {
-    d.setDate(d.getDate()+1);
-    if (days.includes(d.getDay())) return new Date(d);
-  }
+  return RBTS_REPORTS.schedNextDay(days, from)
 }
 
 export function calcToday(startStr, sched, pi, todayOverride) {
-  const days = schedDaysOf(sched);
+  /* NOT schedDaysOf -- that returns [] for a cycle. The raw value goes down
+     to every helper, and each one resolves it. */
   /* An ISO date STRING must be parsed as LOCAL midnight. new Date("2026-08-26")
      parses as UTC midnight, which in Hawaii (UTC-10) is the afternoon of the
      25th -- setHours(0,0,0,0) then lands a whole day early, on the wrong side
@@ -2089,21 +2074,21 @@ export function calcToday(startStr, sched, pi, todayOverride) {
         : new Date(todayOverride))
     : new Date();
   today.setHours(0,0,0,0);
-  const isWk = days.includes(today.getDay());
+  const isWk = RBTS_REPORTS.isWorkoutDay(sched, today);
   const prog = PROGRAMS[pi] || PROGRAMS[0];
   /* ONE derivation, called for today AND for the next scheduled day. The two
      branches this replaces ran the same arithmetic from two different dates,
      which is exactly why nothing in either app could see the day AFTER a
      workout day, and why a rest day carried no workout number. */
   const at = dateObj => {
-    const n = countWkDays(startStr, days, dateObj), idx = n - 1;
+    const n = countWkDays(startStr, sched, dateObj), idx = n - 1;
     return { date: dateObj, session: sessionForIdx(prog, idx),
              week: weekForIdx(prog, idx), num: n,
              isDeload: isDeloadWorkout(prog, idx),
              focus: focusForIdx(prog, idx),          // P5: rotating emphasis
              blockDone: idx >= progBlockWorkouts(prog) };
   };
-  const nd = nextWkDay(today, days);
+  const nd = nextWkDay(today, sched);
   const next = at(nd);
   /* On a rest day the current block IS the next one -- callers that read the
      top-level fields on a rest day already meant the next workout, and keeping
@@ -2137,7 +2122,18 @@ function activeSchedRaw() {
     return v;
   } catch { return null; }
 }
-export function wpw() { try { return schedDaysOf(activeSchedRaw()).length || 3; } catch { return 3; } }
+/* The workouts in one PROGRAM WEEK. For a weekday schedule that is the number
+   of training days; for a cycle it is the ON count of one turn of the pattern
+   -- Greg's ruling, 2026-09-21: one turn of the pattern IS one program week.
+   This one function is the pivot. weekForIdx, isDeloadWorkout and
+   progBlockWorkouts all read it, so making it cycle-aware makes the whole week
+   and deload derivation cycle-aware with no further edit.
+   The old `|| 3` fallback is gone: schedWorkoutsPerWeek floors at 1, so it can
+   never return 0, and a malformed value now resolves to Mon/Wed/Fri's 3 inside
+   schedResolve rather than being patched up out here. */
+export function wpw() {
+  try { return RBTS_REPORTS.schedWorkoutsPerWeek(activeSchedRaw()) } catch { return 3 }
+}
 export function progSplitDays(prog) {
   // P3: rotation days come from the EFFECTIVE split (user override wins).
   const S = RBTS_PHASE1 && RBTS_PHASE1.SPLITS;
@@ -2384,26 +2380,63 @@ export function progSplitDef(prog) {
   const S = splitsReg();
   return (prog && S[effSplitId(prog)]) || null;
 }
+/* Cycle shapes to suggest, keyed by how many training days one turn holds.
+   SPLIT_SCHED_PATTERNS above keeps its weekday suggestions unchanged; these
+   are a separate table so neither can disturb the other. */
+export const SCHED_CYCLE_SUGGEST = {
+  2: [ {label:"2 on / 1 off", on:2, off:1}, {label:"2 on / 2 off", on:2, off:2} ],
+  3: [ {label:"3 on / 1 off", on:3, off:1}, {label:"3 on / 2 off", on:3, off:2},
+       {label:"3 on / 3 off", on:3, off:3} ],
+  4: [ {label:"4 on / 1 off", on:4, off:1}, {label:"4 on / 2 off", on:4, off:2} ],
+  6: [ {label:"6 on / 1 off", on:6, off:1} ],
+}
+/* Build the ON/OFF pattern a suggestion describes. */
+export function cyclePatternOf(on, off) {
+  const p = []
+  for (let i = 0; i < on; i++) p.push(1)
+  for (let i = 0; i < off; i++) p.push(0)
+  return p
+}
 export function splitScheduleCheck(prog, sched) {
   const sp = progSplitDef(prog);
   if (!sp || sp.freeRotation || !sp.validDayCounts)
     return { ok:true, driftFree:true, suggestions:[] };
-  const days = schedDaysOf(sched);
-  const ok = sp.validDayCounts.includes(days.length);
-  const driftFree = days.length % sp.days.length === 0;
-  if (ok && driftFree) return { ok:true, driftFree:true, suggestions:[] };
-  const sug = [];
-  sp.validDayCounts.forEach(n => (SPLIT_SCHED_PATTERNS[n] || []).forEach(p => sug.push(p)));
-  const msg = (sp.label || "This split").toUpperCase() +
-    " keeps each session on the same weekday only at " +
-    sp.validDayCounts.join(", ") + " days/wk — this schedule has " +
-    days.length + ". You can continue, but sessions will drift across weekdays.";
-  return { ok, driftFree, msg, suggestions: sug };
+  /* The test is the same and its INPUT changed: how many training days one
+     program week holds. For a weekday schedule that is still days.length; for
+     a cycle it is the ON count of one turn. */
+  const cyc = schedIsCycle(sched)
+  const n = RBTS_REPORTS.schedWorkoutsPerWeek(sched)
+  const ok = sp.validDayCounts.includes(n)
+  const driftFree = n % sp.days.length === 0
+  if (ok && driftFree) return { ok:true, driftFree:true, suggestions:[] }
+  const sug = []
+  sp.validDayCounts.forEach(k =>
+    (cyc ? (SCHED_CYCLE_SUGGEST[k] || []) : (SPLIT_SCHED_PATTERNS[k] || []))
+      .forEach(p => sug.push(p)))
+  /* A cycle NEVER keeps a session on the same weekday, so the weekday wording
+     would be simply false there and must not be reused. */
+  const msg = cyc
+    ? (sp.label || "This split").toUpperCase() +
+      " is a " + sp.days.length + " day split and works best when one turn of " +
+      "your cycle holds " + sp.validDayCounts.join(" or ") + " training days — " +
+      "this cycle holds " + n + ". You can continue; the split will not line up " +
+      "evenly with your cycle."
+    : (sp.label || "This split").toUpperCase() +
+      " keeps each session on the same weekday only at " +
+      sp.validDayCounts.join(", ") + " days/wk — this schedule has " +
+      n + ". You can continue, but sessions will drift across weekdays."
+  return { ok, driftFree, msg, suggestions: sug, cycle: cyc };
 }
 export function weekdayMapFor(prog, startStr, sched) {
   const sp = progSplitDef(prog);
   if (!sp || sp.freeRotation || sp.days.length < 2) return null;
-  const days = schedDaysOf(sched);
+  /* "MON UPPER · THU LOWER" is meaningless when the training days drift
+     through the week. This is the THIRD case of the same kind, beside a
+     free-rotating split and a drifting schedule -- not a new behaviour.
+     Stated outright rather than left to emerge from an empty day array,
+     because an emergent guard is the kind that breaks in silence. */
+  if (schedIsCycle(sched)) return null
+  const days = schedDaysOf(sched)
   if (!days.length || days.length % sp.days.length !== 0) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   return days.map(dn => {
