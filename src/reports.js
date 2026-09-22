@@ -4281,11 +4281,26 @@
      names no band, and printing SINGLED there reads as a claim about
      equipment that was not used.
 
-     An ABSENT flag is SINGLED, not unknown. migrateFoldEncoding ran on
-     2026-08-04 over every entry at or before the cutoff, converted the old
-     duplicate-band-id encoding into a real `doubled` flag, and stamped
-     foldMigrated:true on each entry it examined. After that, absence means
-     the stack was not folded.
+     An ABSENT flag is SINGLED, not unknown -- FOR EVERY SET THE MIGRATION
+     DECIDED. migrateFoldEncoding ran on 2026-08-04 over every entry at or
+     before the cutoff, converted the old duplicate-band-id encoding into a
+     real `doubled` flag, and stamped foldMigrated:true on each entry it
+     examined. For those sets, absence means the stack was not folded.
+
+     It also REFUSED some. A set whose band list has mixed counts -- some id
+     duplicated, not all exactly twice -- is pushed onto that function's
+     `skipped` list with the reason "may be a real multi-band stack" and left
+     exactly as it was, while the entry around it is stamped foldMigrated
+     anyway. THREE such sets are live in Greg's log (2026-06-10 ex149,
+     2026-06-12 ex149, 2026-06-12 ex185) and foldLabel prints SINGLED over all
+     three. Asked on 2026-09-21, Greg did not remember what they were, so the
+     DATA IS DELIBERATELY LEFT ALONE and this comment is narrowed instead.
+
+     Do NOT teach foldLabel to detect the mixed shape. After the cutoff a
+     duplicated id legitimately means two physical bands of that model, this
+     function has no date to discriminate on, and returning null here would
+     blank the fold on correct modern data. The refusal belongs in the
+     migration, where it already is.
 
      The band test walks EVERY segment rather than calling setBands, which
      returns only the first segment's list -- a drop set whose first phase was
@@ -4791,8 +4806,16 @@
     var out = [];
     if (r.technique) out.push({ k: "TECHNIQUE", v: r.technique, cls: "flag" });
     if (r.lastDate) {
-      var n = (r.lastSets || []).length;
-      out.push({ k: "Last (" + r.lastDate + ")", v: n + (n === 1 ? " set" : " sets"),
+      /* The SET count comes from buildSetupDoc, which is the only place that
+         knows it. lastSets holds one string per set PLUS one per drop-set
+         phase, so counting THAT reported "3 sets" for ONE two-phase drop set
+         -- a line count wearing a set count's label. A document built without
+         the field prints no count at all rather than a wrong one, which is
+         also what the spec's Decision 4 originally specified. */
+      var n = r.lastSetN;
+      out.push({ k: "Last (" + r.lastDate + ")",
+                 v: (typeof n === "number" && n > 0)
+                      ? (n + (n === 1 ? " set" : " sets")) : "",
                  cls: "" });
       /* One line per logged set, verbatim from setLines -- the same strings
          the history report prints. cls "setline" is what tells the two
@@ -4915,11 +4938,26 @@
     "#rbts-print-root th{background:#eee;}",
     "#rbts-print-root .ex{page-break-inside:avoid;margin-bottom:7pt;}",
     "#rbts-print-root .ln{margin-left:14pt;}",
-    "#rbts-print-root .setline{margin-left:14pt;white-space:pre;font-size:9pt;}",
+    /* pre-WRAP, never pre. `pre` forbids wrapping, so a set line wider than
+       the printable page ran off the right edge and was CUT OFF -- taking
+       SINGLED / DOUBLED, the resistance and the intensifier tag with it,
+       which is the whole point of the line. Measured on the real log:
+       the longest set line is 183 characters and 62 of them exceed the
+       ~100 a US Letter page holds at 9pt Courier. pre-wrap keeps the runs
+       of spaces that align the columns and breaks at the spaces between
+       them. overflow-wrap handles a single unbroken token longer than the
+       page. No margin-left here: renderPrintHTML emits class="ln setline",
+       so .ln's 14pt already applies, and repeating it meant a future change
+       to .ln would move every line EXCEPT these. */
+    "#rbts-print-root .setline{white-space:pre-wrap;overflow-wrap:break-word;font-size:9pt;}",
     "#rbts-print-root .flag{font-weight:bold;}",
     "#rbts-print-root .warn{font-style:italic;}",
     "#rbts-print-root .blanks{margin-left:14pt;margin-top:2pt;}",
-    "#rbts-print-root pre{margin:0 0 6pt;font-size:9pt;}",
+    /* The printed HISTORY report puts its set lines inside <pre>, which has
+       the same non-wrapping default and the same 183-character content.
+       That half was NOT caused by the fold display -- it predates it -- and
+       it takes the same one-word fix. */
+    "#rbts-print-root pre{margin:0 0 6pt;font-size:9pt;white-space:pre-wrap;overflow-wrap:break-word;}",
     "#rbts-print-root .pgbreak{page-break-before:always;}",
     "#rbts-print-root .gen{margin-top:10pt;font-size:8pt;color:#444;border-top:1px solid #999;padding-top:2pt;}"
   ].join("");
@@ -5013,6 +5051,34 @@
            (b.lengthIn ? " " + b.lengthIn + "in" : "") +
            (b.res ? " (" + b.res + ")" : "");
   }
+  /* The same MAXIMUM rule, two levels down: the most of each band id any one
+     SEGMENT needs, then the most any one SET needs. Never a sum -- a drop set
+     that removes bands between phases must not read as needing twice as many.
+     Module scope rather than a closure inside buildSetupDoc, so all three
+     levels of one rule sit together and this one is directly testable. */
+  function stagedBandsOf(sets) {
+    var maxC = {}, order = [], out = [], i;
+    (sets || []).forEach(function (s) {
+      var perSet = {};
+      setSegments(s).forEach(function (g) {
+        var perSeg = {};
+        ((g && g.bands) || []).forEach(function (bid) {
+          perSeg[bid] = (perSeg[bid] || 0) + 1;
+        });
+        Object.keys(perSeg).forEach(function (bid) {
+          if (perSet[bid] == null || perSeg[bid] > perSet[bid]) perSet[bid] = perSeg[bid];
+        });
+      });
+      Object.keys(perSet).forEach(function (bid) {
+        if (maxC[bid] == null) { maxC[bid] = 0; order.push(bid); }
+        if (perSet[bid] > maxC[bid]) maxC[bid] = perSet[bid];
+      });
+    });
+    for (i = 0; i < order.length; i++) {
+      for (var q = 0; q < maxC[order[i]]; q++) out.push(order[i]);
+    }
+    return out;
+  }
   /* Staging quantity is the MAXIMUM any single exercise needs, never the sum:
      two exercises each using two red bands still means carrying two. */
   function pullList(perEx) {
@@ -5101,29 +5167,7 @@
          segments within a set, then across sets. Never a sum -- the same rule
          pullList applies across exercises. A drop set that removes bands
          between phases must not read as needing twice as many. */
-      var pullBands = [];
-      if (lu) {
-        var maxC = {}, bOrder = [];
-        lu.sets.forEach(function (s) {
-          var perSet = {};
-          setSegments(s).forEach(function (g) {
-            var perSeg = {};
-            ((g && g.bands) || []).forEach(function (bid) {
-              perSeg[bid] = (perSeg[bid] || 0) + 1;
-            });
-            Object.keys(perSeg).forEach(function (bid) {
-              if (perSet[bid] == null || perSeg[bid] > perSet[bid]) perSet[bid] = perSeg[bid];
-            });
-          });
-          Object.keys(perSet).forEach(function (bid) {
-            if (maxC[bid] == null) { maxC[bid] = 0; bOrder.push(bid); }
-            if (perSet[bid] > maxC[bid]) maxC[bid] = perSet[bid];
-          });
-        });
-        bOrder.forEach(function (bid) {
-          for (var q = 0; q < maxC[bid]; q++) pullBands.push(bid);
-        });
-      }
+      var pullBands = lu ? stagedBandsOf(lu.sets) : [];
       /* One formatted line per set, from the SAME function the history report
          uses, so the two printouts cannot drift. */
       var lastSets = [];
@@ -5136,9 +5180,18 @@
          stack AND fold. A summary contradicting the per-set lines printed
          directly beneath it is worse than no summary. */
       var sameStack = true;
-      if (lu && lu.sets.length > 1) {
+      if (lu && lu.sets.length) {
         var key0 = stackKeyOf(lu.sets[0]);
-        for (var ki = 1; ki < lu.sets.length; ki++) {
+        for (var ki = 0; ki < lu.sets.length; ki++) {
+          /* A SEGMENTED set has no single stack to summarise: a drop set
+             removes bands between phases, so phase two contradicts any
+             summary drawn from phase one. The old loop started at set TWO and
+             so skipped a LONE drop set entirely -- one set, nothing to compare
+             it against -- and printed phase one's stack as the exercise's
+             band summary, two lines under the phase line that disagrees with
+             it. stackKeyOf reads the first segment only, which is why the
+             segment test comes FIRST rather than being folded into the key. */
+          if (setSegments(lu.sets[ki]).length > 1) { sameStack = false; break; }
           if (stackKeyOf(lu.sets[ki]) !== key0) { sameStack = false; break; }
         }
       }
@@ -5178,6 +5231,7 @@
         technique: techKey ? ctx.techLabelOf(techKey) : null,
         lastDate: lu ? lu.date : null,
         lastSets: lastSets,
+        lastSetN: lu ? lu.sets.length : 0,   /* SETS, not lines -- see exLines */
         bands: (sameStack && bandIds.length) ? bandStackLabel(bandIds, ctx.bandOf) : null,
         res: sameStack ? sumRes(bandIds, ctx.bandOf) : null,
         gear: gearIds.length ? gearLabel(gearIds, ctx.gearOf) : null,
