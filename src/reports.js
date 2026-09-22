@@ -5858,6 +5858,12 @@
 
     var totalVol = Object.keys(acc).reduce(function (a, k) { return a + acc[k].volume; }, 0);
     var totalSlots = Object.keys(acc).reduce(function (a, k) { return a + acc[k].slots; }, 0);
+    /* CALENDAR weeks, deliberately, and NOT the program week. Since cycle
+       schedules landed (2026-09-21) a program week is one turn of the
+       pattern -- 2 days on 1-on/1-off, 6 on 3-on/3-off -- while a volume
+       landmark is a physiological figure per SEVEN DAYS. The two must not
+       be reconciled; they are different units that share a word. Every
+       "sets/wk" figure below is per calendar week, and the report says so. */
     var weeks = (win.spanDays && win.spanDays > 0) ? (win.spanDays / 7) : 1;
 
     /* The share of weekly sets each group WOULD get if the landmarks were the
@@ -5922,7 +5928,7 @@
             ? "Under-trained - logged " + Math.round(slotShare) +
               "% of slots against a prescribed " + Math.round(prescribedShare) + "%"
             : "Under-trained - " + weeklySets.toFixed(1) +
-              " sets/week against a landmark of " + landmark +
+              " sets per calendar week against a landmark of " + landmark +
               (programGap
                 ? ". Your program only prescribes " + Math.round(prescribedShare) +
                   "% of its slots to " + label + " against the " +
@@ -5934,7 +5940,7 @@
             ? "Over-trained - logged " + Math.round(slotShare) +
               "% of slots against a prescribed " + Math.round(prescribedShare) + "%"
             : "Over-trained - " + weeklySets.toFixed(1) +
-              " sets/week against a landmark of " + landmark +
+              " sets per calendar week against a landmark of " + landmark +
               ". Consider moving a set to an under-trained group.");
         }
         /* Adherence is reported separately and labelled as such: it answers a
@@ -6070,10 +6076,10 @@
              skipping the slot" when the program barely prescribes one sends
              them to fix the wrong thing. */
           recs.push({ severity: 4, code: "UNDER_PROGRAM", scope: "group", subject: g.label,
-            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark +
+            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets per calendar week vs " + g.landmark +
               ", program prescribes " + Math.round(g.prescribedShare) + "%)",
             text: g.label + " is under-trained at " + g.weeklySets.toFixed(1) +
-              " sets/week against a landmark of " + g.landmark +
+              " sets per calendar week against a landmark of " + g.landmark +
               ", but your program only prescribes " + Math.round(g.prescribedShare) +
               "% of its slots to " + g.label + " against the " + Math.round(g.impliedShare) +
               "% the landmark implies. This is a program-design gap, not an adherence gap" +
@@ -6091,9 +6097,9 @@
               "% your program prescribes. Stop skipping its slot." });
         } else {
           recs.push({ severity: 4, code: "UNDER", scope: "group", subject: g.label,
-            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark + ")",
+            detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets per calendar week vs " + g.landmark + ")",
             text: g.label + " is under-trained: " + g.weeklySets.toFixed(1) +
-              " sets/week against a landmark of " + g.landmark +
+              " sets per calendar week against a landmark of " + g.landmark +
               ". Add a set or an exercise, or stop skipping its slot." });
         }
       } else if (g.balance === "OVER") {
@@ -6108,9 +6114,9 @@
                 "% your program prescribes. Move a slot to an under-trained group " +
                 "rather than adding one." }
           : { severity: 7, code: "OVER", scope: "group", subject: g.label,
-              detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets/wk vs " + g.landmark + ")",
+              detail: g.label + " (" + g.weeklySets.toFixed(1) + " sets per calendar week vs " + g.landmark + ")",
               text: g.label + " is over-trained: " + g.weeklySets.toFixed(1) +
-                " sets/week against a landmark of " + g.landmark +
+                " sets per calendar week against a landmark of " + g.landmark +
                 ". Recovery is the constraint at this volume - move a set to an " +
                 "under-trained group rather than adding one." });
       }
@@ -7581,7 +7587,17 @@
        schedNextDay returns undefined and the workout number prints as NaN.
        A schedule with no training days at all is exactly what the fallback
        exists to prevent, so the anchor has to be a real date. */
-    return !isNaN(new Date(s + "T00:00:00").getTime());
+    if (isNaN(new Date(s + "T00:00:00").getTime())) return false;
+    /* Shape and existence are still not the same thing. V8 ROLLS an
+       impossible day: new Date("2026-02-30T00:00:00") is not an Invalid Date,
+       it is 2026-03-02. The token would then store one anchor while the engine
+       ran the pattern from another two days later, and the CYCLE STARTS field
+       would display the stored one. Reading the parts back is the only way to
+       tell a rolled date from a real one. */
+    var d = new Date(s + "T00:00:00");
+    return d.getFullYear() === Number(s.slice(0, 4)) &&
+           d.getMonth() + 1 === Number(s.slice(5, 7)) &&
+           d.getDate() === Number(s.slice(8, 10));
   }
   function schedIsArray(v) {
     return Object.prototype.toString.call(v) === "[object Array]";
@@ -7595,17 +7611,45 @@
     var clean = [], i, x;
     for (i = 0; i < days.length; i++) {
       x = days[i];
-      if (typeof x === "number" && x >= 0 && x <= 6 && Math.floor(x) === x)
+      /* DE-DUPLICATED, and that filter is the one that matters most.
+         "C:1,1,3" is two training days a week, but an undeduped [1,1,3] made
+         schedWorkoutsPerWeek answer 3 -- and that function is the pivot every
+         program week and deload reads, so the week advanced too slowly and the
+         deload landed late while the day COUNT stayed right. */
+      if (typeof x === "number" && x >= 0 && x <= 6 && Math.floor(x) === x &&
+          clean.indexOf(x) < 0)
         clean.push(x);
     }
     if (!clean.length) clean = SCHED_FALLBACK_DAYS.slice();
     return { kind: "weekly", days: clean.sort(function (a, b) { return a - b; }) };
   }
+  /* A resolved cycle, VALIDATED. The same three conditions the token parser
+     applies, so an object cannot get in through a side door that the string
+     form is checked at. */
+  function schedCycleOk(o) {
+    var i, on = 0;
+    if (!o || !schedIsArray(o.pattern) || !o.pattern.length) return false;
+    for (i = 0; i < o.pattern.length; i++) {
+      if (o.pattern[i] === 1) on++;
+      else if (o.pattern[i] !== 0) return false;
+    }
+    return on > 0 && schedValidIso(o.anchor);
+  }
   function schedResolve(raw) {
-    /* Already resolved: hand it straight back, so a caller in a loop can
-       resolve once and not re-parse per day. */
-    if (raw && raw.kind === "weekly" && schedIsArray(raw.days)) return raw;
-    if (raw && raw.kind === "cycle" && schedIsArray(raw.pattern)) return raw;
+    /* Already resolved: hand it back rather than re-parsing per day in a
+       loop -- but CHECK IT FIRST. This fast path used to accept any object
+       carrying `kind` and an array, with no anchor check, no ON-count check
+       and no length check, so {kind:"cycle",pattern:[1,1,0]} with no anchor
+       gave `false` for every day, `undefined` from schedNextDay and NaN from
+       schedCountUpTo -- precisely the outcome the parser exists to prevent,
+       and the module's one hole in a contract stated as absolute.
+       A weekly object goes back through schedWeekly, which filters, floors
+       and de-duplicates; the result is a NEW object, so the cheap identity
+       return is kept only for a cycle, where the check is pure. */
+    if (raw && raw.kind === "weekly" && schedIsArray(raw.days))
+      return schedWeekly(raw.days);
+    if (raw && raw.kind === "cycle" && schedCycleOk(raw)) return raw;
+    if (raw && raw.kind === "cycle") return schedWeekly(SCHED_FALLBACK_DAYS.slice());
     if (schedIsArray(raw)) return schedWeekly(raw);
     var v = schedUnquote(raw);
     if (v && v.indexOf(SCHED_CYCLE_PREFIX) === 0) {

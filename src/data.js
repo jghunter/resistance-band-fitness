@@ -2151,8 +2151,16 @@ export function sessionForIdx(prog, idx) {
   const d = progSplitDays(prog);
   return d[((idx % d.length) + d.length) % d.length];
 }
-export function weekForIdx(prog, idx) {
-  return Math.min(Math.floor(idx / wpw()) + 1, progLengthWeeks(prog));
+/* `w` is an OPTIONAL workouts-per-week override. wpw() reads localStorage,
+   which the schedule chooser has not written yet on the render right after a
+   mode switch -- useLS writes in an effect, AFTER the render. So the calendar
+   drew its filled cells from the NEW schedule while its week and deload
+   columns came from the OLD stored value, and nothing forced a second render.
+   The calendar passes the schedule's own count; every other caller passes
+   nothing and is unchanged. */
+export function weekForIdx(prog, idx, w) {
+  const n = (typeof w === "number" && w > 0) ? w : wpw();
+  return Math.min(Math.floor(idx / n) + 1, progLengthWeeks(prog));
 }
 
 // ── P3: split-agnostic session derivation (spec §2; mirrors fitness_app.html) ──
@@ -2465,10 +2473,11 @@ export function isDeloadWeek(prog, week) {
   if (!every || every < 1) return false;
   return week >= 1 && week <= progLengthWeeks(prog) && week % every === 0;
 }
-export function isDeloadWorkout(prog, idx) {
-  const week = Math.floor(idx / wpw()) + 1;
+export function isDeloadWorkout(prog, idx, w) {
+  const n = (typeof w === "number" && w > 0) ? w : wpw();   /* see weekForIdx */
+  const week = Math.floor(idx / n) + 1;
   if (!isDeloadWeek(prog, week)) return false;
-  if (deloadPolicy(prog).scope === "session") return (idx % wpw()) === 0;
+  if (deloadPolicy(prog).scope === "session") return (idx % n) === 0;
   return true;
 }
 export function isDeloadSession(prog, week, sKey) {

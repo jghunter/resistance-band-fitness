@@ -154,8 +154,14 @@ function ScheduleCalendar({ prog, sched, startDate }) {
   /* sessionForIdx, weekForIdx and isDeloadWorkout read app state, so the
      module takes them by injection -- an object literal at the call site
      rather than an addition to makeReportCtx, which has no use for them. */
+  /* The schedule the CHOOSER holds, not the one storage holds. They differ for
+     exactly one render after a mode switch, and that is the render the user
+     sees when they tap CYCLE. */
+  const calWpw = RBTS_REPORTS.schedWorkoutsPerWeek(sched)
   const rows = RBTS_REPORTS.scheduleOutlook(sched, prog, startDate, today, 2, {
-    sessionForIdx, weekForIdx, isDeloadWorkout
+    sessionForIdx,
+    weekForIdx: (pr, i) => weekForIdx(pr, i, calWpw),
+    isDeloadWorkout: (pr, i) => isDeloadWorkout(pr, i, calWpw),
   })
   const months = outlookMonths(rows)
   const firstDeload = rows.find(r => r.isDeload) || null
@@ -391,8 +397,7 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
                      carries `on` and `off`. Reading the wrong one writes a
                      schedule of undefined. */
                   if (p.days) setSched(schedKeyForDays(p.days))
-                  else setSched(RBTS_REPORTS.schedTokenForCycle(
-                    cyclePatternOf(p.on, p.off), anchor))
+                  else writeCycle(cyclePatternOf(p.on, p.off), anchor)
                 }}
                   style={{...btn(false),padding:'4px 8px',fontSize:10}}>{p.label}</button>
               ))}
