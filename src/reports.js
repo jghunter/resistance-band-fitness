@@ -398,6 +398,45 @@
     return f < 0 ? 0 : f;                                       // never negative
   }
 
+  /* The three stretches at which a force reading is worth taking, in inches.
+
+     They are the strains the model itself is anchored on: the vendor's rated
+     minimum is produced at STRAIN_AT_RATED_MIN, the rated maximum at
+     STRAIN_AT_RATED_MAX, and REF_STRAIN is where any lift that does not take
+     the absolute-stretch path is priced. A reading taken somewhere else is not
+     wrong, but a set that brackets these three makes the fitted curve exact
+     where the app actually evaluates it.
+
+     Computed, never written down, so a change to a constant moves the panel
+     and the printed guide along with the force model.
+
+     Falls back to the band's nominal lengthIn when no rest length is stored,
+     and reports which it used -- a band with no tape still has a useful
+     target, and a blank line teaches nothing, but the two must not look
+     identical on screen.
+
+     STRETCH IS THE ELONGATION PAST REST, never the gap between the bearing
+     points. bandForceAt divides stretchIn by the rest length to get strain,
+     so a span entered here would put every real lift below the lowest
+     reading, where the model HOLDS rather than extrapolates -- every set
+     would report the lightest reading while wearing a MEASURED badge. */
+  function bandTargetStretches(band, geom) {
+    var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
+      ? geom.restLengthIn : 0;
+    var fromRest = rest > 0;
+    if (!fromRest) rest = (band && isFinite(band.lengthIn) && band.lengthIn > 0)
+      ? band.lengthIn : 0;
+    if (!rest) return null;
+    function at(strain) { return Math.round(strain * rest * 10) / 10; }
+    return {
+      lo: at(LOAD_MODEL.STRAIN_AT_RATED_MIN),
+      ref: at(LOAD_MODEL.REF_STRAIN),
+      hi: at(LOAD_MODEL.STRAIN_AT_RATED_MAX),
+      rest: rest,
+      fromRest: fromRest
+    };
+  }
+
   /* ---- band calibration: rest length + force-scale readings ------------
      BandCalibration (both apps) is a physical-measurement form, not a
      report, but the arithmetic under it -- parsing a typed number, rejecting
@@ -8010,6 +8049,7 @@
     bandForceAt: bandForceAt,
     sanitizeMeasuredPoints: sanitizeMeasuredPoints,
     bandCalibrationLabel: bandCalibrationLabel,
+    bandTargetStretches: bandTargetStretches,
     applyBandRestLengthEdit: applyBandRestLengthEdit,
     applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
     bandGeomRestEdit: bandGeomRestEdit,

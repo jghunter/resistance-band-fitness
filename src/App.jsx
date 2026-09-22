@@ -5489,7 +5489,16 @@ function BandCalibration({ myBands, user }) {
             the total gap: pull a 41in band to a 66in gap and type 25. Two readings are
             enough to replace the assumed curve with a real one; three is better, and
             spread them wide — outside your readings the app holds the nearest one
-            rather than extrapolating. Leave it all blank and the app keeps using the
+            rather than extrapolating.
+            The three TARGET STRETCH figures beside each band are the points
+            the app's own curve is anchored on — the vendor's minimum, a
+            normal working lift, and the vendor's maximum. Readings taken
+            anywhere else still count; readings that bracket all three make
+            the curve exact where the app actually evaluates it. If a band is
+            too strong to reach the third figure, take the two you can and
+            make sure they straddle the middle one — anything above your top
+            reading is reported as that reading, not extrapolated.
+            Leave it all blank and the app keeps using the
             vendor's rated range, reported as MODELED rather than MEASURED.
           </div>
           {!pool.length && (
@@ -5501,6 +5510,9 @@ function BandCalibration({ myBands, user }) {
             const g = geom[b.id] || {}
             const pts = g.measured || []
             const status = RBTS_REPORTS.bandCalibrationLabel(pts)
+            /* bandTargetStretches treats an empty object exactly as it treats
+               null, so `g` needs no extra guard here. */
+            const tgt = RBTS_REPORTS.bandTargetStretches(b, g)
             return (
               <div key={b.id} style={{padding:'8px 0',borderTop:`1px solid ${C.accentDim}`}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:6}}>
@@ -5511,6 +5523,19 @@ function BandCalibration({ myBands, user }) {
                     {status}
                   </span>
                 </div>
+                {tgt && (
+                  <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+                    marginBottom:6,letterSpacing:'0.04em'}}>
+                    TARGET STRETCH&nbsp;&nbsp;
+                    <span style={{color:C.textSec}}>
+                      {tgt.lo} / {tgt.ref} / {tgt.hi} in
+                    </span>
+                    {tgt.fromRest
+                      ? '  — from your taped rest length of ' + tgt.rest + ' in'
+                      : "  — from the band's nominal " + tgt.rest +
+                        ' in; tape the rest length to make these exact'}
+                  </div>
+                )}
                 <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>
                   <div style={{display:'flex',flexDirection:'column',gap:2}}>
                     <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>REST LENGTH</span>
@@ -5529,6 +5554,7 @@ function BandCalibration({ myBands, user }) {
                         </span>
                         <div style={{display:'flex',gap:3,alignItems:'center'}}>
                           <input type="number" step="0.25" min="0"
+                            placeholder={tgt ? String([tgt.lo, tgt.ref, tgt.hi][i]) : ''}
                             value={p.stretchIn == null ? '' : p.stretchIn}
                             onChange={e => setPoint(b.id, i, 'stretchIn', e.target.value)}
                             style={{...inputStyle, width:56, fontSize:12, padding:'4px 6px'}}/>
