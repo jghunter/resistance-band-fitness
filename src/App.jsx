@@ -13,6 +13,7 @@ import {
   progSplitDays, progLengthWeeks, progDeloadWeek, progWorkWeeks, progBlockWorkouts,
   sessionForIdx, weekForIdx, wpw,
   SCHED_PRESETS, WEEKDAY_ABBR, schedDaysOf, schedKeyForDays, schedLabel,
+  SCHED_CYCLE_PRESETS, schedIsCycle, cyclePatternOf,
   isDeloadWeek, isDeloadWorkout, isDeloadSession, deloadProtocolText,
   saveCustomProgram, deleteCustomProgram, getCustomPrograms, mergeCustomPrograms,
   setCustomPrograms, getCustomProgramTombstones, setCustomProgramTombstones,
@@ -111,12 +112,118 @@ const inputStyle = {
   borderRadius:4, padding:'5px 8px', fontFamily:'monospace', fontSize:12, outline:'none',
 }
 
+const MONTH_NAMES = ['January','February','March','April','May','June','July',
+                    'August','September','October','November','December']
+/* Today as a LOCAL ISO date. toISOString() is UTC, which in Hawaii is tomorrow
+   for most of the day -- and an anchor one day out shifts the whole cycle. */
+function todayIsoLocal() {
+  const d = new Date(), p2 = x => (x < 10 ? '0' : '') + x
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate())
+}
+/* data.js keeps unquoteSched private, and widening its exports for one caller
+   is not worth it. useLS stringifies a plain string, so the quotes are real. */
+function unq(v) {
+  return (typeof v === 'string' && v.length >= 2 &&
+          v.charAt(0) === '"' && v.charAt(v.length - 1) === '"') ? v.slice(1, -1) : v
+}
+/* Group scheduleOutlook rows into calendar months. `pad` is the blank cells
+   before a month's first day, so dates line up under the right weekday. The
+   first month starts at the from-date, and padding by its weekday is right
+   for it too. Mirrors outlookMonths in fitness_app.html. */
+function outlookMonths(rows) {
+  const months = []
+  let cur = null
+  for (const r of rows) {
+    const d = new Date(r.date + 'T00:00:00')
+    const key = d.getFullYear() + '-' + d.getMonth()
+    if (!cur || cur.key !== key) {
+      cur = { key, pad: d.getDay(), cells: [],
+              label: MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear() }
+      months.push(cur)
+    }
+    cur.cells.push({ row: r, dom: d.getDate() })
+  }
+  return months
+}
+/* The next two months, for EITHER kind of schedule -- "where does my deload
+   fall" is a question a Mon/Wed/Fri user has too. Mirrors ScheduleCalendar in
+   fitness_app.html. */
+function ScheduleCalendar({ prog, sched, startDate }) {
+  if (!prog || !startDate) return null
+  const today = new Date(); today.setHours(0,0,0,0)
+  /* sessionForIdx, weekForIdx and isDeloadWorkout read app state, so the
+     module takes them by injection -- an object literal at the call site
+     rather than an addition to makeReportCtx, which has no use for them. */
+  const rows = RBTS_REPORTS.scheduleOutlook(sched, prog, startDate, today, 2, {
+    sessionForIdx, weekForIdx, isDeloadWorkout
+  })
+  const months = outlookMonths(rows)
+  const firstDeload = rows.find(r => r.isDeload) || null
+  /* One letter for the session, from the split's own day name. */
+  const sessionLetter = r => {
+    if (!r.isWk) return ''
+    const nm = dayName(prog, r.sKey) || r.sKey || ''
+    return nm.charAt(0).toUpperCase()
+  }
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:4}}>
+      <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+        letterSpacing:'0.08em'}}>NEXT 2 MONTHS</span>
+      {months.map(m => (
+        <div key={m.key} style={{display:'flex',flexDirection:'column',gap:3}}>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,
+            letterSpacing:'0.06em'}}>{m.label.toUpperCase()}</span>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,28px)',gap:2}}>
+            {WEEKDAY_ABBR.map(w => (
+              <span key={'h'+w} style={{fontFamily:'monospace',fontSize:8,
+                color:C.dimGray,textAlign:'center'}}>{w.charAt(0)}</span>
+            ))}
+            {Array.from({length:m.pad}).map((_, k) => <span key={'p'+k} />)}
+            {m.cells.map(c => {
+              const r = c.row
+              const bg = r.isDeload ? C.deload : (r.isWk ? C.accent : 'transparent')
+              const fg = r.isWk ? C.bgDeep : C.dimGray
+              return (
+                <span key={r.date}
+                  title={r.date + (r.isWk
+                    ? '  workout #' + r.num + '  week ' + r.week +
+                      (r.isDeload ? '  DELOAD' : '')
+                    : '  rest')}
+                  style={{fontFamily:'monospace',height:30,borderRadius:3,
+                    display:'flex',flexDirection:'column',alignItems:'center',
+                    justifyContent:'center',lineHeight:1.1,background:bg,color:fg}}>
+                  <span style={{fontSize:9}}>{c.dom}</span>
+                  <span style={{fontSize:7}}>{sessionLetter(r)}</span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.6}}>
+        filled = workout day, with the first letter of its session · empty = rest
+        {firstDeload ? '  ·  DELOAD begins ' + firstDeload.date
+                     : '  ·  no deload in this window'}
+      </span>
+    </div>
+  )
+}
 // Schedule picker: preset buttons (3–6 day) PLUS a per-weekday toggle row for any
 // custom set of training days. The active program's split rotates across whichever
 // days are chosen, automatically. Mirrors ScheduleChooser in fitness_app.html.
 function ScheduleChooser({ sched, setSched, prog, startDate }) {
-  const days = schedDaysOf(sched)
-  const activeKey = schedKeyForDays(days)
+  const isCyc = RBTS_REPORTS.schedIsCycle(sched)
+  const res = RBTS_REPORTS.schedResolve(sched)
+  const days = isCyc ? [] : res.days
+  const activeKey = isCyc ? null : schedKeyForDays(days)
+  const pattern = isCyc ? res.pattern : []
+  const anchor = isCyc ? res.anchor : todayIsoLocal()
+  const runs = isCyc ? RBTS_REPORTS.schedSimpleRuns(pattern) : null
+  /* Remember the token from the OTHER mode so the toggle is reversible.
+     Without this, switching to CYCLE and back throws away a custom weekday
+     set the user built by hand. */
+  const [lastWeekly, setLastWeekly] = useState(isCyc ? 'MWF' : unq(sched))
+  const [lastCycle, setLastCycle] = useState(isCyc ? unq(sched) : null)
   // P2: optional prog/startDate light up the compatibility banner + weekday map
   const chk = prog ? splitScheduleCheck(prog, sched) : null
   const map = (prog && chk && chk.ok && chk.driftFree)
@@ -127,8 +234,43 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
     if (nd.length === 0) return                 // never allow zero training days
     setSched(schedKeyForDays(nd))
   }
+  const toWeekdays = () => {
+    if (!isCyc) return
+    setLastCycle(unq(sched))
+    setSched(lastWeekly || 'MWF')
+  }
+  const toCycle = () => {
+    if (isCyc) return
+    setLastWeekly(unq(sched))
+    /* A new cycle starts TODAY. Setting one up means "my cycle starts now",
+       and the CYCLE STARTS field is there for when it does not. */
+    setSched(lastCycle || RBTS_REPORTS.schedTokenForCycle([1,1,1,0,0], todayIsoLocal()))
+  }
+  /* Every cycle edit goes through here, so the refusal of a zero-workout
+     pattern is written ONCE. The weekday toggles refuse zero the same way. */
+  const writeCycle = (pat, a) => {
+    if (!pat.length || !pat.some(x => x === 1)) return
+    setSched(RBTS_REPORTS.schedTokenForCycle(pat, a || anchor))
+  }
+  const setRuns = (on, off) => writeCycle(cyclePatternOf(on, off), anchor)
+  const flipDay = (i) => {
+    const pat = pattern.slice()
+    pat[i] = pat[i] ? 0 : 1
+    writeCycle(pat, anchor)
+  }
+  const growCycle = (delta) => {
+    const pat = pattern.slice()
+    if (delta > 0) pat.push(0)
+    else if (pat.length > 1) pat.pop()
+    writeCycle(pat, anchor)
+  }
   return (
     <div style={{display:'flex',flexDirection:'column',gap:8,maxWidth:430}}>
+      <div style={{display:'flex',gap:6}}>
+        <button style={btn(!isCyc)} onClick={toWeekdays}>WEEKDAYS</button>
+        <button style={btn(isCyc)} onClick={toCycle}>CYCLE</button>
+      </div>
+      {!isCyc && (
       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
         {SCHED_PRESETS.map(p => (
           <button key={p.key} style={btn(activeKey===p.key)} onClick={()=>setSched(p.key)}>
@@ -136,6 +278,8 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
           </button>
         ))}
       </div>
+      )}
+      {!isCyc && (
       <div style={{display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
         <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
           letterSpacing:'0.08em',marginRight:2}}>CUSTOM</span>
@@ -149,8 +293,70 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
           )
         })}
       </div>
+      )}
+      {isCyc && (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {SCHED_CYCLE_PRESETS.map(p => (
+              <button key={p.label}
+                style={btn(!!runs && runs.on === p.on && runs.off === p.off)}
+                onClick={()=>setRuns(p.on, p.off)}>{p.label}</button>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+              letterSpacing:'0.08em'}}>ON DAYS</span>
+            <input type="number" min="1" max="30" value={runs ? runs.on : ''}
+              placeholder="—"
+              onChange={e => {
+                const v = parseInt(e.target.value, 10)
+                if (v >= 1 && v <= 30) setRuns(v, runs ? runs.off : 1)
+              }}
+              style={{...readoutStyle, width:52, fontSize:12}} />
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+              letterSpacing:'0.08em'}}>OFF DAYS</span>
+            <input type="number" min="0" max="30" value={runs ? runs.off : ''}
+              placeholder="—"
+              onChange={e => {
+                const v = parseInt(e.target.value, 10)
+                if (v >= 0 && v <= 30) setRuns(runs ? runs.on : 1, v)
+              }}
+              style={{...readoutStyle, width:52, fontSize:12}} />
+          </div>
+          {!runs && (
+            <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,lineHeight:1.5}}>
+              this is a free pattern — the two numbers describe a plain
+              on-then-off cycle, and typing one rebuilds the pattern
+            </span>
+          )}
+          <div style={{display:'flex',gap:3,flexWrap:'wrap',alignItems:'center'}}>
+            {pattern.map((v, i) => (
+              <button key={i} onClick={()=>flipDay(i)}
+                title={'day ' + (i+1) + ' of the cycle'}
+                style={{...btn(v === 1), padding:'5px 6px', minWidth:34, fontSize:9}}>
+                {v === 1 ? 'ON' : 'OFF'}
+              </button>
+            ))}
+            <button onClick={()=>growCycle(1)} title="make the cycle one day longer"
+              style={{...btn(false), padding:'5px 8px', fontSize:11}}>+</button>
+            <button onClick={()=>growCycle(-1)} title="make the cycle one day shorter"
+              style={{...btn(false), padding:'5px 8px', fontSize:11}}>−</button>
+          </div>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>
+            tap any day to flip it
+          </span>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
+              letterSpacing:'0.08em'}}>CYCLE STARTS</span>
+            <input type="date" value={anchor}
+              onChange={e => { if (e.target.value) writeCycle(pattern, e.target.value) }}
+              style={{...readoutStyle, width:150, fontSize:12}} />
+          </div>
+        </div>
+      )}
       <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,lineHeight:1.5}}>
-        {schedLabel(sched)} — your program's split rotates across these days automatically.
+        {schedLabel(sched)} — your program's split rotates across your training
+        days automatically.
       </span>
       {chk && (!chk.ok || !chk.driftFree) && (
         <div style={{border:`1px solid ${C.amber}`,borderRadius:6,padding:'8px 10px',
@@ -163,7 +369,14 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
               <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec,
                 letterSpacing:'0.08em'}}>TRY:</span>
               {chk.suggestions.map((p,i) => (
-                <button key={i} onClick={()=>setSched(schedKeyForDays(p.days))}
+                <button key={i} onClick={()=>{
+                  /* A weekday suggestion carries `days`; a cycle suggestion
+                     carries `on` and `off`. Reading the wrong one writes a
+                     schedule of undefined. */
+                  if (p.days) setSched(schedKeyForDays(p.days))
+                  else setSched(RBTS_REPORTS.schedTokenForCycle(
+                    cyclePatternOf(p.on, p.off), anchor))
+                }}
                   style={{...btn(false),padding:'4px 8px',fontSize:10}}>{p.label}</button>
               ))}
             </div>
@@ -175,6 +388,7 @@ function ScheduleChooser({ sched, setSched, prog, startDate }) {
           {map.map(m => WEEKDAY_ABBR[m.dn].toUpperCase()+' '+dayName(prog, m.sKey)).join(' · ')}
         </span>
       )}
+      <ScheduleCalendar prog={prog} sched={sched} startDate={startDate} />
     </div>
   )
 }
