@@ -7589,10 +7589,16 @@
     { key:"MTWThF",  label:"Mon–Fri",    sub:"5 day" },
     { key:"MON_SAT", label:"Mon–Sat",    sub:"6 day" }
   ];
-  /* The cycle shapes Greg named. The chooser also takes any free pattern. */
+  /* The cycle shapes Greg named. The chooser also takes any free pattern.
+     Ordered by ON days, then by OFF days, so the row reads as a table rather
+     than as the order he happened to ask for them in. The rest-heavy shapes
+     (1/2, 2/1, 3/1) joined on 2026-09-22 at his request. */
   var SCHED_CYCLE_PRESETS = [
     { label:"1 on / 1 off", on:1, off:1 },
+    { label:"1 on / 2 off", on:1, off:2 },
+    { label:"2 on / 1 off", on:2, off:1 },
     { label:"2 on / 2 off", on:2, off:2 },
+    { label:"3 on / 1 off", on:3, off:1 },
     { label:"3 on / 2 off", on:3, off:2 },
     { label:"3 on / 3 off", on:3, off:3 }
   ];
