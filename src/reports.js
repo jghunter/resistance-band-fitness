@@ -774,6 +774,24 @@
      the module stays self-contained and testable. */
   function gearPathDelta(gearIds, gearOf, opening) {
     if (!gearIds || !gearIds.length || !gearOf) return 0;
+    /* IS A BAR IN THIS RIG? A Harambe rope hangs from a rod, and the rod hangs
+       from the bar's bushing, so the whole assembly's drop is ALREADY the
+       bar's hookOffsetIn -- that figure was taped WITH a rope on the bar (T
+       Bar with a yellow rope, CyberBar with a black one). The rope's own
+       seriesIn is Harambe's KNOT-TO-TAIL catalog length, a contour, not a
+       drop, as every rope note in GEAR_DIMS already said. Subtracting both
+       removed 9in of band path where the tape says 3in and read the load
+       about 11% LIGHT. Greg approved zeroing the rope's half on 2026-09-25.
+       Computed ONCE here rather than inside the reduce, because it is a fact
+       about the RIG and not about the item being summed. */
+    var hasBar = false, ropeDrop = null;
+    for (var i = 0; i < gearIds.length; i++) {
+      var gb = gearOf(gearIds[i]);
+      if (!gb) continue;
+      if (gb.type === "bar") hasBar = true;
+      var gd = resolveGearDims(gb);
+      if (gd && gd.dropOnBar && finitePos(gd.dropIn) && ropeDrop == null) ropeDrop = gd.dropIn;
+    }
     return gearIds.reduce(function (a, id) {
       var g = gearOf(id);
       if (!g) return a;
@@ -788,6 +806,20 @@
          before every branch, so one field settles the next such item instead
          of another special case in the sum. */
       if (d.neverInPath) return a;
+      /* A FLAG, not a type and not a deleted measurement -- the same posture
+         neverInPath takes one line up, so the next such item is one field
+         rather than another special case in the sum. The rope really is 5in
+         long and the GEAR tab should still say so.
+
+         WITH A BAR, the rope states the DROP if it has been taped (dropIn)
+         and contributes nothing if it has not, leaving the bar's default to
+         stand. WITH NO BAR THE ROPE STILL COUNTS, and that is deliberate. On HANDLES
+         there is no hookOffsetIn to hold the drop, so zeroing here would lose
+         the assembly entirely and read the load HEAVY -- the one direction
+         this model refuses to err in. That case stays as wrong as it was
+         until the typed rope drop exists; see TODO_open_items.md. Off a BELT
+         nothing reaches this function at all. */
+      if (d.dropOnBar && hasBar) return a - (finitePos(d.dropIn) ? d.dropIn : 0);
       /* An ADJUSTABLE item's inline length is whichever stamped position was
          hooked. With no position chosen this contributes NOTHING -- which is
          a silent zero, and a silent zero on a 26in strap is the belt bug in a
@@ -797,7 +829,14 @@
       var adj = gearOpeningSeriesIn(g, opening);
       if (adj != null) return a - adj;
       if (t === "footplate") return a + 2 * (d.thicknessIn || 0) + (d.channelIn || 0);
-      if (t === "bar")       return a - (d.hookOffsetIn || 0);
+      /* THE ROPE WINS WHEN IT KNOWS. hookOffsetIn on a Harambe bar is only a
+         DEFAULT for the drop -- the assembly it describes is the same on
+         either bar (Greg, 2026-09-25: same bushings, same rods, same ropes),
+         so a logged rope carrying its own measured drop is the better figure
+         and the bar must not add a second one on top. A bar the ropes do not
+         touch (X3, Clench, HeavyDutyBar) is unaffected: no rope in the rig
+         means no ropeDrop, and hookOffsetIn is a real hook there. */
+      if (t === "bar")       return a - (ropeDrop != null ? 0 : (d.hookOffsetIn || 0));
       if (t === "handle" || t === "anchor") return a - (d.seriesIn || 0);
       /* A belt is a loop AROUND the body, not a length in series with the
          band. Its recorded 40in was the waist circumference and it drove every
@@ -6634,6 +6673,7 @@
     { brand: "Harambe", items: [
       { name: "Black Ropes", type: "other" },
       { name: "Blue Ropes", type: "other" },
+      { name: "CyberBar", type: "bar" },
       { name: "Cyberplate", type: "footplate" },
       { name: "Foam Block", type: "other" },
       { name: "Handles", type: "handle" },
@@ -6714,15 +6754,61 @@
      Attribution is at the TABLE level, not per entry, and that was a decision
      rather than laziness: the dates inside the entries' comments are
      inconsistent -- several are CORRECTION dates rather than measurement dates,
-     and 11 of the 31 entries carry no date at all. Deriving a per-entry date
+     and 11 of the 32 entries carry no date at all. Deriving a per-entry date
      from those comments would manufacture exactly the confident-wrong
      provenance finding 9b exists to remove. */
-  var GEAR_DIMS_ATTRIBUTION = { by: "Greg", span: "2026-07-30 to 2026-08-28" };
+  var GEAR_DIMS_ATTRIBUTION = { by: "Greg", span: "2026-07-30 to 2026-09-25" };
 
   var GEAR_DIMS = {
     // ---- Harambe ---------------------------------------------------------
+    /* hookOffsetIn ON A HARAMBE BAR IS A DEFAULT, NOT A BAR DIMENSION.
+       Greg, 2026-09-25: both bars use "the same bushings on the bar the same
+       rods and the same ropes", so one rod-and-rope combination gives the SAME
+       drop on either -- 3in with a yellow rope, 2.625in with a black one. The
+       drop therefore lives on the ROPE (dropIn) and is used whenever a rope is
+       logged; this figure only stands in when none is.
+
+       IT IS 3 ON BOTH HARAMBE BARS ON PURPOSE. Two different numbers would
+       claim a difference between the bars that does not exist. 3 is the LARGER
+       of the two taped drops, so the fallback removes more band path and reads
+       the load LIGHT rather than heavy -- the direction this model errs in
+       deliberately. It also leaves Greg's 24 logged T Bar exercise-uses exactly
+       where they were. The whole spread is 3/8 of an inch, which is why a
+       default is acceptable here and a REFUSAL would be out of proportion --
+       the X Straps refuse over a range of 3.94 to 26.38in. */
     "Harambe|T Bar":            { lengthIn: 28, hookOffsetIn: 3, hookSide: "opposite",
-                                  attachSpanIn: 26, source: "measured", verified: true },
+                                  attachSpanIn: 26, source: "measured", verified: true,
+                                  note: "hook offset 3in is the DEFAULT drop from the grip to the rod when no rope is logged: a yellow rope (6in) on a standard rod. A logged rope states its own drop. A shorter rope opens the angle and hangs the rod HIGHER, so the drop falls." },
+    /* ADDED 2026-09-25: Greg bought this bar, longer than the T Bar directly
+       above. All three figures are his own tape, taken that day.
+
+       hookOffsetIn 2.625 IS WITH BLACK ROPES (5in) ON A STANDARD ROD, and the
+       rope is part of the reading rather than noise in it. Greg's correction,
+       with a photograph: TWO rope legs run from each rod up to the BUSHING on
+       the bar, so rope, rod and bushing form a triangle. A SHORTER rope opens
+       the angle and carries the rod HIGHER, which makes the offset SMALLER.
+       Two readings exist and they agree with that direction -- black 5in
+       gives 2.625in here, yellow 6in gives 3in on the T Bar.
+
+       SO THIS FIELD IS SINGLE-VALUED AND THE QUANTITY IS NOT. The X Straps'
+       seriesOptionsIn is the shape this wants: named, measured options chosen
+       per exercise. Until that exists, this number describes the combination
+       named above and no other. Do not compare it with the T Bar's 3 as
+       though both were bar dimensions -- they are two different rigs.
+
+       A DOUBLE SUBTRACTION IS LIVE AND THIS ENTRY DOES NOT CAUSE IT. Each
+       rope ALSO carries a seriesIn that gearPathDelta subtracts (5 / 6 / 12.5
+       / 29), and those are Harambe's KNOT-TO-TAIL catalog lengths, not drops
+       -- as each rope's own note already says. So a bar + rod + yellow rope
+       rig removes 3 + 6 = 9in of band path where the real drop is 3in. See
+       TODO_open_items.md; not changed here, because zeroing a rope reprices
+       every rope rig and that is Greg's call.
+
+       IF THIS FIGURE IS EVER CORRECTED, BUMP GEAR_DIMS_REV. A stored copy
+       carrying these figures short-circuits resolveGearDims. */
+    "Harambe|CyberBar":         { lengthIn: 35.25, attachSpanIn: 33.5, hookOffsetIn: 3,
+                                  source: "measured", verified: true,
+                                  note: "hook offset 3in is the DEFAULT drop from the grip to the rod when no rope is logged, and is the SAME as the T Bar because the bushings, rods and ropes are the same. Greg's own 2 5/8in tape of this bar was with BLACK ropes and now lives on that rope as its drop." },
     /* TAPED 2026-08-28 by Greg, at last -- this is the plate that was at his
        son's on 2026-08-14 and could not be measured. Four readings: length 22,
        width 11 3/4, height (thickness) 2, and 7/8 of clearance from the floor
@@ -6803,15 +6889,58 @@
        ASSERTED in test_gear_geometry.cjs — do not "fix" this by adding 6. */
     "Harambe|Rods":             { lengthIn: 6, seriesIn: 0, nonAdditive: true,
                                   source: "measured", verified: true,
-                                  note: "standard rod 6in, travel rod 4in, both stainless. Series length is EMERGENT, not additive: 6in rod + 5in black rope measures 2.75in, not 11in. Contributes 0 until more combinations are measured." },
+                                  note: "standard rod 6in, travel rod 4in, both stainless. Series length is EMERGENT, not additive: 6in rod + 5in black rope measures 2.75in, not 11in -- and the 2.625in Greg taped on 2026-09-25 is that same emergent drop with a BLACK rope, which is why it lives on the BAR as hookOffsetIn. The drop moves with the rope: see the rope block below. Contributes 0 until more combinations are measured." },
     /* Harambe ropes are colour-coded by length (Greg, 2026-07-30):
-       Black 5", Yellow 6", White 12.5", Blue 29". NONE of these is additive with
-       a rod — see the Rods entry. */
-    "Harambe|Black Ropes":      { seriesIn: 5, source: "measured", verified: true,
-                                  note: "set of 4, 5in. Adjusted with stackable 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
-    "Harambe|Yellow Ropes":     { seriesIn: 6, source: "measured", verified: true,
+       Black 5", Yellow 6", White 12.5", Blue 29". THESE ARE HARAMBE'S OWN
+       KNOT-TO-TAIL FIGURES (Greg, 2026-09-25) -- a contour length, not a drop.
+       NONE of them is additive with a rod -- see the Rods entry.
+
+       HOW THE ASSEMBLY ACTUALLY HANGS (Greg, 2026-09-25, with a photograph):
+       TWO rope legs run from each rod up to the BUSHING on the bar, so rope,
+       rod and bushing form a triangle. The rope length therefore sets an
+       ANGLE, and the thing the load model cares about -- how far the rod
+       hangs below the bar -- FALLS as the rope gets SHORTER, because a short
+       rope opens the angle out. Two drops are taped: black 5in -> 2.625in,
+       yellow 6in -> 3in. Both live on a BAR, as hookOffsetIn.
+
+       WHICH MEANS THE seriesIn BELOW IS SUBTRACTED TWICE ON A BAR RIG. Each
+       note already says the figure is not a vertical drop; gearPathDelta
+       subtracts it as an inline length all the same, on top of the bar's own
+       hookOffsetIn. A bar + rod + yellow rope removes 9in of band path where
+       the real drop is 3in, which reads the load LOW. Recorded in
+       TODO_open_items.md and NOT changed here: it reprices every rope rig.
+
+       DO NOT BUILD A DROP TABLE PER ROPE-AND-ROD COMBINATION. Greg ruled that
+       out on 2026-09-25 and gave three reasons, each of which is on its own
+       enough: the SPACERS (below); he can MAKE A ROPE OF ANY LENGTH; and the
+       same rope hangs off three different things. The space is CONTINUOUS, so
+       the X Straps' seven stamped positions are the wrong shape for it -- the
+       right shape is ONE TYPED NUMBER per exercise, refusing when it is blank
+       the way an unset X Strap position already refuses.
+
+       THE SPACERS (Greg, 2026-09-25, with a photograph). All are 1/2in thick.
+       They clip onto the rope AT THE KNOTS, TWO PER KNOT, so FOUR is the most
+       any one rope can carry. Harambe states each one raises the band's
+       PRE-TENSION by about 5%, so a full stack is roughly 20%. NOTHING in this
+       model reads that 5%, and nothing should: a spacer takes up rope, which
+       closes the triangle and moves the DROP, and a typed drop measured with
+       the spacers fitted captures the whole effect exactly. A percentage bolted
+       on beside a geometric model would be a second, disagreeing account of one
+       fact -- the failure this file already records under gearPathDeltaIn.
+
+       WHERE A ROPE IS ACTUALLY USED (Greg, 2026-09-25): with a Harambe BAR,
+       with HANDLES, or off a BELT -- never on its own. The belt case is
+       already safe, because the belt path never calls gearPathDelta. The
+       HANDLE case carries the same defect as the bar case and has no
+       hookOffsetIn to hold the drop: a handle + rod + black rope removes
+       1.5 + 5 = 6.5in where the real assembly drop is nearer 4. The belt need
+       not be a Harambe one; Vector Athletics makes a compatible one, which
+       Greg does not own. */
+    "Harambe|Black Ropes":      { seriesIn: 5, dropOnBar: true, dropIn: 2.625, source: "measured", verified: true,
+                                  note: "set of 4, 5in. Adjusted with stackable 1/2in spacers, two per knot, four at most. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
+    "Harambe|Yellow Ropes":     { seriesIn: 6, dropOnBar: true, dropIn: 3, source: "measured", verified: true,
                                   note: "set of 4, 6in. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
-    "Harambe|Blue Ropes":       { seriesIn: 29,
+    "Harambe|Blue Ropes":       { seriesIn: 29, dropOnBar: true,
                                   /* NOT OWNED YET -- seeded inbound so the figure is
                                      ready when it arrives. Nobody has held these, so
                                      nobody taped them (finding 9c, 2026-08-27). Greg
@@ -6820,8 +6949,8 @@
                                      arrives. */
                                   source: "estimated", verified: false,
                                   note: "29in. NOT MEASURED and NOT OWNED YET — seeded inbound so the figure is ready when it arrives. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
-    "Harambe|White Ropes":      { seriesIn: 12.5, source: "measured", verified: true,
-                                  note: "set of 4, 12.5in. Adjusted with 1/2in spacers. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
+    "Harambe|White Ropes":      { seriesIn: 12.5, dropOnBar: true, source: "measured", verified: true,
+                                  note: "set of 4, 12.5in. Adjusted with stackable 1/2in spacers, two per knot, four at most. NOT additive with a rod. Working length is always LESS than the rated figure and is EMERGENT, not fixed: the rope comes off the ends of a ROD, and rods come in different lengths. It also hangs in the DIRECTION OF THE PULL, not straight down. So this number is NOT a vertical drop and must never be subtracted from a belt landmark -- see beltAttachDerived (Greg, 2026-08-10)." },
     "Harambe|Split Squat Belt": { source: "measured", verified: true,
                                   note: "no dimension is an input to load: the band's attachment is modelled by beltReach/beltStretch. seriesIn 40in (removed 2026-08-02) was the WAIST CIRCUMFERENCE and reported 0 lb on every belt lift." },
     "Harambe|Wedges":           { thicknessIn: 1.375, source: "measured", verified: true,
@@ -7041,7 +7170,7 @@
      2026-08-07 lesson: a table correction without a rev bump reaches nobody,
      and every footplate in Greg's inventory carries a stored dims copy that
      would otherwise win. */
-  var GEAR_DIMS_REV = "2026-08-28-cyberplate-rollers-r2";
+  var GEAR_DIMS_REV = "2026-09-25-rope-drop-r5";
 
   /* Shallow copy. rbts_reports.js uses no Object.assign anywhere and that is
      deliberate -- keep it that way. */
