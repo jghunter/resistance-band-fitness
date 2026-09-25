@@ -2593,7 +2593,12 @@ function readBodyMeasure() {
          are never backfilled, written through saveTrainingStyle so they
          land on explicitKeys, guarded by the shared bodyMeasureNum.
          torsoWidthIn is DELIBERATELY NOT bodyWidthIn -- see fitness_app.html's
-         BODY_MEASURE comment for why reusing it would be a silent error. */
+         BODY_MEASURE comment for why reusing it would be a silent error.
+         It is a PATH across the back, not a width: armpit, round the back, to
+         armpit. Greg's is 24.5 (his tape, 2026-09-24); it was recorded as a
+         16.25 straight chord until then. Shown to the user as BACK WRAP. The
+         KEY keeps its old name because a profile field is referenced by name
+         forever and renaming it orphans every stored value. */
       shoulderWidthIn:  num(p.shoulderWidthIn),
       torsoWidthIn:     num(p.torsoWidthIn),
       chestThicknessIn: num(p.chestThicknessIn),

@@ -1890,7 +1890,15 @@
 
   var PRESS_FIELD_LABELS = {
     shoulderWidthIn:  "shoulder width",
-    torsoWidthIn:     "torso width",
+    /* "the back wrap", not "torso width": the field is consumed as the band's
+       PATH across the back, and a refusal that names a WIDTH sent Greg to
+       measure a straight line across (16.25), then a full chest circumference
+       (43.75), before the tape that the arithmetic actually wants -- armpit,
+       round the back, to armpit -- which is 24.5. The key stays
+       `torsoWidthIn`: a profile field is referenced by name forever and
+       renaming it orphans every stored value, the band-id stability rule
+       through a different door. Only what the user READS changes. */
+    torsoWidthIn:     "the back wrap (armpit to armpit, around the back)",
     chestThicknessIn: "chest depth",
     pressReachIn:     "press reach",
     closeGripSpanIn:  "close grip span",

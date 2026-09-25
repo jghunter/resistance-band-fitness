@@ -4461,8 +4461,10 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
             two other curls finish halfway between it and the shoulder. The last six are
             for chest presses, which end at full arm extension rather than at a floor
             landmark. SHOULDER WIDTH is across the shoulders and is the hand span on an
-            ordinary press. TORSO WIDTH is under the armpits with the arms out of the way
-            — it is the wrap around your back and is NOT the same as WIDTH above. CHEST
+            ordinary press. BACK WRAP is the PATH the band takes across your back: lay the
+            tape from one armpit, around your back, to the other armpit, following where
+            the band sits. It is a wrap, NOT a straight line across and NOT all the way
+            round your chest — and it is not the same as WIDTH above. CHEST
             DEPTH is front to back at chest height. PRESS REACH is mid-shoulder to the
             middle of your closed hand with the arm straight. CLOSE GRIP is hand centre to
             hand centre at lockout on a close-grip press with no bar. SINGLE-ARM HOLD is
@@ -4482,7 +4484,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               ['handsAtRestIn','HANDS AT REST'],
               ['bodyWidthIn','WIDTH'],
               ['shoulderWidthIn','SHOULDER WIDTH'],
-              ['torsoWidthIn','TORSO WIDTH'],
+              ['torsoWidthIn','BACK WRAP'],
               ['chestThicknessIn','CHEST DEPTH'],
               ['pressReachIn','PRESS REACH'],
               ['closeGripSpanIn','CLOSE GRIP'],
