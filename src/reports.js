@@ -3190,6 +3190,12 @@
     var delta = gearPathDelta(gearIds, ctx.gearOf, o.opening);
     var anyGeom = false, anyMeasured = false, lb = 0, refTotal = 0, slack = false;
     var minStrainR = Infinity, maxStrainR = 0;
+    /* Do the readings BRACKET the stretch this path evaluates? Same pair of
+       flags, same names, same meaning as the press branch (allMeasuredP /
+       anyClampedP) and the plate branch (allMeasured / anyClamped) -- see the
+       comment at the bracket test below for why this path had neither until
+       2026-09-24. */
+    var allBracketR = true, anyClampedR = false;
 
     ids.forEach(function (id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
@@ -3197,7 +3203,9 @@
       var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
       var rest = (isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
         ? geom.restLengthIn : (b.lengthIn || 0);
-      if (!rest) { lb += bandMid(b); refTotal += bandMid(b); return; }
+      /* No length at all: this band contributes a plain vendor midpoint, which
+         is not a reading, so the stack cannot claim MEASURED off it. */
+      if (!rest) { lb += bandMid(b); refTotal += bandMid(b); allBracketR = false; return; }
       if (isFinite(geom.restLengthIn) || delta) anyGeom = true;
       /* sanitizeMeasuredPoints, not the raw array: a half-entered reading
          (stretch typed, lb still null) is padded into `measured` by the
@@ -3244,6 +3252,31 @@
       var strainR = d * (refStretch + delta) / rest;
       if (strainR < minStrainR) minStrainR = strainR;
       if (strainR > maxStrainR) maxStrainR = strainR;
+      /* Readings must BRACKET the stretch actually evaluated, exactly as the
+         plate and press branches already require. Outside the measured span
+         bandForceAt CLAMPS to the nearest reading, so the figure came off
+         neither the readings nor the fitted curve, and calling it MEASURED
+         "interpolated through your force-scale readings" is a false label.
+
+         THE FOLD IS THE CASE THIS EXISTS FOR. `d` multiplies the stretch, so a
+         band whose readings reach REF_STRAIN * rest -- which is exactly where
+         bandTargetStretches and the printed guide put the middle target --
+         brackets every SINGLED set and no DOUBLED one. A two-reading band
+         therefore prices every folded set at twice its middle reading, which is
+         honest and LOW, and the user has to be told so.
+
+         Unreachable until 2026-09-24: this branch is the only one of the three
+         that had no bracket test, and nothing noticed because no band in the
+         project had a force reading at all until that day. The plate and press
+         branches were written after readings were already imagined; this one
+         predates them. */
+      var ptsR = sanitizeMeasuredPoints(geom.measured);
+      var enoughR = ptsR.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
+      var evalStretchR = d * (refStretch + delta);
+      var bracketsR = enoughR && ptsR[0].stretchIn <= evalStretchR &&
+                      ptsR[ptsR.length - 1].stretchIn >= evalStretchR;
+      if (!bracketsR) allBracketR = false;
+      if (enoughR && !bracketsR) anyClampedR = true;
       refTotal += d * bandForceAt(b, d * refStretch, geom);
       lb += d * bandForceAt(b, d * (refStretch + delta), geom);
     });
@@ -3279,10 +3312,28 @@
        gear the user measured. Anything less is MODELED - it is still an
        estimate, and must not be presented as a reading. */
     var gearOK2 = !gearIds || !gearIds.length || gearDimsVerified(gearIds, ctx.gearOf);
-    out.provenance = (anyMeasured && gearOK2) ? "MEASURED" : "MODELED";
-    out.basis = out.provenance === "MEASURED"
-      ? "interpolated through your force-scale readings"
-      : "fitted from the vendor's rated range at an assumed strain, adjusted for gear";
+    /* `allBracketR`, not `anyMeasured` alone: a reading that does not reach
+       this stretch did not produce this number. Both other branches of this
+       function already require it. */
+    out.provenance = (anyMeasured && allBracketR && gearOK2) ? "MEASURED" : "MODELED";
+    if (out.provenance === "MEASURED") {
+      out.basis = "interpolated through your force-scale readings";
+    } else if (anyClampedR) {
+      /* Must not say "fitted from the vendor's rated range": the fitted curve
+         was never evaluated for this band. Name the clamp, and name the remedy
+         -- a reading further out -- because "on the fitted curve" tells nobody
+         what to go and measure. */
+      out.basis = "at an assumed strain, adjusted for gear, CLAMPED to your " +
+                  "nearest force-scale reading (your readings do not reach " +
+                  "this stretch" +
+                  /* Names the CAUSE, and only when it is the cause. The card
+                     already carries a ". doubled" chip of its own, so this says
+                     what the fold did rather than repeating the fact. */
+                  (o.doubled ? "; a folded band is pulled to twice the strain" : "") +
+                  ")";
+    } else {
+      out.basis = "fitted from the vendor's rated range at an assumed strain, adjusted for gear";
+    }
     return out;
   }
 
