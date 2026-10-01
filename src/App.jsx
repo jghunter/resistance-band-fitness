@@ -3209,26 +3209,26 @@ function StrengthTab({ user, log, gearInv, myBands }) {
     )
   }
 
+  /* The WINDOW KEYS ARE THE MODULE'S, not a second list with its own day
+     arithmetic. This tab used to carry `days:` on each entry and cut the log
+     itself at `today - days` with a `>=` compare, which spans days+1 -- so
+     STRENGTH's 30 DAYS covered 31 while ANALYZE's covered 30. resolveWindow
+     owns the span now, in both apps. */
   const WINDOWS = [
-    { key:'last', label:'SINCE LAST', days:0 },
-    { key:'7',    label:'7 DAYS',     days:7 },
-    { key:'30',   label:'30 DAYS',    days:30 },
-    { key:'90',   label:'90 DAYS',    days:90 },
-    { key:'365',  label:'1 YEAR',     days:365 },
-    { key:'all',  label:'ALL TIME',   days:-1 },
+    { key:'last', label:'SINCE LAST' },
+    { key:'7',    label:'7 DAYS'     },
+    { key:'30',   label:'30 DAYS'    },
+    { key:'90',   label:'90 DAYS'    },
+    { key:'365',  label:'1 YEAR'     },
+    { key:'all',  label:'ALL TIME'   },
   ]
   const cfg = WINDOWS.find(w => w.key === win) || WINDOWS[2]
-  const daysAgoISO = n => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-n); return localISO(d) }
-  const latestDate = data[data.length-1].date
 
-  let winEntries, prevEntries = null
-  if (cfg.key === 'all') { winEntries = data.slice() }
-  else if (cfg.key === 'last') { winEntries = data.filter(e => e.date === latestDate) }
-  else {
-    const cut = daysAgoISO(cfg.days), prevCut = daysAgoISO(cfg.days*2)
-    winEntries = data.filter(e => e.date >= cut)
-    prevEntries = data.filter(e => e.date >= prevCut && e.date < cut)
-  }
+  /* ONCE, above everything that needs it -- never inside a map.
+     Mirrors fitness_app.html. */
+  const rmCtx = makeReportCtx({ log, gear: gearInv, myBands })
+  const W = RBTS_REPORTS.resolveWindow(rmCtx, { window: cfg.key })
+  const winEntries = W.entries, prevEntries = W.prevEntries
 
   const agg = entries => {
     let v=0,r=0,top=0,sN=0
@@ -3241,48 +3241,20 @@ function StrengthTab({ user, log, gearInv, myBands }) {
   const volDelta = P ? pct(A.volume, P.volume) : null
   const repDelta = P ? pct(A.reps, P.reps) : null
 
-  const allBest = {}
-  data.forEach(e => Object.keys(e.exercises||{}).forEach(exId =>
-    (e.exercises[exId]||[]).forEach(st => { const l=setTopLoad(st); if(!allBest[exId]||l>allBest[exId]) allBest[exId]=l })))
+  /* THE ROWS COME FROM THE MODULE. This tab built them inline until
+     2026-10-01 and therefore missed every correctness fix the module's
+     equivalent received: deloads were counted toward START/LATEST (so a
+     deload first in the window reported the taper ending as a climb, while
+     the one-rep-max cells in the SAME row excluded deloads), and the PR test
+     read `lastTop >= allTimeBest` against a best that included the session
+     being judged -- which any flat lift satisfies by equality, so an
+     unchanged stack wore a PR badge in every window.
 
-  const exMap = {}
-  winEntries.forEach(e => Object.keys(e.exercises||{}).forEach(exId => {
-    let top=0
-    ;(e.exercises[exId]||[]).forEach(st => { const l=setTopLoad(st); if(l>top) top=l })
-    if(!exMap[exId]) exMap[exId]=[]
-    exMap[exId].push({ date:e.date, top:top })
-  }))
-  /* ONCE, above the map -- never inside it. Mirrors fitness_app.html. */
-  const rmCtx = makeReportCtx({ log, gear: gearInv, myBands })
-  let exRows = Object.keys(exMap).map(exId => {
-    const arr = exMap[exId].sort((a,b)=>a.date.localeCompare(b.date))
-    const first = arr[0], last = arr[arr.length-1]
-    return {
-      id:exId, name:EXERCISE_NAMES[exId]||('#'+exId), n:arr.length,
-      startLoad:first.top, lastLoad:last.top,
-      delta: first.top ? ((last.top-first.top)/first.top)*100 : null,
-      best: allBest[exId]||0, isPR: last.top>0 && last.top>=(allBest[exId]||0),
-      /* All-time, like `best` beside it -- NOT the window. The estimated max
-         is a statement about demonstrated capacity, and a 7-day window would
-         report a different max every time the window button moved. */
-      oneRm: RBTS_REPORTS.exerciseMaxSummary(rmCtx, exId),
-    }
-  }).sort((a,b) => b.n-a.n || b.lastLoad-a.lastLoad)
+     `carryIn` replaces the hand-rolled 'previous occurrence' fixup that used
+     to run only for SINCE LAST. It applies to EVERY window now.
 
-  if (cfg.key === 'last') {
-    exRows.forEach(r => {
-      let prevTop = null
-      for (let i=data.length-1; i>=0; i--) {
-        const e = data[i]
-        if (e.date >= latestDate) continue
-        if (e.exercises && e.exercises[r.id]) {
-          let tt=0; (e.exercises[r.id]||[]).forEach(st => { const l=setTopLoad(st); if(l>tt) tt=l }); prevTop=tt; break
-        }
-      }
-      if (prevTop != null) { r.startLoad = prevTop; r.delta = prevTop ? ((r.lastLoad-prevTop)/prevTop)*100 : null }
-      else { r.delta = null }
-    })
-  }
+     See rbts_reports.js exerciseProgressionRows and test_strength_rows.cjs. */
+  const exRows = RBTS_REPORTS.exerciseProgressionRows(rmCtx, W, { carryIn: true })
 
   const series = winEntries.map(e => ({ date:e.date, vol:entryStats(e).volume }))
   const maxVol = series.reduce((m,x) => Math.max(m,x.vol), 0) || 1
@@ -3398,10 +3370,10 @@ function StrengthTab({ user, log, gearInv, myBands }) {
                 <tr key={r.id} style={{borderTop:'1px solid rgba(255,255,255,0.06)',color:C.textSec}}>
                   <td style={{padding:'4px 6px',color:C.text}}>{r.name} {r.isPR ? <span style={pill(C.green)}>PR</span> : null}</td>
                   <td style={{padding:'4px 6px'}}>{r.n}</td>
-                  <td style={{padding:'4px 6px'}}>{fmtNum(r.startLoad)}</td>
-                  <td style={{padding:'4px 6px'}}>{fmtNum(r.lastLoad)}</td>
-                  <td style={{padding:'4px 6px',color:(r.delta==null?C.dimGray:(r.delta>=0?C.green:C.amber))}}>{fmtPct(r.delta)}</td>
-                  <td style={{padding:'4px 6px',color:C.green}}>{fmtNum(r.best)}</td>
+                  <td style={{padding:'4px 6px'}}>{fmtNum(r.firstTop)}{r.carriedFrom ? <span style={{color:C.dimGray}}> &#8249;</span> : null}</td>
+                  <td style={{padding:'4px 6px'}}>{fmtNum(r.lastTop)}</td>
+                  <td style={{padding:'4px 6px',color:(r.deltaPct==null?C.dimGray:(r.deltaPct>=0?C.green:C.amber))}}>{fmtPct(r.deltaPct)}</td>
+                  <td style={{padding:'4px 6px',color:C.green}}>{fmtNum(r.allTimeBest)}</td>
                   <td style={{padding:'4px 6px',color:C.text}}>{fmtRm(r.oneRm.estMax, r.oneRm.outOfRange)}</td>
                   <td style={{padding:'4px 6px',color:C.green}}>{fmtRm(r.oneRm.bestMax)}</td>
                   <td style={{padding:'4px 6px'}}>{fmtRmPct(r.oneRm.pctOfMax)}</td>
@@ -3410,6 +3382,18 @@ function StrengthTab({ user, log, gearInv, myBands }) {
             </tbody>
           </table>
         </div>
+        {/* The carry-in marker. A window holding one session for a lift has
+            no START of its own, so the module seeds it from that lift's last
+            outing BEFORE the window -- otherwise START and LATEST are the same
+            reading and the delta is a meaningless 0%. Marked rather than
+            silent, because the figure comes from outside the period named at
+            the top of the tab. */}
+        {exRows.some(r => r.carriedFrom) ? (
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+            &#8249; START carried in from this lift's previous session, before the window —
+            only one session in this period
+          </span>
+        ) : null}
         {exRows.some(r => r.oneRm.outOfRange) ? (
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
             ! beyond this method's validated rep range — the estimate still prints, marked

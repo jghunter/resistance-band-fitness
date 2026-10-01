@@ -5664,7 +5664,8 @@
     return isoOf(new Date(toDate(iso).getTime() + days * dayMs()));
   }
   var WINDOW_LABELS = { "7":"7 DAYS", "30":"30 DAYS", "90":"90 DAYS",
-                        "365":"1 YEAR", all:"ALL TIME", block:"CURRENT BLOCK" };
+                        "365":"1 YEAR", all:"ALL TIME", block:"CURRENT BLOCK",
+                        last:"SINCE LAST" };
   /* The window carries its own entries plus the immediately preceding period of
      equal length for comparison. "all" and "block" have no comparison period. */
   function resolveWindow(ctx, opts) {
@@ -5682,6 +5683,21 @@
       from = b ? b.from : asOf;
       entries = b ? b.entries.slice() : [];
       spanDays = b ? daysBetween(b.from, b.to) + 1 : 0;
+    } else if (key === "last") {
+      /* The most recent LOGGED date, not today. `to` moves back with it so a
+         window opened after a week off does not claim a span it has no
+         sessions in. There is no comparison period: the thing SINCE LAST is
+         compared against is each exercise's own previous occurrence, which is
+         per-exercise and therefore exerciseProgressionRows' carryIn, not a
+         second set of entries.
+
+         This branch sits BEFORE the numeric fallback deliberately --
+         parseInt("last") is NaN, so without it "last" degraded silently into
+         a 30-day window. */
+      from = all.length ? all[all.length - 1].date : asOf;
+      to = from;
+      entries = all.filter(function (e) { return e.date === from; });
+      spanDays = all.length ? 1 : 0;
     } else {
       var n = parseInt(key, 10);
       if (isNaN(n) || n <= 0) n = 30;
@@ -5861,6 +5877,137 @@
       };
       row.verdict = exerciseVerdict(ctx, row);
       return row;
+    }).sort(function (a, b) { return b.n - a.n || b.lastTop - a.lastTop; });
+  }
+
+  /* The STRENGTH tab's EXERCISE PROGRESSION rows: the raw-numbers table,
+     deliberately WITHOUT the interpretation layer analyzeExercises adds on
+     top (verdict, readiness, trend classification). That split is why this is
+     a second function rather than a flag on the first -- STRENGTH is the
+     dashboard and ANALYZE is the judgment, and handing the dashboard a
+     verdict field nobody renders is how the two drift apart again.
+
+     IT EXISTS BECAUSE fitness_app.html BUILT THESE ROWS INLINE until
+     2026-10-01, and therefore missed every correctness fix analyzeExercises
+     received over 2026-07..09:
+
+       - DELOADS WERE COUNTED. A deload sitting first in the window dragged
+         START down to its reduced load and the row reported a climb that was
+         really just the taper ending. The one-rep-max columns in the SAME row
+         excluded deloads, so two cells of one row disagreed about which
+         sessions existed.
+       - THE PR TEST READ `lastTop >= allTimeBest` against an allTimeBest that
+         INCLUDED the session being judged. Any lift whose stack never changed
+         satisfied it by equality, so a flat lift wore a PR badge in every
+         window. This is the same bug analyzeExercises records fixing with
+         priorBest(); the tab never got it.
+       - THE WINDOW SPANNED n+1 CALENDAR DAYS, because the tab cut at
+         `today - n` and then compared `>=`. STRENGTH's 30 DAYS covered 31
+         while ANALYZE's covered 30, so the two tabs disagreed by a day on
+         every bounded window.
+
+     All three are pinned in test_strength_rows.cjs, and each assertion there
+     FAILS against the arithmetic this replaces.
+
+     `opts.carryIn` seeds START from the most recent working session STRICTLY
+     BEFORE the window when the window holds only one, which is what makes
+     SINCE LAST a comparison rather than a row whose START and LATEST are the
+     same reading. analyzeExercises deliberately does NOT do this: its
+     deltaPct feeds a trend over the window's own span, and reaching outside
+     that span would make the trend disagree with the period it names. */
+  function exerciseProgressionRows(ctx, win, opts) {
+    var o = opts || {};
+    /* Deloads are excluded from every judgment here for the same reason
+       analyzeExercises excludes them: a reduced load is not a regression. */
+    var working = (win.entries || []).filter(function (e) {
+      return !(ctx.deloadOf && ctx.deloadOf(e));
+    });
+    function topOf(sets) {
+      var top = 0;
+      (sets || []).forEach(function (s) {
+        var l = setTopLoad(s, ctx.bandOf);
+        if (l > top) top = l;
+      });
+      return top;
+    }
+    var per = {};
+    sortedLog(working).forEach(function (e) {
+      Object.keys(e.exercises || {}).forEach(function (exId) {
+        if (!per[exId]) per[exId] = [];
+        per[exId].push({ date: e.date, top: topOf((e.exercises[exId] || [])) });
+      });
+    });
+
+    /* All-time bests come from the FULL log, not the window, so a PR badge
+       means a genuine personal record rather than a local maximum. Deloads
+       are NOT filtered out of this pass, matching analyzeExercises: a deload
+       carries a reduced load and so can never be the maximum, which makes
+       filtering it a no-op that would only invite the two functions to
+       disagree. `allTops` keeps the per-date tops so the PR test can run
+       against sessions strictly EARLIER than the one being judged. */
+    var allBest = {}, allTops = {};
+    sortedLog(ctx.log).forEach(function (e) {
+      Object.keys(e.exercises || {}).forEach(function (exId) {
+        var top = topOf((e.exercises[exId] || []));
+        if (!allBest[exId] || top > allBest[exId]) allBest[exId] = top;
+        if (!allTops[exId]) allTops[exId] = [];
+        allTops[exId].push({ date: e.date, top: top });
+      });
+    });
+    function priorBest(exId, beforeDate) {
+      var best = 0;
+      (allTops[exId] || []).forEach(function (x) {
+        if (String(x.date) < String(beforeDate) && x.top > best) best = x.top;
+      });
+      return best;
+    }
+    /* The most recent WORKING session strictly before the window opens. */
+    function carriedIn(exId) {
+      var out = null;
+      sortedLog(ctx.log).forEach(function (e) {
+        if (ctx.deloadOf && ctx.deloadOf(e)) return;
+        if (String(e.date) >= String(win.from)) return;
+        var sets = (e.exercises || {})[exId];
+        if (!sets || !sets.length) return;
+        out = { date: e.date, top: topOf(sets) };
+      });
+      return out;
+    }
+
+    return Object.keys(per).map(function (exId) {
+      var arr = per[exId];
+      var first = arr[0], last = arr[arr.length - 1];
+      var firstTop = first.top, carriedFrom = null;
+      if (o.carryIn && arr.length < 2) {
+        var ci = carriedIn(exId);
+        if (ci) { firstTop = ci.top; carriedFrom = ci.date; }
+      }
+      /* NULL rather than zero when there is nothing to compare against. One
+         session whose START and LATEST are necessarily the same reading has
+         an ABSENT change, not a 0% one, and printing +0% invites it to be
+         read as a plateau. */
+      var deltaPct = null;
+      if (firstTop && (arr.length >= 2 || carriedFrom)) {
+        deltaPct = ((last.top - firstTop) / firstTop) * 100;
+      }
+      return {
+        id: exId,
+        name: ctx.nameOf ? ctx.nameOf(exId) : ("#" + exId),
+        group: (ctx.groupOf ? (ctx.groupOf(exId) || {}).label : null) || "OTHER",
+        n: arr.length,
+        firstTop: firstTop,
+        lastTop: last.top,
+        carriedFrom: carriedFrom,
+        deltaPct: deltaPct,
+        allTimeBest: allBest[exId] || 0,
+        isPR: last.top > 0 && last.top > priorBest(exId, last.date),
+        lastDate: last.date,
+        /* ALL-TIME on purpose, like allTimeBest beside it. An estimated max is
+           a statement about demonstrated capacity, and scoping it to the
+           window would report a different max every time the window button
+           moved. The row carries it so the table needs no second pass. */
+        oneRm: exerciseMaxSummary(ctx, exId)
+      };
     }).sort(function (a, b) { return b.n - a.n || b.lastTop - a.lastTop; });
   }
 
@@ -8373,6 +8520,7 @@
     slopePct: slopePct,
     classifyTrend: classifyTrend,
     analyzeExercises: analyzeExercises,
+    exerciseProgressionRows: exerciseProgressionRows,
     exerciseVerdict: exerciseVerdict,
     prescribedShares: prescribedShares,
     balanceOf: balanceOf,
