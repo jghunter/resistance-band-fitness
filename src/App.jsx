@@ -2968,14 +2968,24 @@ function bandResById(id) {
   return _BAND_RES[id] || 0
 }
 function setLoad(set) { return (set.bands || []).reduce((a,id) => a + bandResById(id), 0) }
+/* ONE MEANING FOR "SET" ON THIS SCREEN. `sets` is COUNTABLE sets --
+   RBTS_REPORTS.countableSets, the same rule analyzeGroups applies -- not one
+   per logged row. An L set and an R set are ONE set of work per side. Until
+   2026-10-02 this counted rows, so the TOTAL SETS card, the VS PREVIOUS delta
+   and the SETS PER WORKOUT chart counted a one-sided lift twice while the
+   WEEKLY SETS BY SECTION table on the SAME SCREEN counted it once -- two
+   definitions of one word, side by side, and neither said which it used.
+   Counted per EXERCISE, because sidedness is a property of the row set and
+   cannot be read off a single row. */
 function entryStats(entry) {
   let vol=0, reps=0, top=0, sets=0
   Object.keys(entry.exercises || {}).forEach(exId => {
     (entry.exercises[exId] || []).forEach(st => {
       const l = setTopLoad(st)              // segment-aware: max phase resistance
-      vol += setVol(st); reps += setRepsOf(st); sets++
+      vol += setVol(st); reps += setRepsOf(st)
       if (l > top) top = l
     })
+    sets += RBTS_REPORTS.countableSets(entry.exercises[exId] || [])
   })
   return { volume:vol, reps:reps, topLoad:top, sets:sets }
 }
@@ -3427,7 +3437,7 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
 
       <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
         {card('WORKOUTS', String(A.sessions), cfg.label, C.accent)}
-        {card('TOTAL SETS', fmtNum(A.sets), A.sessions?('~'+fmtNum(A.sets/A.sessions)+' / workout'):'', C.text)}
+        {card('TOTAL SETS', fmtNum(A.sets), A.sessions?('~'+fmtNum(A.sets/A.sessions)+' / workout · L+R = 1'):'L+R = 1 set', C.text)}
         {card('TOTAL REPS', fmtNum(A.reps), A.sessions?('~'+fmtNum(A.reps/A.sessions)+' / workout'):'', C.text)}
         {card('BEST SET LOAD', fmtNum(A.top)+' lb', 'heaviest est. band load', C.green)}
       </div>

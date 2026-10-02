@@ -2260,7 +2260,18 @@
      BEFORE the first priced session or AFTER the last was never stepped over:
      the comparison does not span it. Counting those would fire the clause on
      every lift with unpriced history -- the common case on a long window --
-     and a disclosure that fires unconditionally carries no information. */
+     and a disclosure that fires unconditionally carries no information.
+
+     A BAND-LESS USE IS NOT A GAP, the same rule exUseHasBand carries for
+     loadCoverage and unpricedBetween -- which is why the rows carry
+     `hasBand`. This function decided a gap on `top == null` alone until
+     2026-10-02, so a lift logged with no bands between two priced sessions
+     was reported as a session the comparison had failed to price. There is
+     nothing to price there, which is a different fact.
+
+     A row that does NOT carry the field is still counted, so a caller that
+     knows nothing about bands keeps the old behaviour rather than silently
+     losing every gap. Both builders in this module set it. */
   function skippedGapCount(rows) {
     var first = -1, last = -1, i;
     for (i = 0; i < (rows || []).length; i++) {
@@ -2269,7 +2280,9 @@
     if (first < 0 || last <= first) return 0;
     var gaps = 0;
     for (i = first + 1; i < last; i++) {
-      if (!rows[i] || rows[i].top == null) gaps++;
+      if (!rows[i] || rows[i].top != null) continue;
+      if (rows[i].hasBand === false) continue;
+      gaps++;
     }
     return gaps;
   }
@@ -4822,6 +4835,26 @@
      { n, basis, lastDate } -- n is the number of sessions in which no set
      could be estimated, basis is the most recent reason, lastDate the most
      recent such session. */
+  /* HOW MANY SESSIONS BETWEEN TWO DATES PRODUCED NO ESTIMATE, for a caller
+     that compares rows computedRows handed it. unpricedBetween cannot see
+     these: a refused session HAS a load figure -- entryLoadOf priced it --
+     and was dropped for a different reason, the equation refusing the rep
+     count. So ORM_DECLINING disclosed the one kind of skip and stayed silent
+     about the other, although the comparison steps over both identically.
+
+     STRICTLY BETWEEN, and over the FULL series rather than the log, for the
+     same two reasons unpricedBetween has: a skip outside the compared span
+     was never stepped over, and the series has already excluded deloads. */
+  function refusedBetween(rows, fromISO, toISO) {
+    var n = 0;
+    (rows || []).forEach(function (r) {
+      if (!r || !r.refused) return;
+      if (String(r.date) <= String(fromISO) || String(r.date) >= String(toISO)) return;
+      n++;
+    });
+    return n;
+  }
+
   function refusedSummary(rows) {
     var out = { n: 0, basis: null, lastDate: null };
     for (var i = 0; i < rows.length; i++) {
@@ -4890,7 +4923,8 @@
        rows toward ORM_MIN_SESSIONS would let three sessions that produced no
        estimate at all satisfy the gate, and `last` would then be a row whose
        estMax is null. */
-    var rows = computedRows(exerciseMaxSeries(ctx, exId));
+    var series = exerciseMaxSeries(ctx, exId);
+    var rows = computedRows(series);
     if (rows.length < ORM_MIN_SESSIONS) return flags;
 
     /* A stale lift is told to RESUME, never that its max is falling.
@@ -4917,11 +4951,21 @@
         rows[n-1].estMax < rows[n-2].estMax &&
         rows[n-2].estMax < rows[n-3].estMax &&
         rows[n-3].estMax < rows[n-4].estMax) {
+      /* TWO KINDS OF SKIP, both disclosed. A session with no load figure is
+         UNPRICED; a session the equation refused carries a figure and no
+         estimate. gapClause must not describe the second -- calling a priced
+         session unpriced is a false statement -- so it gets a sentence of
+         its own, beside provNote. */
+      var refN = refusedBetween(series, rows[n-4].date, last.date);
+      var refNote = refN > 0
+        ? " The comparison steps over " + refN + " session" +
+          (refN === 1 ? "" : "s") + " in which this method refused an estimate."
+        : "";
       flags.push({ code: "ORM_DECLINING",
         text: "Estimated max has fallen three sessions running, from " +
           Math.round(rows[n-4].estMax) + " lb to " + Math.round(last.estMax) +
           " lb" + gapClause(unpricedBetween(ctx, exId, rows[n-4].date, last.date)) +
-          "." + provNote });
+          "." + refNote + provNote });
     }
 
     if (sum.pctOfMax != null && sum.pctOfMax < ORM_LIGHT_PCT) {
@@ -6088,7 +6132,11 @@
            Every load consumer below filters on `top != null`. */
         var eff = entryLoadOf(e, exId);
         if (!per[exId]) per[exId] = [];
+        /* `hasBand` is what skippedGapCount reads to tell an UNPRICED session
+           from one with NOTHING TO PRICE. Set here rather than recomputed
+           there, because the entry is in hand and the row is not. */
         per[exId].push({ date: e.date, top: eff ? eff.lb : null,
+                         hasBand: exUseHasBand(e, exId),
                          reps: reps, vol: vol, best: best,
                          bands: setBands((e.exercises[exId] || [])[0]) });
       });
@@ -6260,7 +6308,9 @@
       Object.keys(e.exercises || {}).forEach(function (exId) {
         var eff = entryLoadOf(e, exId);
         if (!per[exId]) per[exId] = [];
-        per[exId].push({ date: e.date, top: eff ? eff.lb : null });
+        /* `hasBand` -- see analyzeExercises' builder and skippedGapCount. */
+        per[exId].push({ date: e.date, top: eff ? eff.lb : null,
+                         hasBand: exUseHasBand(e, exId) });
       });
     });
 
@@ -7066,8 +7116,19 @@
     }
 
     /* BY MUSCLE GROUP */
+    /* ORDERED BY VOLUME, locally, since 2026-10-02. analyzeGroups orders its
+       rows by SETS -- the quantity both tabs draw -- and this section draws
+       the VOLUME share, so taking that order drew a bar chart whose bars do
+       not descend. The rule is the one analyzeGroups' own sort states: a
+       chart ordered by a different quantity than the bar it draws reads as
+       broken. A COPY, because res.groups is shared with every other section,
+       and only this one draws volume -- MUSCLE GROUP DETAIL below leads with
+       SETS and keeps the engine's order. */
+    var volOrder = res.groups.slice().sort(function (a, b) {
+      return b.volume - a.volume || a.label.localeCompare(b.label);
+    });
     sections.push({ heading: "BY MUSCLE GROUP (volume share)", type: "bars",
-      rows: res.groups.map(function (g) {
+      rows: volOrder.map(function (g) {
         var note = [];
         if (g.balance === "UNDER") note.push("UNDER");
         if (g.balance === "OVER") note.push("OVER");
@@ -8935,6 +8996,7 @@
     loadCoverage: loadCoverage,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,
+    refusedBetween: refusedBetween,
     BLOCK_INFERENCE_NOTE: BLOCK_INFERENCE_NOTE,
     prescribedShares: prescribedShares,
     balanceOf: balanceOf,
