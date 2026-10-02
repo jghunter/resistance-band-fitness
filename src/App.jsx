@@ -2996,7 +2996,7 @@ const ANALYZE_WINDOWS = [
 const VERDICT_COLOR = {
   READY: C.green, GROWING: C.green, STALLED: C.amber,
   DECLINING: C.red, NEAR: C.readout, HOLDING: C.dimGray,
-  EX_DORMANT: C.deload,
+  EX_DORMANT: C.deload, EX_UNPRICED: C.dimGray,
 }
 const BALANCE_COLOR = { UNDER: C.amber, OVER: C.readout, OK: C.green,
                         EXEMPT: C.dimGray, NONE: C.dimGray }
