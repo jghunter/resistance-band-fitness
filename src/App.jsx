@@ -545,18 +545,26 @@ const initSets = (id, n, gearItems, carryBands) =>
 const setHasData = (s) => (s && Array.isArray(s.segments))
   ? s.segments.some(g => (g.reps||0) > 0 || (g.bands||[]).length > 0)
   : !!(s && ((s.reps||0) > 0 || (s.bands||[]).length > 0))
+/* `d` for the fold, matching rbts_reports.js setTopLoad. `doubled` is a
+   per-SET flag and this summed band ids without it, so a DOUBLED set reported
+   the singled figure -- 29.6% of Greg's logged sets. The 2026-08-04 fold
+   migration introduced it; 2x is the vendor's own doubled convention. */
 function setTopLoad(st) {
+  const d = (st && st.doubled) ? 2 : 1
   if (RBTS_PHASE1 && RBTS_PHASE1.normalizeSet) {
     const n = RBTS_PHASE1.normalizeSet(st)
     return n.segments.reduce((m,seg) => {
-      const sr = (seg.bands||[]).reduce((a,id)=>a+bandResById(id), 0)
+      const sr = d * (seg.bands||[]).reduce((a,id)=>a+bandResById(id), 0)
       return sr > m ? sr : m
     }, 0)
   }
-  return setLoad(st)
+  return d * setLoad(st)
 }
 function setVol(st) {
-  return (RBTS_PHASE1 && RBTS_PHASE1.volumeLoad) ? RBTS_PHASE1.volumeLoad(st, bandResById) : setLoad(st)*(st.reps||0)
+  /* volumeLoad already takes the fold; only the no-phase1 fallback needs it. */
+  return (RBTS_PHASE1 && RBTS_PHASE1.volumeLoad)
+    ? RBTS_PHASE1.volumeLoad(st, bandResById)
+    : ((st && st.doubled) ? 2 : 1) * setLoad(st) * (st.reps||0)
 }
 // Strip empty sets and persist the canonical Phase-2 shape (matches html saveEntry)
 function cleanExercises(ex) {

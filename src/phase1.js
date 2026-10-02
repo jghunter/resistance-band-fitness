@@ -534,11 +534,16 @@
 
   // Volume-load for a set, given a resistance lookup fn (band id -> nominal midpoint).
   // resOf defaults to a no-op (0) so this is safe to call before BANDS is wired in.
+  /* `d` for the fold, matching rbts_reports.js setVolume exactly. `doubled` is
+     a per-SET flag and this summed band ids without it, so a DOUBLED set
+     reported the singled volume. See setVolume's comment for why the
+     2026-08-04 fold migration introduced this and why 2x is the right factor. */
   function volumeLoad(set, resOf) {
     resOf = resOf || function () { return 0; };
     var n = normalizeSet(set);
+    var d = (set && set.doubled) ? 2 : 1;
     return n.segments.reduce(function (acc, seg) {
-      var segRes = (seg.bands || []).reduce(function (a, id) { return a + (resOf(id) || 0); }, 0);
+      var segRes = d * (seg.bands || []).reduce(function (a, id) { return a + (resOf(id) || 0); }, 0);
       return acc + segRes * seg.reps;
     }, 0);
   }

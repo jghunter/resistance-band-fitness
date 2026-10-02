@@ -2203,8 +2203,39 @@
       "feel far lighter than its peak.");
     var sawRomBlind = false, sawPreFold = false, sawPrePlate = false,
         sawPreBandPath = false, sawPrePress = false, sawPreGrip = false;
+    /* COVERAGE, counted rather than dated. The stamp boundary in a real log is
+       RAGGED -- Greg's carries stamps from 2026-07-20, gaps until 07-28 and is
+       clean only from 07-30 -- so any single "figures start on X" is either
+       over-claiming (invite trust in the gap zone) or under-claiming (discard
+       the real stamps before it). Counts are true either way.
+
+       A session counts as PRICED when at least one of its band-carrying uses
+       carries a stamp. A use with NO BANDS is not a gap: there is nothing to
+       price, which is a different fact from failing to price it. */
+    var sessPriced = 0, sessPriceable = 0, earliestPriced = null;
     (entries || []).forEach(function (e) {
       if (!e) return;
+      var anyBand = false, anyPriced = false;
+      Object.keys(e.exercises || {}).forEach(function (exId) {
+        var sets = (e.exercises || {})[exId] || [];
+        var hasBand = sets.some(function (s) {
+          return setSegments(s).some(function (g) {
+            return ((g.bands) || []).length > 0;
+          });
+        });
+        if (!hasBand) return;
+        anyBand = true;
+        if (entryLoadOf(e, exId)) anyPriced = true;
+      });
+      if (anyBand) {
+        sessPriceable++;
+        if (anyPriced) {
+          sessPriced++;
+          if (earliestPriced == null || String(e.date) < earliestPriced) {
+            earliestPriced = String(e.date);
+          }
+        }
+      }
       Object.keys(e.load || {}).forEach(function (exId) {
         var ld = e.load[exId];
         if (!ld || typeof ld !== "object") return;
@@ -2220,6 +2251,16 @@
         if (stampPredatesGripTable(e.date, exId)) sawPreGrip = true;
       });
     });
+    if (sessPriceable && sessPriced < sessPriceable) {
+      notes.push("Load figures cover " + sessPriced + " of " + sessPriceable +
+        " sessions here" +
+        (earliestPriced ? ", the earliest on " + earliestPriced : "") +
+        ". Effective load is frozen on each workout at save time, so a session " +
+        "logged before this app computed one carries no figure and is left out " +
+        "of START, LATEST, the change and the best -- its reps and sets still " +
+        "count. Comparing a figure against a session that has none is the one " +
+        "thing this cannot do.");
+    }
     if (sawRomBlind) {
       notes.push("Some figures here were computed WITHOUT A RANGE OF MOTION: " +
         "a rig with no footplate still prices the band at a fixed reference " +
@@ -4457,16 +4498,59 @@
   function stackKeyOf(s) {
     return setBands(s).slice().sort().join(",") + "|" + ((s && s.doubled) ? "D" : "S");
   }
+  /* THE effective load of one exercise in one session, or null.
+     The stamp is frozen at save time and is the ONLY source -- nothing here
+     recomputes a past entry.
+
+     One place, because this read used to live inline in exerciseMaxSeries and
+     the progression rows used a DIFFERENT quantity entirely (the vendor rated
+     midpoint via setTopLoad), which is how one table came to show two bases in
+     one row. Every between-session load consumer goes through here now.
+
+     finitePos, NOT isFinite: a zero or negative stamp is not a load figure,
+     and a string "140" is not either -- the same guard exerciseMaxSeries
+     already applied. `provenance` defaults to RATED to match the convention a
+     stamp written before the field existed implies. */
+  function entryLoadOf(e, exId) {
+    var ld = ((e || {}).load || {})[String(exId)];
+    if (!ld || typeof ld !== "object") return null;
+    if (!finitePos(ld.lb)) return null;
+    return { lb: ld.lb,
+             provenance: ld.provenance || "RATED",
+             romBlind: !!ld.romBlind };
+  }
   /* Top load = heaviest single phase of the set (not the last, not the sum). */
+  /* THE FOLD, on the rated path. `doubled` is a per-SET flag, and these two
+     summed band ids without it -- so a DOUBLED set reported exactly the
+     singled figure.
+
+     migrateFoldEncoding INTRODUCED THIS on 2026-08-04. Before it, a fold was
+     encoded as DUPLICATE band ids and `sum(mid)` doubled naturally, so these
+     figures were correct. The migration collapsed those duplicates (77 sets,
+     78 lists) onto the flag, and nothing here read it. 178 of 602 sets in
+     Greg's live log carry the flag, across 29 exercises and all 68 logged
+     dates, so this halved roughly 30% of every rated figure for two months.
+
+     `d * sum(...)` is effectiveLoad's own convention since 2026-08-03,
+     adopted verbatim including its reason: 2x is the vendor's own doubled
+     convention, so it is the right figure for a fallback that quotes the
+     vendor. The fold MULTIPLIES the count rather than replacing it --
+     post-migration duplicate ids mean band COUNT -- so two of a band doubled
+     is 4x one singled.
+
+     PER-SET, applied to EVERY segment: a drop set folded at the top is folded
+     all the way down. */
   function setTopLoad(s, bandOf) {
+    var d = (s && s.doubled) ? 2 : 1;
     return setSegments(s).reduce(function (m, g) {
-      var sr = (g.bands || []).reduce(function (a, id) { return a + bandMid(bandOf(id)); }, 0);
+      var sr = d * (g.bands || []).reduce(function (a, id) { return a + bandMid(bandOf(id)); }, 0);
       return sr > m ? sr : m;
     }, 0);
   }
   function setVolume(s, bandOf) {
+    var d = (s && s.doubled) ? 2 : 1;
     return setSegments(s).reduce(function (a, g) {
-      var sr = (g.bands || []).reduce(function (x, id) { return x + bandMid(bandOf(id)); }, 0);
+      var sr = d * (g.bands || []).reduce(function (x, id) { return x + bandMid(bandOf(id)); }, 0);
       return a + sr * (g.reps || 0);
     }, 0);
   }
@@ -4568,8 +4652,8 @@
       if (ctx.deloadOf && ctx.deloadOf(e)) return;
       var sets = (e.exercises || {})[key];
       if (!sets || !sets.length) return;
-      var ld = (e.load || {})[key] || {};
-      if (!finitePos(ld.lb)) return;
+      var ld = entryLoadOf(e, key);
+      if (!ld) return;
       var best = null, refusal = null;
       sets.forEach(function (s) {
         /* THE FIRST SEGMENT'S REPS, NOT setReps. setReps SUMS every segment,
@@ -4615,7 +4699,7 @@
         date: e.date, estMax: best ? best.lb : null, topLb: ld.lb,
         outOfRange: best ? best.outOfRange : false,
         noRir: best ? best.noRir : !!(refusal && refusal.noRir),
-        provenance: ld.provenance || "RATED", romBlind: !!ld.romBlind,
+        provenance: ld.provenance, romBlind: ld.romBlind,
         pctOfMax: null,
         refused: !best,
         refusedBasis: best ? null : (refusal ? refusal.basis : null),
@@ -5762,22 +5846,47 @@
       return { code: "STALLED", text: "No improvement in " + CONST.STALL_N +
         " straight working sessions. Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." };
     }
+    /* NO PRICED SESSION AT ALL. Every branch below this point divides by or
+       compares a figure this row does not have, and would report "only N
+       sessions - too few to call a trend" using `n` -- which contradicts the
+       SETS column beside it and blames the wrong shortage. The reps and sets
+       ARE real and were counted, so say that rather than presenting the row
+       as empty. Sits AFTER the dormancy/ready/stalled checks deliberately:
+       `ready` and `stalled` are judged off setTopLoad (the band-rated figure),
+       not off the effective-load stamp, so a lift with zero priced sessions
+       can still be legitimately EX_DORMANT, READY or STALLED on its reps
+       alone -- only the load-TREND branches below actually need a price. */
+    if (!row.nLoaded) {
+      return { code: "EX_UNPRICED", text: "Logged " + row.n + " session" +
+        (row.n === 1 ? "" : "s") + " here, and the reps and sets all counted, " +
+        "but it carries no effective-load figure -- so there is no load " +
+        "trend to report and no progression to judge on load. Effective load " +
+        "is frozen on a workout at save time; sessions logged before this app " +
+        "computed one have none." };
+    }
     /* Direction claims need enough sessions to mean anything. Below
        TREND_MIN_N the numbers are reported without asserting a direction -
        the load metric is quantized to the band catalog (consecutive catalog
        steps are +83%, +91%) against a TREND_BAND of +/-1%, so at n=2-3 "trend"
        answers only "did you use a different band in the last session than in
        the first?". */
-    if (row.n < CONST.TREND_MIN_N && (row.trend === "DECLINING" || row.trend === "GROWING")) {
+    /* nLoaded, NOT n. A direction claim needs enough PRICED sessions: an
+       unstamped session contributes no point to the slope, so counting it
+       toward TREND_MIN_N would assert a direction off fewer points than the
+       gate names. */
+    if (row.nLoaded < CONST.TREND_MIN_N &&
+        (row.trend === "DECLINING" || row.trend === "GROWING")) {
       return { code: "INSUFFICIENT_N", text: "Top load " +
         (row.trend === "GROWING" ? "is up " : "is down ") + fmtDelta(row.deltaPct) +
-        " but only " + row.n + " session" + (row.n === 1 ? "" : "s") +
-        " in this window - too few to call a trend (needs " + CONST.TREND_MIN_N +
-        "). Keep logging." };
+        " but only " + row.nLoaded + " of " + row.n + " session" +
+        (row.n === 1 ? "" : "s") + " in this window carr" +
+        (row.nLoaded === 1 ? "ies" : "y") + " a load figure - too few to call a " +
+        "trend (needs " + CONST.TREND_MIN_N + "). Keep logging." };
     }
     if (row.trend === "DECLINING") {
       return { code: "DECLINING", text: "Top load is falling (" + fmtDelta(row.deltaPct) +
-        " across " + row.n + " sessions). Hold the load and rebuild reps, and check recovery." };
+        " across " + row.nLoaded + " priced sessions). Hold the load and rebuild " +
+        "reps, and check recovery." };
     }
     if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
         row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
@@ -5786,10 +5895,11 @@
     }
     if (row.trend === "GROWING") {
       return { code: "GROWING", text: "Progressing (" + fmtDelta(row.deltaPct) +
-        " top load across " + row.n + " sessions). Hold course." };
+        " top load across " + row.nLoaded + " priced sessions). Hold course." };
     }
-    return { code: "HOLDING", text: row.n < 3
-      ? "Only " + row.n + " session(s) in this window - insufficient data for a trend."
+    return { code: "HOLDING", text: row.nLoaded < 3
+      ? "Only " + row.nLoaded + " of " + row.n + " session(s) in this window " +
+        "carry a load figure - insufficient data for a trend."
       : "Holding steady. Keep accumulating reps toward the " + phrase + "." };
   }
 
@@ -5802,16 +5912,22 @@
     var per = {};
     sortedLog(working).forEach(function (e) {
       Object.keys(e.exercises || {}).forEach(function (exId) {
-        var top = 0, reps = 0, vol = 0, best = 0;
+        var reps = 0, vol = 0, best = 0;
         (e.exercises[exId] || []).forEach(function (s) {
-          var l = setTopLoad(s, ctx.bandOf);
-          if (l > top) top = l;
           reps += setReps(s);
           vol += setVolume(s, ctx.bandOf);
           if (isPlainSet(s)) { var r = setReps(s); if (r > best) best = r; }
         });
+        /* `top` IS NULLABLE, and the session stays in the array either way.
+           The load figure is the frozen effective-load stamp -- not
+           setTopLoad, which is the vendor rated midpoint and carries no gear,
+           no stretch and no fold. Reps and sets need no stamp, so dropping an
+           unpriced session would have silently shrunk the rep history too.
+           Every load consumer below filters on `top != null`. */
+        var eff = entryLoadOf(e, exId);
         if (!per[exId]) per[exId] = [];
-        per[exId].push({ date: e.date, top: top, reps: reps, vol: vol, best: best,
+        per[exId].push({ date: e.date, top: eff ? eff.lb : null,
+                         reps: reps, vol: vol, best: best,
                          bands: setBands((e.exercises[exId] || [])[0]) });
       });
     });
@@ -5822,17 +5938,18 @@
        made against sessions strictly BEFORE the one being judged: testing
        last.top >= max(..., last.top) is trivially true and made PR LIFTS list
        nearly every exercise in every window. */
+    /* ALL-TIME means "all time that can be PRICED". An unstamped session
+       contributes no figure, so it can neither set the best nor be compared
+       against -- which is what keeps a June rated midpoint from being read as
+       a personal record against an August effective load. */
     var allBest = {}, allTops = {};
     sortedLog(ctx.log).forEach(function (e) {
       Object.keys(e.exercises || {}).forEach(function (exId) {
-        var top = 0;
-        (e.exercises[exId] || []).forEach(function (s) {
-          var l = setTopLoad(s, ctx.bandOf);
-          if (l > top) top = l;
-        });
-        if (!allBest[exId] || top > allBest[exId]) allBest[exId] = top;
+        var eff = entryLoadOf(e, exId);
+        if (!eff) return;
+        if (allBest[exId] == null || eff.lb > allBest[exId]) allBest[exId] = eff.lb;
         if (!allTops[exId]) allTops[exId] = [];
-        allTops[exId].push({ date: e.date, top: top });
+        allTops[exId].push({ date: e.date, top: eff.lb });
       });
     });
     /* Best top load on any date strictly earlier than beforeDate. */
@@ -5847,7 +5964,16 @@
     return Object.keys(per).map(function (exId) {
       var arr = per[exId];
       var first = arr[0], last = arr[arr.length - 1];
-      var sp = slopePct(arr.map(function (x) { return x.top; }));
+      /* The PRICED subset. Order is preserved from `arr`, which sortedLog
+         already put oldest-first, so priced[0] and priced[last] are the first
+         and last sessions in this window that carry a load figure. */
+      var priced = arr.filter(function (x) { return x.top != null; });
+      var pFirst = priced.length ? priced[0] : null;
+      var pLast = priced.length ? priced[priced.length - 1] : null;
+      /* The slope runs over PRICED tops only, so its three-point minimum
+         counts priced sessions. A lift with eight logged and two priced
+         sessions has no trend, and Task 4's verdict says WHICH shortage. */
+      var sp = slopePct(priced.map(function (x) { return x.top; }));
       var ps = progressionState(ctx, exId, shiftISO(win.to, 1));
       var row = {
         id: exId,
@@ -5855,9 +5981,11 @@
         group: (ctx.groupOf(exId) || {}).label || "OTHER",
         cls: ctx.classOf ? ctx.classOf(exId) : "iso",
         n: arr.length,
-        firstTop: first.top,
-        lastTop: last.top,
-        deltaPct: first.top ? ((last.top - first.top) / first.top) * 100 : null,
+        nLoaded: priced.length,
+        firstTop: pFirst ? pFirst.top : null,
+        lastTop: pLast ? pLast.top : null,
+        deltaPct: (pFirst && pLast && pFirst.top)
+          ? ((pLast.top - pFirst.top) / pFirst.top) * 100 : null,
         slopePct: sp,
         trend: classifyTrend(sp),
         bestReps: arr.reduce(function (m, x) { return x.best > m ? x.best : m; }, 0),
@@ -5866,8 +5994,9 @@
         barApplied: ps.barApplied,
         unit: repUnit(exId),
         volume: arr.reduce(function (a, x) { return a + x.vol; }, 0),
-        allTimeBest: allBest[exId] || 0,
-        isPR: last.top > 0 && last.top > priorBest(exId, last.date),
+        allTimeBest: allBest[exId] == null ? null : allBest[exId],
+        isPR: !!(pLast && pLast.top > 0 &&
+                 pLast.top > priorBest(exId, pLast.date)),
         ready: ps.ready,
         stalled: ps.stalled,
         lastDate: last.date,
@@ -5877,7 +6006,14 @@
       };
       row.verdict = exerciseVerdict(ctx, row);
       return row;
-    }).sort(function (a, b) { return b.n - a.n || b.lastTop - a.lastTop; });
+    }).sort(function (a, b) {
+      /* `lastTop` is nullable now; `b.lastTop - a.lastTop` on a null yields
+         NaN, and a NaN comparator return leaves order implementation-defined.
+         An unpriced lift sorts after a priced one at equal session count. */
+      return b.n - a.n ||
+             (b.lastTop == null ? -1 : 0) - (a.lastTop == null ? -1 : 0) ||
+             (b.lastTop || 0) - (a.lastTop || 0);
+    });
   }
 
   /* The STRENGTH tab's EXERCISE PROGRESSION rows: the raw-numbers table,
@@ -8342,6 +8478,7 @@
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
+    entryLoadOf: entryLoadOf,
     setVolume: setVolume,
     sortedLog: sortedLog,
     lastUse: lastUse,
