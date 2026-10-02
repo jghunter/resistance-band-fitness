@@ -6023,9 +6023,17 @@
         " short of the " + phrase + " and flat - push 1-2 more reps before adding load." };
     }
     if (row.trend === "GROWING") {
+      /* NO gapClause here, deliberately, and Greg's call on 2026-10-01. The
+         spec asked for the disclosure on the two DECLINING verdicts; I had
+         added it to GROWING for symmetry and he removed it. The asymmetry
+         holds up: DECLINING drives an action -- hold the load, rebuild reps,
+         check recovery -- so what the comparison could not see bears on a
+         decision. GROWING says hold course. The count is still on the row and
+         the LOAD COVERAGE block above the table still reports the shortfall
+         for the whole window, so nothing is hidden; it just stops being said
+         twice in the one place it changes nothing. */
       return { code: "GROWING", text: "Progressing on top load across " + row.nLoaded +
-        " priced sessions" + gapClause(row.skippedGaps) + " (" +
-        trendFigures(row) + "). Hold course." };
+        " priced sessions (" + trendFigures(row) + "). Hold course." };
     }
     return { code: "HOLDING", text: row.nLoaded < 3
       ? "Only " + row.nLoaded + " of " + row.n + " session(s) in this window " +
