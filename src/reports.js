@@ -6364,6 +6364,11 @@
 
     var totalVol = Object.keys(acc).reduce(function (a, k) { return a + acc[k].volume; }, 0);
     var totalSlots = Object.keys(acc).reduce(function (a, k) { return a + acc[k].slots; }, 0);
+    /* COUNTABLE sets, the same figure the landmark comparison uses. The share
+       the surfaces draw must be in the unit the surfaces judge in: `rawSets`
+       would inflate a unilateral group purely for logging an L set and an R
+       set, which is the error countableSets exists to prevent. */
+    var totalSets = Object.keys(acc).reduce(function (a, k) { return a + acc[k].sets; }, 0);
     /* CALENDAR weeks, deliberately, and NOT the program week. Since cycle
        schedules landed (2026-09-21) a program week is one turn of the
        pattern -- 2 days on 1-on/1-off, 6 on 3-on/3-off -- while a volume
@@ -6397,6 +6402,7 @@
       var b = acc[label];
       var exempt = isExempt(label);
       var share = totalVol ? (b.volume / totalVol) * 100 : 0;      // INFORMATIONAL ONLY
+      var setsShare = totalSets ? (b.sets / totalSets) * 100 : 0;
       var slotShare = totalSlots ? (b.slots / totalSlots) * 100 : 0;
       var prescribedShare = pres.shares[label] || 0;
       var landmark = hitModel ? null : SET_LANDMARKS[label];
@@ -6464,6 +6470,7 @@
       return {
         label: label, sets: b.sets, rawSets: b.rawSets, reps: b.reps, volume: b.volume,
         share: share,                     // volume share - INFORMATIONAL ONLY
+        setsShare: setsShare,             // share of countable sets - what the tabs draw
         slotShare: slotShare, slots: b.slots,
         prescribedShare: prescribedShare, impliedShare: impliedShare,
         exercises: Object.keys(b.exIds).length,
@@ -6474,7 +6481,12 @@
         programGap: programGap, neglect: neglect, flags: flags
       };
     }).sort(function (a, b) {
-      return b.volume - a.volume || a.label.localeCompare(b.label);
+      /* ORDERED BY SETS since 2026-10-01, not by tonnage. The surfaces draw
+         setsShare, and a bar chart ordered by a different quantity than the
+         bar it draws reads as broken. Volume breaks the tie so the order stays
+         total, and the label breaks that. Nothing asserted this order before;
+         test_sets_metric.cjs is the pin it was missing. */
+      return b.sets - a.sets || b.volume - a.volume || a.label.localeCompare(b.label);
     });
   }
 
@@ -6484,11 +6496,15 @@
     var rows = blocks.map(function (b) {
       var prog = ctx.progOf ? ctx.progOf(b.programId) : null;
       var prescribed = (prog && ctx.blockWorkoutsOf) ? ctx.blockWorkoutsOf(prog) : null;
-      var vol = 0, sets = 0, reps = 0;
+      var vol = 0, sets = 0, reps = 0, csets = 0;
       var byGroup = {};
       b.entries.forEach(function (e) {
         Object.keys(e.exercises || {}).forEach(function (exId) {
           var label = (ctx.groupOf(exId) || {}).label || "OTHER";
+          /* COUNTABLE alongside raw, so the block row can report sets per
+             session in the same unit analyzeGroups reports weekly sets in.
+             `sets` stays the raw per-set count the doc models print. */
+          csets += countableSets(e.exercises[exId]);
           (e.exercises[exId] || []).forEach(function (s) {
             var v = setVolume(s, ctx.bandOf);
             vol += v; sets++; reps += setReps(s);
@@ -6506,8 +6522,9 @@
         logged: b.entries.length,
         prescribed: prescribed,
         adherence: prescribed ? (b.entries.length / prescribed) * 100 : null,
-        volume: vol, sets: sets, reps: reps,
+        volume: vol, sets: sets, reps: reps, countableSets: csets,
         volPerSession: b.entries.length ? vol / b.entries.length : 0,
+        setsPerSession: b.entries.length ? csets / b.entries.length : 0,
         topGroups: top,
         vsPrev: null
       };
@@ -6517,6 +6534,8 @@
       rows[i].vsPrev = {
         volPerSession: prv.volPerSession
           ? ((cur.volPerSession - prv.volPerSession) / prv.volPerSession) * 100 : null,
+        setsPerSession: prv.setsPerSession
+          ? ((cur.setsPerSession - prv.setsPerSession) / prv.setsPerSession) * 100 : null,
         adherence: (prv.adherence != null && cur.adherence != null)
           ? cur.adherence - prv.adherence : null,
         against: prv.name + " (" + prv.from + ")"
@@ -6816,6 +6835,10 @@
       window: win, totals: totals, prevTotals: prevTotals,
       deltas: {
         volume: prevTotals ? pct(totals.volume, prevTotals.volume) : null,
+        /* SETS is the work-done delta the tabs report since 2026-10-01. It is
+           NOT the reps delta: ten sets of eight and eight sets of ten are the
+           same reps and a quarter more sets. */
+        sets: prevTotals ? pct(totals.sets, prevTotals.sets) : null,
         reps: prevTotals ? pct(totals.reps, prevTotals.reps) : null,
         sessions: prevTotals ? pct(totals.sessions, prevTotals.sessions) : null
       },

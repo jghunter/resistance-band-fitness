@@ -3065,10 +3065,12 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
       {sub ? <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>{sub}</span> : null}
     </div>
   )
-  const volSub = res.deltas.volume == null ? null
-    : `${R2.fmtDelta(res.deltas.volume)} vs previous period`
-  const volColor = res.deltas.volume == null ? C.text
-    : (res.deltas.volume >= 0 ? C.green : C.amber)
+  /* SETS and REPS, not tonnage. Tonnage still prints in the ANALYSIS doc,
+     where the "VOLUME IS AN INDEX, NOT POUNDS" note sits in the same column;
+     on screen it was a lb-reps figure labelled VOLUME beside a SETS figure,
+     which is the confusion this work exists to remove. */
+  const deltaSub = d => d == null ? null : `${R2.fmtDelta(d)} vs previous period`
+  const deltaColorOf = d => d == null ? C.text : (d >= 0 ? C.green : C.amber)
   const prCount = res.exercises.filter(r => r.isPR).length
 
   return (
@@ -3077,8 +3079,10 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
 
       <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
         {statCard('SESSIONS', res.totals.sessions, res.window.label)}
-        {statCard('SETS', R2.fmtNum(res.totals.sets))}
-        {statCard('VOLUME', R2.fmtNum(res.totals.volume), volSub, volColor)}
+        {statCard('SETS', R2.fmtNum(res.totals.sets),
+                  deltaSub(res.deltas.sets), deltaColorOf(res.deltas.sets))}
+        {statCard('REPS', R2.fmtNum(res.totals.reps),
+                  deltaSub(res.deltas.reps), deltaColorOf(res.deltas.reps))}
         {statCard('PRs', prCount, 'this window', prCount ? C.green : C.dimGray)}
       </div>
 
@@ -3111,7 +3115,7 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               {g.label}
             </span>
             <span style={{fontFamily:'monospace',fontSize:10,color:C.accent,letterSpacing:'-0.05em'}}>
-              {R2.barText(g.share, 20)}
+              {R2.barText(g.setsShare, 20)}
             </span>
             <span style={{fontFamily:'monospace',fontSize:10,color:C.readout,width:44,textAlign:'right'}}>
               {Math.round(g.share)}%
@@ -3171,12 +3175,12 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                 {b.adherence != null ? ` (${Math.round(b.adherence)}%)` : ''}
               </span>
               <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
-                {R2.fmtNum(b.volPerSession)} vol/session
+                {b.setsPerSession.toFixed(1)} sets/session
               </span>
-              {b.vsPrev && b.vsPrev.volPerSession != null && (
+              {b.vsPrev && b.vsPrev.setsPerSession != null && (
                 <span style={{fontFamily:'monospace',fontSize:10,
-                  color: b.vsPrev.volPerSession >= 0 ? C.green : C.amber}}>
-                  {R2.fmtDelta(b.vsPrev.volPerSession)} vs previous
+                  color: b.vsPrev.setsPerSession >= 0 ? C.green : C.amber}}>
+                  {R2.fmtDelta(b.vsPrev.setsPerSession)} vs previous
                 </span>
               )}
             </div>
@@ -3199,8 +3203,11 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
   )
 }
 
-function StrengthTab({ user, log, gearInv, myBands }) {
+function StrengthTab({ user, log, gearInv, myBands, settings }) {
   const [win, setWin] = useState('30')
+  /* The SAME program the ANALYZE tab reads, so the two tabs' section rows
+     cannot disagree about what was prescribed. */
+  const sProg = PROGRAMS[Number(settings?.progIdx) || 0] || PROGRAMS[0]
   /* TRAINING_STYLE is a mutable module-level holder, not React state, so a
      method change has to announce itself. Same tick the TRAINING STYLE panel
      uses, and for the same reason. */
@@ -3246,7 +3253,15 @@ function StrengthTab({ user, log, gearInv, myBands }) {
   const A = agg(winEntries)
   const P = prevEntries ? agg(prevEntries) : null
   const pct = (cur,prev) => (prev == null || prev === 0) ? null : ((cur-prev)/prev)*100
-  const volDelta = P ? pct(A.volume, P.volume) : null
+  /* SETS, not tonnage, since 2026-10-01. Greg takes "volume" to mean sets, and
+     nothing in this app judges on lb-reps -- the group volume share is marked
+     INFORMATIONAL ONLY and balance is decided on weekly SETS against a
+     landmark, or on the prescribed SLOT share. A tonnage figure wearing the
+     name of a count was the confusion, not the cure: on his own 30-day window
+     tonnage reports +6% where set count reports +34%, and one program block
+     moves -13% in tonnage while moving +13% in sets. Tonnage still prints in
+     the ANALYSIS doc, where the index caveat sits in the same column. */
+  const setDelta = P ? pct(A.sets, P.sets) : null
   const repDelta = P ? pct(A.reps, P.reps) : null
 
   /* THE ROWS COME FROM THE MODULE. This tab built them inline until
@@ -3264,9 +3279,17 @@ function StrengthTab({ user, log, gearInv, myBands }) {
      See rbts_reports.js exerciseProgressionRows and test_strength_rows.cjs. */
   const exRows = RBTS_REPORTS.exerciseProgressionRows(rmCtx, W, { carryIn: true })
 
-  const series = winEntries.map(e => ({ date:e.date, vol:entryStats(e).volume }))
-  const maxVol = series.reduce((m,x) => Math.max(m,x.vol), 0) || 1
-  const deltaColor = volDelta == null ? C.dimGray : (volDelta >= 0 ? C.green : C.amber)
+  const series = winEntries.map(e => ({ date:e.date, sets:entryStats(e).sets }))
+  const maxSets = series.reduce((m,x) => Math.max(m,x.sets), 0) || 1
+  const deltaColor = setDelta == null ? C.dimGray : (setDelta >= 0 ? C.green : C.amber)
+
+  /* WEEKLY SETS BY SECTION, from the engine's own group aggregation -- the
+     figure the balance verdict is actually decided on, rather than a second
+     count rolled up here. Ordered by sets, which is how analyzeGroups orders
+     since 2026-10-01, so the bars descend. */
+  const gRows = RBTS_REPORTS.analyzeGroups(rmCtx, W, sProg).filter(g => g.sets > 0)
+  const gHasLandmark = gRows.some(g => g.landmark != null)
+  const gMaxWeekly = gRows.reduce((m,g) => Math.max(m, g.weeklySets), 0) || 1
   const card = (label, value, sub, color) => (
     <div style={{...widget,flex:'1 1 140px',minWidth:140}}>
       <span style={lbl}>{label}</span>
@@ -3323,8 +3346,8 @@ function StrengthTab({ user, log, gearInv, myBands }) {
       </div>
 
       <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
-        {card('WORKOUTS', String(A.sessions), A.sets+' sets logged', C.accent)}
-        {card('EST. VOLUME', fmtNum(A.volume), 'lb·reps (estimated)', C.text)}
+        {card('WORKOUTS', String(A.sessions), cfg.label, C.accent)}
+        {card('TOTAL SETS', fmtNum(A.sets), A.sessions?('~'+fmtNum(A.sets/A.sessions)+' / workout'):'', C.text)}
         {card('TOTAL REPS', fmtNum(A.reps), A.sessions?('~'+fmtNum(A.reps/A.sessions)+' / workout'):'', C.text)}
         {card('BEST SET LOAD', fmtNum(A.top)+' lb', 'heaviest est. band load', C.green)}
       </div>
@@ -3332,27 +3355,81 @@ function StrengthTab({ user, log, gearInv, myBands }) {
       {P ? (
         <div style={{...widget,display:'flex',flexWrap:'wrap',gap:18,alignItems:'center'}}>
           <span style={lbl}>VS PREVIOUS {cfg.label}</span>
-          <span style={{fontFamily:'monospace',fontSize:13,color:deltaColor,fontWeight:700}}>VOLUME {fmtPct(volDelta)}</span>
+          <span style={{fontFamily:'monospace',fontSize:13,color:deltaColor,fontWeight:700}}>SETS {fmtPct(setDelta)}</span>
           <span style={{fontFamily:'monospace',fontSize:13,color:(repDelta==null?C.dimGray:(repDelta>=0?C.green:C.amber))}}>REPS {fmtPct(repDelta)}</span>
-          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>prior: {P.sessions} workouts · {fmtNum(P.volume)} vol</span>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>prior: {P.sessions} workouts · {fmtNum(P.sets)} sets · {fmtNum(P.reps)} reps</span>
         </div>
       ) : null}
 
       {series.length > 0 ? (
         <div style={widget}>
-          <span style={lbl}>VOLUME PER WORKOUT</span>
+          <span style={lbl}>SETS PER WORKOUT</span>
           <div style={{display:'flex',alignItems:'flex-end',gap:3,height:90,marginTop:6}}>
             {series.map((sx,i) => {
-              const h = Math.max(3, Math.round((sx.vol/maxVol)*84))
-              return <div key={i} title={sx.date+' · '+fmtNum(sx.vol)+' vol'}
+              const h = Math.max(3, Math.round((sx.sets/maxSets)*84))
+              return <div key={i} title={sx.date+' · '+sx.sets+' sets'}
                 style={{flex:'1 1 0',minWidth:4,maxWidth:22,height:h,background:C.accent,
-                  opacity:0.4+0.6*(sx.vol/maxVol),borderRadius:'2px 2px 0 0'}}/>
+                  opacity:0.4+0.6*(sx.sets/maxSets),borderRadius:'2px 2px 0 0'}}/>
             })}
           </div>
           <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[0].date}</span>
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[series.length-1].date}</span>
           </div>
+        </div>
+      ) : null}
+
+      {/* WEEKLY SETS BY SECTION. The work-done readout, in the unit the
+          verdicts are actually decided in: balanceOf compares weekly SETS
+          against a landmark, and under the HIT volume model it falls through
+          to the program's prescribed SLOT share. Both are counts. The figure
+          is per CALENDAR week, never per program week -- since cycle schedules
+          landed a program week is one turn of the pattern while a volume
+          landmark is physiological and per seven days. An L set and an R set
+          are ONE set of work per side; the landmarks are calibrated for one. */}
+      {gRows.length > 0 ? (
+        <div style={widget}>
+          <span style={lbl}>WEEKLY SETS BY SECTION{gHasLandmark ? ' (LANDMARK)' : ''}</span>
+          <div style={{marginTop:6}}>
+            {gRows.map(g => {
+              /* Against the landmark where there is one, capped so an
+                 over-trained section cannot draw past the end of the bar.
+                 Where the landmark is withheld the bar has no absolute
+                 meaning, so it is drawn RELATIVE to the most-trained section
+                 and the footnote says so -- a bar against a missing target
+                 would be a bar against nothing. */
+              const frac = g.landmark != null
+                ? Math.min(100, (g.weeklySets / g.landmark) * 100)
+                : (g.weeklySets / gMaxWeekly) * 100
+              return (
+                <div key={g.label} style={{display:'flex',gap:8,alignItems:'center',
+                  padding:'3px 0',flexWrap:'wrap'}}>
+                  <span style={{fontFamily:'monospace',fontSize:11,color:C.text,
+                    width:92,flexShrink:0}}>{g.label}</span>
+                  <span style={{fontFamily:'monospace',fontSize:11,color:C.readout,
+                    width:38,textAlign:'right'}}>{g.weeklySets.toFixed(1)}</span>
+                  <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,
+                    width:32,textAlign:'right'}}>{g.landmark != null ? '('+g.landmark+')' : ''}</span>
+                  <span style={{fontFamily:'monospace',fontSize:10,color:C.accent,
+                    letterSpacing:'-0.05em'}}>{RBTS_REPORTS.barText(frac, 16)}</span>
+                  <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+                    {g.sets} sets
+                  </span>
+                  {g.balance !== 'OK' && g.balance !== 'EXEMPT' && g.balance !== 'NONE' ? (
+                    <span style={{...pill(BALANCE_COLOR[g.balance]),fontSize:9}}>
+                      {g.balance}
+                    </span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+            display:'block',marginTop:8,lineHeight:1.6}}>
+            {gHasLandmark
+              ? 'Sets per CALENDAR week over this window, against the landmark in parentheses. A left set and a right set count as one set of work.'
+              : "Your volume model is HIT, so weekly-set landmarks are withheld — one set to failure measured against a 10-sets-a-week landmark would read UNDER forever. The bar is relative to your most-trained section, and balance falls through to your program's prescribed share. A left set and a right set count as one set of work."}
+          </span>
         </div>
       ) : null}
 
@@ -6551,7 +6628,7 @@ export default function App() {
             AND the profile-uid stamp, and reconcileProfiles then treats an
             unstamped local profile as the machine seed -- so a method chosen
             here would be discarded at the next sign-in, silently. */}
-        {tab==='strength' && <StrengthTab user={user} log={log} gearInv={gear} myBands={myBands}/>}
+        {tab==='strength' && <StrengthTab user={user} log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='programs' && <ProgramsTab onProgramsChanged={handleProgramsChanged}/>}
         {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
