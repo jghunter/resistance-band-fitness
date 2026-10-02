@@ -2209,13 +2209,25 @@
        over-claiming (invite trust in the gap zone) or under-claiming (discard
        the real stamps before it). Counts are true either way.
 
-       A session counts as PRICED when at least one of its band-carrying uses
-       carries a stamp. A use with NO BANDS is not a gap: there is nothing to
-       price, which is a different fact from failing to price it. */
-    var sessPriced = 0, sessPriceable = 0, earliestPriced = null;
+       COUNTED PER EXERCISE-USE, NOT PER SESSION, since 2026-10-01. The first
+       version asked "does this session carry any stamp at all", which made it
+       go silent in exactly the shape it was written for. A stamp is per
+       exercise per session, so a session can be half priced -- and the
+       transition zone is full of those: 8 to 10 gaps per session ALONGSIDE
+       real stamps means every one of those sessions has at least one stamp and
+       counted as fully priced.
+
+       The result was a window where no note appeared while the rows inside it
+       said "only 2 of 5 session(s) carry a load figure". The note designed to
+       explain that shortage was the one thing not saying it. Found by the
+       final whole-branch review; `nLoaded` on a row has always been
+       per-exercise, so counting uses is what makes the two agree.
+
+       A use with NO BANDS is not a gap: there is nothing to price, which is a
+       different fact from failing to price it. It enters neither count. */
+    var usePriced = 0, usePriceable = 0, earliestPriced = null;
     (entries || []).forEach(function (e) {
       if (!e) return;
-      var anyBand = false, anyPriced = false;
       Object.keys(e.exercises || {}).forEach(function (exId) {
         var sets = (e.exercises || {})[exId] || [];
         var hasBand = sets.some(function (s) {
@@ -2224,18 +2236,14 @@
           });
         });
         if (!hasBand) return;
-        anyBand = true;
-        if (entryLoadOf(e, exId)) anyPriced = true;
-      });
-      if (anyBand) {
-        sessPriceable++;
-        if (anyPriced) {
-          sessPriced++;
+        usePriceable++;
+        if (entryLoadOf(e, exId)) {
+          usePriced++;
           if (earliestPriced == null || String(e.date) < earliestPriced) {
             earliestPriced = String(e.date);
           }
         }
-      }
+      });
       Object.keys(e.load || {}).forEach(function (exId) {
         var ld = e.load[exId];
         if (!ld || typeof ld !== "object") return;
@@ -2251,15 +2259,22 @@
         if (stampPredatesGripTable(e.date, exId)) sawPreGrip = true;
       });
     });
-    if (sessPriceable && sessPriced < sessPriceable) {
-      notes.push("Load figures cover " + sessPriced + " of " + sessPriceable +
-        " sessions here" +
+    if (usePriceable && usePriced < usePriceable) {
+      /* "logged exercises", not "sessions" -- the count is per exercise per
+         session now, and naming it wrongly would restate the bug this fixed.
+
+         "left out of the load figures" rather than naming START / LATEST /
+         the change / the best, because this same note is emitted on the setup
+         sheet and the history report, neither of which HAS those columns. One
+         sentence has to be true on all three surfaces. */
+      notes.push("Load figures cover " + usePriced + " of " + usePriceable +
+        " logged exercises here" +
         (earliestPriced ? ", the earliest on " + earliestPriced : "") +
-        ". Effective load is frozen on each workout at save time, so a session " +
-        "logged before this app computed one carries no figure and is left out " +
-        "of START, LATEST, the change and the best -- its reps and sets still " +
-        "count. Comparing a figure against a session that has none is the one " +
-        "thing this cannot do.");
+        ". Effective load is frozen on each workout at save time, so an " +
+        "exercise logged before this app computed one carries no figure and is " +
+        "left out of the load figures -- its reps and sets still count. " +
+        "Comparing a figure against a session that has none is the one thing " +
+        "this cannot do.");
     }
     if (sawRomBlind) {
       notes.push("Some figures here were computed WITHOUT A RANGE OF MOTION: " +
