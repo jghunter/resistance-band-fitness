@@ -3140,7 +3140,7 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               <span style={{...pill(exGroup(Number(r.id)).color), fontSize:9}}>{r.group}</span>
               <span style={{fontFamily:'monospace',fontSize:12,color:C.text}}>{r.name}</span>
               <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
-                {r.n}× · {R2.fmtNum(r.firstTop)}→{R2.fmtNum(r.lastTop)} lb · {R2.fmtDelta(r.deltaPct)}
+                {r.n}× · {R2.fmtLb(r.firstTop)}→{R2.fmtLb(r.lastTop)} lb · {R2.fmtDelta(r.deltaPct)}
               </span>
               {r.isPR && <span style={{...pill(C.green), fontSize:9}}>PR</span>}
               <span style={{...pill(VERDICT_COLOR[r.verdict.code]||C.dimGray), fontSize:9, marginLeft:'auto'}}>
@@ -3378,10 +3378,10 @@ function StrengthTab({ user, log, gearInv, myBands }) {
                 <tr key={r.id} style={{borderTop:'1px solid rgba(255,255,255,0.06)',color:C.textSec}}>
                   <td style={{padding:'4px 6px',color:C.text}}>{r.name} {r.isPR ? <span style={pill(C.green)}>PR</span> : null}</td>
                   <td style={{padding:'4px 6px'}}>{r.n}</td>
-                  <td style={{padding:'4px 6px'}}>{fmtNum(r.firstTop)}{r.carriedFrom ? <span style={{color:C.dimGray}}> &#8249;</span> : null}</td>
-                  <td style={{padding:'4px 6px'}}>{fmtNum(r.lastTop)}</td>
+                  <td style={{padding:'4px 6px'}}>{RBTS_REPORTS.fmtLb(r.firstTop)}{r.carriedFrom ? <span style={{color:C.dimGray}}> &#8249;</span> : null}</td>
+                  <td style={{padding:'4px 6px'}}>{RBTS_REPORTS.fmtLb(r.lastTop)}</td>
                   <td style={{padding:'4px 6px',color:(r.deltaPct==null?C.dimGray:(r.deltaPct>=0?C.green:C.amber))}}>{fmtPct(r.deltaPct)}</td>
-                  <td style={{padding:'4px 6px',color:C.green}}>{fmtNum(r.allTimeBest)}</td>
+                  <td style={{padding:'4px 6px',color:C.green}}>{RBTS_REPORTS.fmtLb(r.allTimeBest)}</td>
                   <td style={{padding:'4px 6px',color:C.text}}>{fmtRm(r.oneRm.estMax, r.oneRm.outOfRange)}</td>
                   <td style={{padding:'4px 6px',color:C.green}}>{fmtRm(r.oneRm.bestMax)}</td>
                   <td style={{padding:'4px 6px'}}>{fmtRmPct(r.oneRm.pctOfMax)}</td>

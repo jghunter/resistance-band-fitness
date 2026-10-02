@@ -5542,6 +5542,19 @@
   function fmtNum(n) {
     return String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
+  /* A LOAD FIGURE, which can be ABSENT. fmtNum folds null to 0 -- correct for
+     a count, wrong for a load: "0 lb" is a measurement, and a lift whose
+     sessions carry no effective-load stamp has no measurement at all. The two
+     must not look alike.
+
+     Needed from 2026-10-01, when the progression rows moved onto the frozen
+     stamp and firstTop / lastTop / allTimeBest became nullable. Before that
+     they came from the vendor midpoint and were never null, so fmtNum was
+     safe at those call sites and is not any more. */
+  function fmtLb(v) {
+    if (v == null || !isFinite(v)) return "—";
+    return fmtNum(v);
+  }
   function fmtDelta(p) {
     if (p == null || !isFinite(p)) return "-";
     return (p >= 0 ? "+" : "") + Math.round(p) + "%";
@@ -5918,6 +5931,30 @@
       : "Holding steady. Keep accumulating reps toward the " + phrase + "." };
   }
 
+  /* A PR claim requires that we can SEE what was beaten. priorBest()
+     returning 0 is ambiguous on its own: it is the honest answer for a lift
+     with no earlier session at all, AND for a lift whose earlier sessions
+     exist but are all unpriced -- entryLoadOf has nothing to compare against
+     in either case, but only the first is a genuine "nothing to beat". The
+     second has history we cannot see past, and a first-ever PRICED session
+     beating an invisible history is not a PR -- it is a vendor-rated 105 lb
+     era read as "beaten" by a 35 lb effective-load era, which is not a
+     comparison at all.
+
+     n === nLoaded disambiguates: every session in this row IS priced, so a 0
+     prior really is an empty history rather than an unseen one.
+
+     HOISTED to module scope 2026-10-01 so analyzeExercises and
+     exerciseProgressionRows share ONE definition. They sit on the same basis
+     and show PR badges on two surfaces; a second copy of this rule is how the
+     ANALYZE report and the STRENGTH table come to disagree about whether the
+     same session was a personal record. */
+  function isGenuinePR(lastTop, priorTop, n, nLoaded) {
+    if (!(lastTop > 0)) return false;
+    if (priorTop > 0) return lastTop > priorTop;
+    return n === nLoaded;
+  }
+
   function analyzeExercises(ctx, win) {
     /* Deloads are excluded from every judgment: reduced load is not a
        regression. They still count toward volume totals elsewhere. */
@@ -5975,24 +6012,6 @@
       });
       return best;
     }
-    /* A PR claim requires that we can SEE what was beaten. priorBest()
-       returning 0 is ambiguous on its own: it is the honest answer for a
-       lift with no earlier session at all, AND for a lift whose earlier
-       sessions exist but are all unpriced -- entryLoadOf has nothing to
-       compare against in either case, but only the first is a genuine
-       "nothing to beat". The second has history we simply cannot see past,
-       and a first-ever PRICED session beating an invisible history is not a
-       PR -- it is a vendor-rated 105 lb era read as "beaten" by a 35 lb
-       effective-load era, which is not a comparison at all.
-
-       n === nLoaded disambiguates: every session in this row IS priced, so a
-       0 prior really is an empty history rather than an unseen one. */
-    function isGenuinePR(lastTop, priorTop, n, nLoaded) {
-      if (!(lastTop > 0)) return false;
-      if (priorTop > 0) return lastTop > priorTop;
-      return n === nLoaded;
-    }
-
     return Object.keys(per).map(function (exId) {
       var arr = per[exId];
       var first = arr[0], last = arr[arr.length - 1];
@@ -6090,19 +6109,22 @@
     var working = (win.entries || []).filter(function (e) {
       return !(ctx.deloadOf && ctx.deloadOf(e));
     });
-    function topOf(sets) {
-      var top = 0;
-      (sets || []).forEach(function (s) {
-        var l = setTopLoad(s, ctx.bandOf);
-        if (l > top) top = l;
-      });
-      return top;
-    }
+    /* THE FROZEN STAMP, not setTopLoad. Until 2026-10-01 these four columns
+       came from the vendor rated midpoint while EST. MAX / BEST MAX / % OF MAX
+       in the SAME ROW came from the stamp -- two different physics in one row,
+       which is the defect the whole design exists to close. The fold fix
+       widened the numeric gap between the two halves and made it urgent.
+
+       `top` IS NULLABLE and the session STAYS in the array either way: reps
+       and set counts need no stamp, so dropping an unpriced session would
+       shrink the session count too. Every load consumer below filters on
+       `top != null`. Same contract as analyzeExercises. */
     var per = {};
     sortedLog(working).forEach(function (e) {
       Object.keys(e.exercises || {}).forEach(function (exId) {
+        var eff = entryLoadOf(e, exId);
         if (!per[exId]) per[exId] = [];
-        per[exId].push({ date: e.date, top: topOf((e.exercises[exId] || [])) });
+        per[exId].push({ date: e.date, top: eff ? eff.lb : null });
       });
     });
 
@@ -6113,13 +6135,18 @@
        filtering it a no-op that would only invite the two functions to
        disagree. `allTops` keeps the per-date tops so the PR test can run
        against sessions strictly EARLIER than the one being judged. */
+    /* ALL-TIME means "all time that can be PRICED". An unstamped session
+       contributes no figure, so it can neither set the best nor be compared
+       against -- which is what stops a June rated midpoint being read as a
+       record beaten by an August effective load. */
     var allBest = {}, allTops = {};
     sortedLog(ctx.log).forEach(function (e) {
       Object.keys(e.exercises || {}).forEach(function (exId) {
-        var top = topOf((e.exercises[exId] || []));
-        if (!allBest[exId] || top > allBest[exId]) allBest[exId] = top;
+        var eff = entryLoadOf(e, exId);
+        if (!eff) return;
+        if (allBest[exId] == null || eff.lb > allBest[exId]) allBest[exId] = eff.lb;
         if (!allTops[exId]) allTops[exId] = [];
-        allTops[exId].push({ date: e.date, top: top });
+        allTops[exId].push({ date: e.date, top: eff.lb });
       });
     });
     function priorBest(exId, beforeDate) {
@@ -6129,24 +6156,38 @@
       });
       return best;
     }
-    /* The most recent WORKING session strictly before the window opens. */
+    /* The most recent PRICED working session strictly before the window
+       opens. PRICED, not merely logged: carrying in an unpriced session would
+       put a null in START and lose the comparison the carry-in exists to
+       provide -- and carrying in a RATED midpoint would reintroduce the very
+       basis mixing this change removes. */
     function carriedIn(exId) {
       var out = null;
       sortedLog(ctx.log).forEach(function (e) {
         if (ctx.deloadOf && ctx.deloadOf(e)) return;
         if (String(e.date) >= String(win.from)) return;
-        var sets = (e.exercises || {})[exId];
-        if (!sets || !sets.length) return;
-        out = { date: e.date, top: topOf(sets) };
+        if (!((e.exercises || {})[exId] || []).length) return;
+        var eff = entryLoadOf(e, exId);
+        if (!eff) return;
+        out = { date: e.date, top: eff.lb };
       });
       return out;
     }
 
     return Object.keys(per).map(function (exId) {
       var arr = per[exId];
-      var first = arr[0], last = arr[arr.length - 1];
-      var firstTop = first.top, carriedFrom = null;
-      if (o.carryIn && arr.length < 2) {
+      var last = arr[arr.length - 1];
+      /* The PRICED subset. `arr` is already oldest-first from sortedLog, so
+         priced[0] and priced[last] are the first and last sessions in this
+         window carrying a load figure. */
+      var priced = arr.filter(function (x) { return x.top != null; });
+      var pFirst = priced.length ? priced[0] : null;
+      var pLast = priced.length ? priced[priced.length - 1] : null;
+      var firstTop = pFirst ? pFirst.top : null, carriedFrom = null;
+      /* carryIn triggers on fewer than two PRICED sessions, not fewer than
+         two logged ones. A window holding four unpriced sessions and one
+         priced one has exactly as little to compare as a window holding one. */
+      if (o.carryIn && priced.length < 2) {
         var ci = carriedIn(exId);
         if (ci) { firstTop = ci.top; carriedFrom = ci.date; }
       }
@@ -6155,20 +6196,25 @@
          an ABSENT change, not a 0% one, and printing +0% invites it to be
          read as a plateau. */
       var deltaPct = null;
-      if (firstTop && (arr.length >= 2 || carriedFrom)) {
-        deltaPct = ((last.top - firstTop) / firstTop) * 100;
+      if (firstTop && pLast && (priced.length >= 2 || carriedFrom)) {
+        deltaPct = ((pLast.top - firstTop) / firstTop) * 100;
       }
+      var priorTop = pLast ? priorBest(exId, pLast.date) : 0;
       return {
         id: exId,
         name: ctx.nameOf ? ctx.nameOf(exId) : ("#" + exId),
         group: (ctx.groupOf ? (ctx.groupOf(exId) || {}).label : null) || "OTHER",
         n: arr.length,
+        nLoaded: priced.length,
         firstTop: firstTop,
-        lastTop: last.top,
+        lastTop: pLast ? pLast.top : null,
         carriedFrom: carriedFrom,
         deltaPct: deltaPct,
-        allTimeBest: allBest[exId] || 0,
-        isPR: last.top > 0 && last.top > priorBest(exId, last.date),
+        allTimeBest: allBest[exId] == null ? null : allBest[exId],
+        /* The SHARED rule, hoisted to module scope -- analyzeExercises calls
+           the same function. Two copies is how the ANALYZE report and this
+           table come to disagree about whether one session was a record. */
+        isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
         lastDate: last.date,
         /* ALL-TIME on purpose, like allTimeBest beside it. An estimated max is
            a statement about demonstrated capacity, and scoping it to the
@@ -6176,7 +6222,15 @@
            moved. The row carries it so the table needs no second pass. */
         oneRm: exerciseMaxSummary(ctx, exId)
       };
-    }).sort(function (a, b) { return b.n - a.n || b.lastTop - a.lastTop; });
+    }).sort(function (a, b) {
+      /* `lastTop` is nullable now; `b.lastTop - a.lastTop` on a null yields
+         NaN, and a NaN comparator return leaves ordering
+         implementation-defined. An unpriced lift sorts after a priced one at
+         equal session count. */
+      return b.n - a.n ||
+             (b.lastTop == null ? -1 : 0) - (a.lastTop == null ? -1 : 0) ||
+             (b.lastTop || 0) - (a.lastTop || 0);
+    });
   }
 
   /* ---- analyzer: muscle group level -------------------------------------- */
@@ -6811,7 +6865,7 @@
     ];
     if (prs.length) {
       head.push({ label: "PR LIFTS", value: prs.map(function (r) {
-        return r.name + " " + fmtNum(r.lastTop) + " lb";
+        return r.name + " " + fmtLb(r.lastTop) + " lb";
       }).join(" | ") });
     }
     sections.push({ heading: "HEADLINE", type: "kv", rows: head });
@@ -6890,7 +6944,7 @@
         exRows.push([
           r.name + " (#" + r.id + ")",
           String(r.n),
-          fmtNum(r.firstTop) + " -> " + fmtNum(r.lastTop),
+          fmtLb(r.firstTop) + " -> " + fmtLb(r.lastTop),
           fmtDelta(r.deltaPct),
           r.trend + (r.isPR ? " PR" : ""),
           r.bestReps + r.unit + " / " + r.barApplied + r.unit,
@@ -8551,6 +8605,7 @@
     buildSetupDoc: buildSetupDoc,
     entryTotals: entryTotals,
     fmtNum: fmtNum,
+    fmtLb: fmtLb,
     fmtDelta: fmtDelta,
     setLines: setLines,
     rangeExTable: rangeExTable,
