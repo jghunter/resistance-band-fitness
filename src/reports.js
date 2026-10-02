@@ -6693,13 +6693,28 @@
        itself, every time. Band force is a function of ELONGATION, not of band
        identity: these figures come from the midpoint of each band's rated
        range, at a stretch the manufacturer does not state. */
-    notes.push("LOAD IS AN INDEX, NOT POUNDS. Every load and volume figure here " +
-      "comes from the midpoint of each band's manufacturer-rated range, at an " +
-      "unstated stretch. Band force depends on how far the band is stretched, " +
-      "which the log does not record - the median band's own published range " +
-      "spans +/-45% around its midpoint. Use these numbers to compare a lift " +
-      "against itself over time; do not read them as pounds, and do not compare " +
-      "them across brands.");
+    /* SPLIT 2026-10-01, because this note became HALF FALSE the moment
+       analyzeExercises moved onto the stamp. It used to cover "every load and
+       volume figure here", which was true while both came from the vendor
+       midpoint. The LOAD figures are now frozen effective pounds -- real
+       pounds, computed from the band's force curve and the rig's geometry at
+       save time -- so telling the reader not to read them as pounds is now
+       exactly wrong, and it sat directly above the PEAK note that says the
+       opposite. VOLUME is unchanged and the original warning still holds of
+       it: there is no per-set effective load, so volume cannot leave the
+       rated midpoint. */
+    notes.push("THE LOAD FIGURES ARE EFFECTIVE POUNDS, frozen on each workout " +
+      "at save time from the band's force curve and the rig's geometry. They " +
+      "are real pounds and comparable over time, subject to the caveats below " +
+      "- but see the PEAK note: a peak is not an average.");
+    notes.push("VOLUME IS AN INDEX, NOT POUNDS. It is the only figure here " +
+      "still built from the midpoint of each band's manufacturer-rated range, " +
+      "at an unstated stretch, because effective load is stamped once per " +
+      "exercise per session and volume needs a figure per SET. Band force " +
+      "depends on how far the band is stretched, which the log does not record " +
+      "- the median band's own published range spans +/-45% around its " +
+      "midpoint. Use volume to compare a lift against itself over time; do not " +
+      "read it as pounds, and do not compare it across brands.");
     /* Item q + Task 6: the exercise card already surfaces a PEAK-not-average
        warning, romBlind and era:"pre-fold" on the load figure itself; the
        report said none of it, so a printed number could silently predate a
@@ -6718,10 +6733,15 @@
         "(sets against sets). Volume share is shown for information only and " +
         "raises no flag. Whether you logged the mix your program prescribes is " +
         "reported separately as adherence.");
+    /* "PRICED sessions", not "sessions in the window" -- the slope runs over
+       stamped sessions only, so an unstamped one contributes no point and
+       cannot count toward the minimum. Saying "in the window" overstated what
+       the gate measures as soon as load figures became nullable. */
     notes.push("Direction (GROWING / DECLINING) is only asserted at " +
-      CONST.TREND_MIN_N + " or more sessions in the window. A 3x/week trainee on " +
-      "the 5-session rotation reaches n=3 per exercise per block and n=2 at the " +
-      "30-day window.");
+      CONST.TREND_MIN_N + " or more PRICED sessions - ones carrying an " +
+      "effective-load figure. A 3x/week trainee on the 5-session rotation " +
+      "reaches n=3 per exercise per block and n=2 at the 30-day window, and a " +
+      "session logged before this app computed a load counts toward neither.");
 
     return {
       window: win, totals: totals, prevTotals: prevTotals,
