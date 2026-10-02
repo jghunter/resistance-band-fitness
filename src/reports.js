@@ -2195,6 +2195,110 @@
      The PEAK note is unconditional -- true of every effective-load figure.
      The other three fire only when an entry actually being reported carries
      the condition: a caveat that always appears is a caveat nobody reads. */
+  /* IS THERE ANYTHING TO PRICE on this exercise-use? ONE rule, because three
+     callers ask it: the coverage count, the skipped-gap count, and the note.
+     A use with no bands is not a gap -- there is nothing to price, which is a
+     different fact from failing to price it. */
+  function exUseHasBand(e, exId) {
+    var sets = ((e || {}).exercises || {})[String(exId)] || [];
+    return sets.some(function (s) {
+      return setSegments(s).some(function (g) {
+        return ((g.bands) || []).length > 0;
+      });
+    });
+  }
+
+  /* COVERAGE AS DATA, not as a sentence.
+
+     COUNTED rather than DATED. The stamp boundary in a real log is RAGGED --
+     Greg's carries stamps from 2026-07-20, gaps until 07-28 and is clean only
+     from 07-30 -- so any single "figures start on X" either over-claims
+     (inviting trust across the gap zone) or under-claims (discarding the real
+     stamps before it). Counts are true either way.
+
+     COUNTED PER EXERCISE-USE, NOT PER SESSION, since 2026-10-01. The first
+     version asked "does this session carry any stamp at all", which made it go
+     silent in exactly the shape it was written for. A stamp is per exercise per
+     session, so a session can be half priced -- and the transition zone is
+     full of those: 8 to 10 gaps per session ALONGSIDE real stamps means every
+     one of those sessions has at least one stamp and counted as fully priced.
+     The result was a window where no note appeared while the rows inside it
+     said "only 2 of 5 session(s) carry a load figure". `nLoaded` on a row has
+     always been per-exercise, so counting uses is what makes the two agree.
+
+     RETURNED AS A STRUCTURE since 2026-10-01 so the SCREEN can render it.
+     loadCaveatNotes quotes these very numbers, so the tab and the printed
+     report cannot disagree -- and the tab needs no substring match against a
+     sentence to find them. */
+  function loadCoverage(entries) {
+    var priced = 0, priceable = 0, earliest = null;
+    (entries || []).forEach(function (e) {
+      if (!e) return;
+      Object.keys((e.exercises || {})).forEach(function (exId) {
+        if (!exUseHasBand(e, exId)) return;
+        priceable++;
+        if (entryLoadOf(e, exId)) {
+          priced++;
+          if (earliest == null || String(e.date) < earliest) {
+            earliest = String(e.date);
+          }
+        }
+      });
+    });
+    return { priced: priced, priceable: priceable, earliest: earliest };
+  }
+
+  /* GAPS THE COMPARISON STEPPED OVER.
+
+     DECLINING and ORM_DECLINING both compare consecutive STAMPED sessions --
+     slopePct runs over the non-null tops and exerciseMaxSeries drops unpriced
+     entries outright -- so the comparison was already correct and completely
+     SILENT. A lift that fell across four priced sessions with three unpriced
+     ones in between was told its load is falling over a span it never measured.
+
+     STRICTLY BETWEEN the first and last priced session, deliberately. A gap
+     BEFORE the first priced session or AFTER the last was never stepped over:
+     the comparison does not span it. Counting those would fire the clause on
+     every lift with unpriced history -- the common case on a long window --
+     and a disclosure that fires unconditionally carries no information. */
+  function skippedGapCount(rows) {
+    var first = -1, last = -1, i;
+    for (i = 0; i < (rows || []).length; i++) {
+      if (rows[i] && rows[i].top != null) { if (first < 0) first = i; last = i; }
+    }
+    if (first < 0 || last <= first) return 0;
+    var gaps = 0;
+    for (i = first + 1; i < last; i++) {
+      if (!rows[i] || rows[i].top == null) gaps++;
+    }
+    return gaps;
+  }
+
+  /* The same rule over a DATE RANGE of the log, for ORM_DECLINING -- whose
+     series has already discarded the unpriced entries, so it cannot count them
+     from what it holds. Deloads are excluded here exactly as exerciseMaxSeries
+     excludes them, or a taper would read as a gap. */
+  function unpricedBetween(ctx, exId, fromISO, toISO) {
+    var key = String(exId), gaps = 0;
+    ((ctx || {}).log || []).forEach(function (e) {
+      if (!e || !e.date) return;
+      if (String(e.date) <= String(fromISO) || String(e.date) >= String(toISO)) return;
+      if (ctx.deloadOf && ctx.deloadOf(e)) return;
+      if (!exUseHasBand(e, key)) return;
+      if (!entryLoadOf(e, key)) gaps++;
+    });
+    return gaps;
+  }
+
+  /* ONE SENTENCE, two readers. Both apps rendered this note by INDEX
+     (`res.notes[1]`) into an array this effort reordered twice -- a split of
+     the load/volume note and three new caveats all landed after it. A named
+     export means a reword or a reorder can never make a tab print a different
+     note than the one its heading promises. */
+  var BLOCK_INFERENCE_NOTE =
+    "Blocks are inferred from programId changes and workoutNum restarts; " +
+    "a past session logged out of order can split one.";
+
   function loadCaveatNotes(entries, gearOf) {
     var notes = [];
     notes.push("Every effective-load figure is a PEAK: the load at the hardest " +
@@ -2203,47 +2307,11 @@
       "feel far lighter than its peak.");
     var sawRomBlind = false, sawPreFold = false, sawPrePlate = false,
         sawPreBandPath = false, sawPrePress = false, sawPreGrip = false;
-    /* COVERAGE, counted rather than dated. The stamp boundary in a real log is
-       RAGGED -- Greg's carries stamps from 2026-07-20, gaps until 07-28 and is
-       clean only from 07-30 -- so any single "figures start on X" is either
-       over-claiming (invite trust in the gap zone) or under-claiming (discard
-       the real stamps before it). Counts are true either way.
-
-       COUNTED PER EXERCISE-USE, NOT PER SESSION, since 2026-10-01. The first
-       version asked "does this session carry any stamp at all", which made it
-       go silent in exactly the shape it was written for. A stamp is per
-       exercise per session, so a session can be half priced -- and the
-       transition zone is full of those: 8 to 10 gaps per session ALONGSIDE
-       real stamps means every one of those sessions has at least one stamp and
-       counted as fully priced.
-
-       The result was a window where no note appeared while the rows inside it
-       said "only 2 of 5 session(s) carry a load figure". The note designed to
-       explain that shortage was the one thing not saying it. Found by the
-       final whole-branch review; `nLoaded` on a row has always been
-       per-exercise, so counting uses is what makes the two agree.
-
-       A use with NO BANDS is not a gap: there is nothing to price, which is a
-       different fact from failing to price it. It enters neither count. */
-    var usePriced = 0, usePriceable = 0, earliestPriced = null;
+    /* The counts come from loadCoverage, which the ANALYZE tab also reads --
+       one rule, so the sentence and the on-screen readout cannot disagree. */
+    var cov = loadCoverage(entries);
     (entries || []).forEach(function (e) {
       if (!e) return;
-      Object.keys(e.exercises || {}).forEach(function (exId) {
-        var sets = (e.exercises || {})[exId] || [];
-        var hasBand = sets.some(function (s) {
-          return setSegments(s).some(function (g) {
-            return ((g.bands) || []).length > 0;
-          });
-        });
-        if (!hasBand) return;
-        usePriceable++;
-        if (entryLoadOf(e, exId)) {
-          usePriced++;
-          if (earliestPriced == null || String(e.date) < earliestPriced) {
-            earliestPriced = String(e.date);
-          }
-        }
-      });
       Object.keys(e.load || {}).forEach(function (exId) {
         var ld = e.load[exId];
         if (!ld || typeof ld !== "object") return;
@@ -2259,7 +2327,7 @@
         if (stampPredatesGripTable(e.date, exId)) sawPreGrip = true;
       });
     });
-    if (usePriceable && usePriced < usePriceable) {
+    if (cov.priceable && cov.priced < cov.priceable) {
       /* "logged exercises", not "sessions" -- the count is per exercise per
          session now, and naming it wrongly would restate the bug this fixed.
 
@@ -2267,9 +2335,9 @@
          the change / the best, because this same note is emitted on the setup
          sheet and the history report, neither of which HAS those columns. One
          sentence has to be true on all three surfaces. */
-      notes.push("Load figures cover " + usePriced + " of " + usePriceable +
+      notes.push("Load figures cover " + cov.priced + " of " + cov.priceable +
         " logged exercises here" +
-        (earliestPriced ? ", the earliest on " + earliestPriced : "") +
+        (cov.earliest ? ", the earliest on " + cov.earliest : "") +
         ". Effective load is frozen on each workout at save time, so an " +
         "exercise logged before this app computed one carries no figure and is " +
         "left out of the load figures -- its reps and sets still count. " +
@@ -4852,7 +4920,8 @@
       flags.push({ code: "ORM_DECLINING",
         text: "Estimated max has fallen three sessions running, from " +
           Math.round(rows[n-4].estMax) + " lb to " + Math.round(last.estMax) +
-          " lb." + provNote });
+          " lb" + gapClause(unpricedBetween(ctx, exId, rows[n-4].date, last.date)) +
+          "." + provNote });
     }
 
     if (sum.pctOfMax != null && sum.pctOfMax < ORM_LIGHT_PCT) {
@@ -5847,6 +5916,38 @@
   /* ---- analyzer: exercise level ----------------------------------------- */
   /* Priority-ordered, first match wins. READY outranks STALLED: if the lift has
      earned a load increase, that is the action, not a stall remedy. */
+  /* THE DISCLOSURE, in one place because two surfaces say it: this verdict and
+     the ORM_DECLINING flag. Silent at zero, so a lift whose priced history is
+     continuous reads exactly as it did before -- the clause has to be
+     informative when it appears, which means absent when there is nothing to
+     disclose. */
+  /* BOTH FIGURES, BOTH LABELLED, because they are two different measurements
+     and they can disagree in SIGN.
+
+     `trend` is decided by slopePct -- a least-squares slope over the priced
+     tops, expressed as a percentage of the first value, per session.
+     `deltaPct` is simply last minus first over first. On Greg's real log
+     #129 Standing Bicep Curl runs 31, 90, 56, 62, 56, 56, 30, 31, 31, 38,
+     51, 48: the trend line falls 6.1% a session while the last session still
+     beats the first by 56%. The verdict quoted deltaPct beside the word
+     "falling" and read, verbatim, "Top load is falling (+56% across 12
+     priced sessions)" -- both halves true, the sentence nonsense.
+
+     Naming each figure for what it is costs eight words and makes the
+     sentence unfalsifiable by its own data. The shape does NOT change when
+     the two agree: a sentence whose structure depends on whether two numbers
+     happen to share a sign is one nobody can learn to read. */
+  function trendFigures(row) {
+    return "trend " + fmtDelta(row.slopePct) + " a session; latest is " +
+      fmtDelta(row.deltaPct) + " on the first";
+  }
+
+  function gapClause(skipped) {
+    if (!(skipped > 0)) return "";
+    return ", skipping " + skipped + " unpriced session" +
+      (skipped === 1 ? "" : "s") + " in between";
+  }
+
   function exerciseVerdict(ctx, row) {
     var phrase = barPhrase(row.barApplied, row.thresh, row.rirAdd, row.unit);
     /* Staleness first. progressionState judges the most recent session however
@@ -5912,9 +6013,9 @@
         "trend (needs " + CONST.TREND_MIN_N + "). Keep logging." };
     }
     if (row.trend === "DECLINING") {
-      return { code: "DECLINING", text: "Top load is falling (" + fmtDelta(row.deltaPct) +
-        " across " + row.nLoaded + " priced sessions). Hold the load and rebuild " +
-        "reps, and check recovery." };
+      return { code: "DECLINING", text: "Top load is falling across " + row.nLoaded +
+        " priced sessions" + gapClause(row.skippedGaps) + " (" +
+        trendFigures(row) + "). Hold the load and rebuild reps, and check recovery." };
     }
     if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
         row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
@@ -5922,8 +6023,9 @@
         " short of the " + phrase + " and flat - push 1-2 more reps before adding load." };
     }
     if (row.trend === "GROWING") {
-      return { code: "GROWING", text: "Progressing (" + fmtDelta(row.deltaPct) +
-        " top load across " + row.nLoaded + " priced sessions). Hold course." };
+      return { code: "GROWING", text: "Progressing on top load across " + row.nLoaded +
+        " priced sessions" + gapClause(row.skippedGaps) + " (" +
+        trendFigures(row) + "). Hold course." };
     }
     return { code: "HOLDING", text: row.nLoaded < 3
       ? "Only " + row.nLoaded + " of " + row.n + " session(s) in this window " +
@@ -6036,8 +6138,34 @@
         nLoaded: priced.length,
         firstTop: pFirst ? pFirst.top : null,
         lastTop: pLast ? pLast.top : null,
-        deltaPct: (pFirst && pLast && pFirst.top)
+        /* NO ZERO GUARD on pFirst.top, and that is deliberate rather than an
+           oversight: `priced` is filtered on `top != null`, and a top comes
+           only from entryLoadOf, which refuses any lb that is not finite and
+           positive. A zero or negative stamp therefore cannot reach this
+           array, so testing for it was dead weight reading as a live
+           division-by-zero concern. The invariant is pinned in
+           test_coverage_and_gaps.cjs against zero, negative, string and NaN
+           stamps -- if it ever stops holding, those fail rather than this
+           silently returning Infinity. */
+        /* TWO PRICED SESSIONS, or no change at all. With one, pFirst IS
+           pLast and this computed (top - top) / top = exactly 0, so a lift
+           with ten logged sessions and one priced one printed "+0%" -- read as
+           a plateau, when the truth is that there is nothing to compare.
+           exerciseProgressionRows has required two since commit two; this did
+           not, so the STRENGTH table showed an em dash for the same lift in
+           the same window. SIXTEEN rows on Greg's real ALL TIME window.
+
+           NO ZERO GUARD on pFirst.top, deliberately rather than by oversight:
+           `priced` is filtered on `top != null` and a top comes only from
+           entryLoadOf, which refuses any lb that is not finite and positive,
+           so a zero top cannot reach this array to be divided by. The
+           invariant is pinned in test_coverage_and_gaps.cjs against zero,
+           negative, string and NaN stamps. */
+        deltaPct: (priced.length >= 2)
           ? ((pLast.top - pFirst.top) / pFirst.top) * 100 : null,
+        /* The unpriced sessions the slope stepped over. Reported so DECLINING
+           can say it compared across a span it did not fully measure. */
+        skippedGaps: skippedGapCount(arr),
         slopePct: sp,
         trend: classifyTrend(sp),
         bestReps: arr.reduce(function (m, x) { return x.best > m ? x.best : m; }, 0),
@@ -6200,6 +6328,7 @@
         deltaPct = ((pLast.top - firstTop) / firstTop) * 100;
       }
       var priorTop = pLast ? priorBest(exId, pLast.date) : 0;
+      var skipped = skippedGapCount(arr);
       return {
         id: exId,
         name: ctx.nameOf ? ctx.nameOf(exId) : ("#" + exId),
@@ -6215,6 +6344,7 @@
            the same function. Two copies is how the ANALYZE report and this
            table come to disagree about whether one session was a record. */
         isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
+        skippedGaps: skipped,
         lastDate: last.date,
         /* ALL-TIME on purpose, like allTimeBest beside it. An estimated max is
            a statement about demonstrated capacity, and scoping it to the
@@ -6773,8 +6903,7 @@
       (blocks.length ? ": " + blocks.map(function (b) {
         return b.name + " " + b.from + " to " + b.to;
       }).join("; ") : "") + ".");
-    notes.push("Blocks are inferred from programId changes and workoutNum restarts; " +
-      "a past session logged out of order can split one.");
+    notes.push(BLOCK_INFERENCE_NOTE);
     notes.push("Deload sessions count toward volume and adherence but are excluded " +
       "from every trend, stall and progression judgment.");
     /* Recommendation 21: say what the load axis actually is, on the report
@@ -6833,6 +6962,12 @@
 
     return {
       window: win, totals: totals, prevTotals: prevTotals,
+      /* THE COVERAGE AS DATA. loadCaveatNotes already says it in a sentence
+         for the printed report; the ANALYZE tab renders this instead, because
+         until 2026-10-01 nothing on screen rendered res.notes at all and the
+         one caveat explaining a partial window was invisible to anyone working
+         from the tab. Same function, so the two cannot disagree. */
+      loadCoverage: loadCoverage(win.entries),
       deltas: {
         volume: prevTotals ? pct(totals.volume, prevTotals.volume) : null,
         /* SETS is the work-done delta the tabs report since 2026-10-01. It is
@@ -8789,6 +8924,10 @@
     analyzeExercises: analyzeExercises,
     exerciseProgressionRows: exerciseProgressionRows,
     exerciseVerdict: exerciseVerdict,
+    loadCoverage: loadCoverage,
+    skippedGapCount: skippedGapCount,
+    unpricedBetween: unpricedBetween,
+    BLOCK_INFERENCE_NOTE: BLOCK_INFERENCE_NOTE,
     prescribedShares: prescribedShares,
     balanceOf: balanceOf,
     adherenceOf: adherenceOf,

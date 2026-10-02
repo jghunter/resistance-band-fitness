@@ -3086,6 +3086,53 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
         {statCard('PRs', prCount, 'this window', prCount ? C.green : C.dimGray)}
       </div>
 
+      {/* LOAD COVERAGE — F1. This block exists because the coverage caveat
+          reached the PRINTED report and nothing else. loadCaveatNotes feeds
+          buildAnalysisDoc, so PRINT ANALYSIS / SAVE .md / COPY .md all carried
+          it, while the tab rendered no res.notes at all — and for a reader who
+          works from the screen, the one sentence explaining why a long
+          window's load figures are partial was invisible. Measured on Greg's
+          own log: 30 DAYS is 145 of 145, but 90 DAYS is 290 of 409 and ALL
+          TIME 290 of 540, so the windows he uses for retrospectives are
+          exactly the ones that were saying nothing.
+
+          Read from res.loadCoverage, which is the SAME function the note
+          quotes — never a substring match against the sentence. Silent when
+          the window is fully priced, which is the note's own rule. */}
+      {res.loadCoverage && res.loadCoverage.priceable &&
+       res.loadCoverage.priced < res.loadCoverage.priceable ? (
+        <div style={{...widget, borderLeft:'2px solid '+C.amber}}>
+          <span style={lbl}>LOAD COVERAGE</span>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',marginTop:4}}>
+            <span style={{fontFamily:'monospace',fontSize:13,color:C.amber,fontWeight:700}}>
+              {R2.fmtNum(res.loadCoverage.priced)} of {R2.fmtNum(res.loadCoverage.priceable)}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+              logged exercises carry a load figure
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.accent,
+              letterSpacing:'-0.05em'}}>
+              {R2.barText((res.loadCoverage.priced / res.loadCoverage.priceable) * 100, 20)}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.readout}}>
+              {Math.round((res.loadCoverage.priced / res.loadCoverage.priceable) * 100)}%
+            </span>
+            {res.loadCoverage.earliest ? (
+              <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginLeft:'auto'}}>
+                earliest {res.loadCoverage.earliest}
+              </span>
+            ) : null}
+          </div>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+            display:'block',marginTop:6,lineHeight:1.6}}>
+            Effective load is frozen on each workout at save time, so an exercise logged
+            before this app computed one carries no figure and is left out of the load
+            figures &mdash; its reps and sets still count. An em dash in a load column
+            means no frozen figure, never a measured zero.
+          </span>
+        </div>
+      ) : null}
+
       {/* Recommendations lead: the actionable part belongs at the top on screen. */}
       <div style={widget}>
         <span style={lbl}>RECOMMENDATIONS</span>
@@ -3185,8 +3232,15 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               )}
             </div>
           ))}
+          {/* THE NAMED CONSTANT, not res.notes[1]. This was an INDEX into an
+              array that this effort reordered twice -- the load/volume note was
+              split in two and three caveats were added -- so the widget was one
+              push away from captioning program blocks with a sentence about
+              something else. The engine emits this very string among its notes,
+              which test_coverage_and_gaps.cjs pins, so the tab and the printed
+              report cannot word it differently. */}
           <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginTop:8,lineHeight:1.5}}>
-            {res.notes[1]}
+            {R2.BLOCK_INFERENCE_NOTE}
           </div>
         </div>
       )}
@@ -3199,6 +3253,30 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
           </div>
         </div>
       )}
+      {/* METHOD NOTES — the rest of F1. Every note analyze() produces, in the
+          order the printed report prints them, under the same heading. The
+          coverage figure is promoted into its own block above because it is
+          the one a reader acts on; the remaining notes are reference, so they
+          are collapsed by default rather than pushed off the end of a long
+          tab. Collapsed is not hidden: the PEAK caveat and the provenance-era
+          caveats have been in the module since 2026-08-06 and reached this
+          screen for the first time today. */}
+      {res.notes && res.notes.length > 0 ? (
+        <details style={widget}>
+          <summary style={{...lbl, cursor:'pointer'}}>
+            METHOD NOTES ({res.notes.length})
+          </summary>
+          <div style={{marginTop:8}}>
+            {res.notes.map((t,i) => (
+              <div key={i} style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+                lineHeight:1.7,paddingBottom:7,marginBottom:7,
+                borderBottom:(i === res.notes.length - 1 ? 'none' : '1px solid '+C.bgInput)}}>
+                {t}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   )
 }
@@ -3289,6 +3367,8 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
      since 2026-10-01, so the bars descend. */
   const gRows = RBTS_REPORTS.analyzeGroups(rmCtx, W, sProg).filter(g => g.sets > 0)
   const gHasLandmark = gRows.some(g => g.landmark != null)
+  /* The same count the ANALYZE tab and the printed note read. */
+  const sCov = RBTS_REPORTS.loadCoverage(winEntries)
   const gMaxWeekly = gRows.reduce((m,g) => Math.max(m, g.weeklySets), 0) || 1
   const card = (label, value, sub, color) => (
     <div style={{...widget,flex:'1 1 140px',minWidth:140}}>
@@ -3376,6 +3456,39 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[0].date}</span>
             <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>{series[series.length-1].date}</span>
           </div>
+        </div>
+      ) : null}
+
+      {/* WHAT THIS TABLE COULD NOT PRICE — F1 on the STRENGTH surface. This
+          is the table that actually shows the em dashes, so it is the one
+          place a reader most needs to be told why. Measured on Greg's log:
+          SINCE LAST through 30 DAYS are effectively fully priced, 90 DAYS is
+          290 of 409 and ALL TIME 290 of 540, so the line appears on exactly
+          the retrospective windows where the dashes appear. Same
+          loadCoverage the ANALYZE tab and the printed note read. */}
+      {sCov.priceable && sCov.priced < sCov.priceable ? (
+        <div style={{...widget, borderLeft:'2px solid '+C.amber}}>
+          <span style={lbl}>LOAD COVERAGE</span>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',marginTop:4}}>
+            <span style={{fontFamily:'monospace',fontSize:12,color:C.amber,fontWeight:700}}>
+              {fmtNum(sCov.priced)} of {fmtNum(sCov.priceable)}
+            </span>
+            <span style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
+              logged exercises in this window carry a load figure
+            </span>
+            {sCov.earliest ? (
+              <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginLeft:'auto'}}>
+                earliest {sCov.earliest}
+              </span>
+            ) : null}
+          </div>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+            display:'block',marginTop:6,lineHeight:1.6}}>
+            An em dash in START, LATEST or BEST means no frozen load figure &mdash; never a
+            measured zero. Effective load is frozen on each workout at save time, so a
+            session logged before this app computed one carries none; its reps and sets
+            still count, and the &times; column includes them.
+          </span>
         </div>
       ) : null}
 
