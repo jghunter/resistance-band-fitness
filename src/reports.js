@@ -5960,6 +5960,23 @@
       });
       return best;
     }
+    /* A PR claim requires that we can SEE what was beaten. priorBest()
+       returning 0 is ambiguous on its own: it is the honest answer for a
+       lift with no earlier session at all, AND for a lift whose earlier
+       sessions exist but are all unpriced -- entryLoadOf has nothing to
+       compare against in either case, but only the first is a genuine
+       "nothing to beat". The second has history we simply cannot see past,
+       and a first-ever PRICED session beating an invisible history is not a
+       PR -- it is a vendor-rated 105 lb era read as "beaten" by a 35 lb
+       effective-load era, which is not a comparison at all.
+
+       n === nLoaded disambiguates: every session in this row IS priced, so a
+       0 prior really is an empty history rather than an unseen one. */
+    function isGenuinePR(lastTop, priorTop, n, nLoaded) {
+      if (!(lastTop > 0)) return false;
+      if (priorTop > 0) return lastTop > priorTop;
+      return n === nLoaded;
+    }
 
     return Object.keys(per).map(function (exId) {
       var arr = per[exId];
@@ -5975,6 +5992,7 @@
          sessions has no trend, and Task 4's verdict says WHICH shortage. */
       var sp = slopePct(priced.map(function (x) { return x.top; }));
       var ps = progressionState(ctx, exId, shiftISO(win.to, 1));
+      var priorTop = pLast ? priorBest(exId, pLast.date) : 0;
       var row = {
         id: exId,
         name: ctx.nameOf(exId),
@@ -5995,8 +6013,7 @@
         unit: repUnit(exId),
         volume: arr.reduce(function (a, x) { return a + x.vol; }, 0),
         allTimeBest: allBest[exId] == null ? null : allBest[exId],
-        isPR: !!(pLast && pLast.top > 0 &&
-                 pLast.top > priorBest(exId, pLast.date)),
+        isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
         ready: ps.ready,
         stalled: ps.stalled,
         lastDate: last.date,
