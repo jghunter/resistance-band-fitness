@@ -6079,6 +6079,64 @@
     return out;
   }
 
+  /* ---- THE FOLD across a trend span (added 2026-10-07) ------------------
+     `doubled` is a PER-SET flag meaning the whole stack was folded over on
+     itself, and it MULTIPLIES the load by 2 by construction. So a span whose
+     fold changes is partly reporting a change in HOW THE BAND WAS USED, not in
+     how strong the lifter is -- the same kind of statement provenanceMix makes
+     about the measurement basis, on a different axis.
+
+     THREE STATES, not two. The flag is per set, so a session could in principle
+     fold one set and not the next, and `some(s => s.doubled)` would call that
+     "folded" and be wrong half the time. Greg's real log has ZERO mixed-fold
+     exercise-uses in 578 (171 all-folded, 407 none, and 54 of those uses carry
+     more than one set, so the uniformity is real rather than an artifact of
+     one-set HIT) -- but "no real data exercises it" is how a silent wrong
+     answer ships, so `"mixed"` is a value here and the clause names it.
+
+     WHY THE FOLD AND NOT THE BAND STACK. Measured over Greg's 258 consecutive
+     priced session pairs: the STACK changed in 205 of them and the rig in 140 --
+     that is progressive overload, the ordinary case, and flagging it would fire
+     on four fifths of everything. THE FOLD CHANGED IN 14. Six of the seven
+     largest load steps in the whole log are fold changes, which is what a 2x
+     multiplier does. A ratio threshold was considered and rejected for the same
+     reason: at 2x it fires on 41 pairs, nearly all of them explained by an
+     ordinary band change, and it would need a cutoff with no principled basis.
+
+     ENDPOINTS ONLY, Greg's call 2026-10-07. A DECLINING verdict compares the
+     FIRST and LAST priced session of the span, so those two are the readings
+     the sentence is about. Testing "anywhere inside the span" also fires on
+     #1 Standing Band Chest Press at 30 days, which mixedBasisClause already
+     flags -- two clauses on one verdict, saying the same thing twice. */
+  function foldStateOf(sets) {
+    if (!sets || !sets.length) return null;
+    var d = 0, i;
+    for (i = 0; i < sets.length; i++) { if (sets[i] && sets[i].doubled) d++; }
+    if (d === 0) return false;
+    if (d === sets.length) return true;
+    return "mixed";
+  }
+  function foldWord(state) {
+    return state === true ? "FOLDED" : state === "mixed" ? "part folded" : "singled";
+  }
+  /* `span` is { first, last, changed } over the PRICED endpoints. Silent unless
+     the two differ, on the same rule gapClause and mixedBasisClause follow: a
+     clause has to be informative when it appears, which means absent when
+     there is nothing to disclose. */
+  /* DELIBERATELY NOT built on MIXED_BASIS_WHY. That sentence says the figures
+     may be "a different kind of load figure" -- which is the right claim about
+     a provenance change and the WRONG one here. A fold change produces a real
+     load change, correctly computed, on the same basis throughout: the lifter
+     chose to use the band differently. Saying it was a different kind of
+     figure would be a false statement about a figure that is exactly right. */
+  function foldChangeClause(span) {
+    if (!span || !span.changed) return "";
+    return " Note: the band was " + foldWord(span.first) + " on the first of " +
+      "these sessions and " + foldWord(span.last) + " on the last. A fold " +
+      "DOUBLES the load by construction, so part of this change is a change in " +
+      "how the band was used rather than in how much you can move.";
+  }
+
   /* The heaviest FROZEN STAMP anywhere in a set of entries, with what and when.
      Added 2026-10-07 for the STRENGTH tab's BEST SET LOAD card, which read
      entryStats().topLoad -- the VENDOR RATED MIDPOINT -- while the EXERCISE
@@ -6177,10 +6235,17 @@
          inherited rule for the in-workout badge), so a load-basis change does
          not bear on it, and caveating a reps judgment with a load caveat would
          be a false statement about which figure was in doubt. */
+      /* THE TWO DISCLOSURES, basis then fold, both after the advice and never
+         instead of it. They are independent and can both fire: one says the
+         readings were taken differently, the other that the band was used
+         differently. On Greg's log they are near-disjoint by design --
+         mixedBasisClause catches five of his six DECLINING lifts and the fold
+         clause catches the sixth, #39 Band Reverse Fly, whose whole 123 -> 28
+         lb "decline" is one band unfolded. */
       return { code: "DECLINING", text: "Top load is falling across " + row.nLoaded +
         " priced sessions" + gapClause(row.skippedGaps) + " (" +
         trendFigures(row) + "). Hold the load and rebuild reps, and check recovery." +
-        mixedBasisClause(row.provMix) };
+        mixedBasisClause(row.provMix) + foldChangeClause(row.foldSpan) };
     }
     if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
         row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
@@ -6263,6 +6328,9 @@
                             pass over the whole window. */
                          provenance: eff ? eff.provenance : null,
                          era: eff ? eff.era : null,
+                         /* THE FOLD of this session, for foldChangeClause.
+                            true / false / "mixed" -- see foldStateOf. */
+                         fold: foldStateOf(e.exercises[exId] || []),
                          hasBand: exUseHasBand(e, exId),
                          reps: reps, vol: vol, best: best,
                          bands: setBands((e.exercises[exId] || [])[0]) });
@@ -6353,6 +6421,17 @@
            PRICED points only -- an unpriced session has no basis to disagree
            with. See provenanceMix. */
         provMix: provenanceMix(priced),
+        /* THE FOLD at the two ENDS of that span, and nothing in between --
+           Greg's call 2026-10-07. The DECLINING verdict compares pFirst to
+           pLast, so those two are the readings the clause is about.
+           NOT on exerciseProgressionRows' rows: he chose no per-row marker, and
+           handing the dashboard a field nobody renders is how the two
+           functions drift apart again -- the reason the two row builders are
+           separate functions in the first place. */
+        foldSpan: (priced.length >= 2)
+          ? { first: pFirst.fold, last: pLast.fold,
+              changed: pFirst.fold !== pLast.fold }
+          : null,
         slopePct: sp,
         trend: classifyTrend(sp),
         bestReps: arr.reduce(function (m, x) { return x.best > m ? x.best : m; }, 0),
@@ -9189,6 +9268,8 @@
     loadCoverage: loadCoverage,
     provenanceMix: provenanceMix,
     mixedBasisClause: mixedBasisClause,
+    foldStateOf: foldStateOf,
+    foldChangeClause: foldChangeClause,
     windowTopLoad: windowTopLoad,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,
