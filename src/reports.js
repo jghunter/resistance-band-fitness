@@ -4611,8 +4611,17 @@
     var ld = ((e || {}).load || {})[String(exId)];
     if (!ld || typeof ld !== "object") return null;
     if (!finitePos(ld.lb)) return null;
+    /* `era` RIDES ALONG, added 2026-10-07. A stamp's era is a basis change as
+       real as its provenance -- #216 Pec Crossover's whole priced history is
+       RATED, and two of its four priced sessions are era "pre-fold" while two
+       are not, so a provenance-only mix test calls that series uniform when it
+       is not. loadCaveatNotes already read ld.era straight off the raw stamp;
+       nothing that worked per-row could, because this was the only accessor.
+       null rather than absent, so provenanceMix can treat "no era" as a value
+       and notice when only SOME points carry one. */
     return { lb: ld.lb,
              provenance: ld.provenance || "RATED",
+             era: ld.era || null,
              romBlind: !!ld.romBlind };
   }
   /* Top load = heaviest single phase of the set (not the last, not the sum). */
@@ -4941,9 +4950,11 @@
     if (daysBetween(last.date, today) >= CONST.DORMANT_DAYS) return flags;
 
     var sum = exerciseMaxSummary(ctx, exId);
+    /* THE SHARED CLAIM, not a second wording of it. This text is unchanged --
+       MIXED_BASIS_WHY is the exact tail this string already carried -- and the
+       load-series counterpart (mixedBasisClause) now builds on the same one. */
     var provNote = sum.mixedProvenance
-      ? " Note: this series mixes provenance, so part of the change may be a " +
-        "different kind of load figure rather than a change in strength."
+      ? " Note: this series mixes provenance, so " + MIXED_BASIS_WHY + "."
       : "";
 
     var n = rows.length;
@@ -5992,6 +6003,106 @@
       (skipped === 1 ? "" : "s") + " in between";
   }
 
+  /* ---- the BASIS of a load comparison (added 2026-10-07) ------------------
+     A load trend is only a strength claim if every reading in it was measured
+     the same way. `provenance` says which path produced the stamp -- MEASURED
+     (a force-scale reading), MODELED (geometry resolved), RATED (the DEGRADED
+     FALLBACK, written when the gear or the geometry could not be resolved) --
+     and `era` says which version of the model wrote it. A span that changes
+     either is partly reporting a change of instrument.
+
+     THIS WAS COMPUTED AND THROWN AWAY. exerciseMaxSummary has returned
+     mixedProvenance since the one-rep-max work, and oneRmFlags appends a
+     sentence about it to ORM_DECLINING -- but that is the 1RM series, and
+     NOTHING tested the LOAD series the DECLINING verdict is actually decided
+     on. The two are different series and give different counts: on Greg's log
+     at 2026-10-07 the 1RM series flags 23 of 53 rows on the 30-day window
+     (it is ALL-TIME and reaches back past the window), while THIS test flags
+     15 of 53 -- the window's own span -- rising to 28 of 80 on ALL TIME. Five
+     of the six DECLINING recommendations on the 90-day window sit on spans
+     that change basis mid-series. #43 Standing Band Overhead Press runs 94
+     MODELED, 55 RATED, 37 MODELED, 31 MODELED, 30 RATED, 13 RATED, 56 RATED,
+     13 MODELED, 13 RATED, 73 MODELED, 54 MODELED, and was told "latest is
+     -42% on the first ... check recovery".
+
+     MIXED means the span DISAGREES WITH ITSELF, not merely that it is old: a
+     series that is RATED throughout, or pre-fold throughout, is one basis and
+     is not flagged. `eras` is reported separately from `mixed` so an all-one-era
+     span can still be described by a caller that wants to. */
+  function provenanceMix(points) {
+    var provs = {}, eras = {}, n = 0;
+    (points || []).forEach(function (p) {
+      if (!p || p.top == null) return;
+      n++;
+      provs[p.provenance || "RATED"] = 1;
+      eras[p.era || ""] = 1;          // "" IS a value: "this one carries no era"
+    });
+    var pl = Object.keys(provs).sort();
+    var ek = Object.keys(eras);
+    return {
+      n: n,
+      provenances: pl,
+      eras: ek.filter(function (k) { return k !== ""; }).sort(),
+      /* TWO POINTS MINIMUM. One reading cannot disagree with itself, and a
+         single-session row has no comparison to caveat. */
+      mixed: n >= 2 && (pl.length > 1 || ek.length > 1),
+      degraded: provs.RATED ? true : false
+    };
+  }
+
+  /* ONE COPY OF THE CLAIM, shared with oneRmFlags' provNote below. The two
+     sentences name different series -- that one the estimated-max series, this
+     one the top-load series -- but they assert the same thing about both, and
+     two wordings of one claim is how two surfaces come to say different things
+     about the same session. */
+  var MIXED_BASIS_WHY =
+    "part of the change may be a different kind of load figure rather than a " +
+    "change in strength";
+
+  function mixedBasisClause(mix) {
+    if (!mix || !mix.mixed) return "";
+    var what = [];
+    if (mix.provenances.length > 1) what.push(mix.provenances.join(" + "));
+    if (mix.eras.length) what.push("era " + mix.eras.join(" + "));
+    var out = " Note: this comparison MIXES LOAD BASES (" + what.join("; ") +
+      "), so " + MIXED_BASIS_WHY + ".";
+    /* The RATED sentence only where RATED is actually one of the bases being
+       mixed. A MODELED + MEASURED span is two good figures disagreeing about
+       method; a span with RATED in it contains a reading that is a fallback,
+       and that is a different and more actionable fact. */
+    if (mix.provenances.length > 1 && mix.provenances.indexOf("RATED") >= 0) {
+      out += " RATED is the degraded fallback -- it is written when the gear " +
+        "or the geometry could not be resolved -- so a RATED reading sitting " +
+        "between computed ones is a measurement artifact rather than a change " +
+        "in the lift.";
+    }
+    return out;
+  }
+
+  /* The heaviest FROZEN STAMP anywhere in a set of entries, with what and when.
+     Added 2026-10-07 for the STRENGTH tab's BEST SET LOAD card, which read
+     entryStats().topLoad -- the VENDOR RATED MIDPOINT -- while the EXERCISE
+     PROGRESSION table two widgets below it reported the stamp. Both printed lb,
+     side by side, 450 against 627 on Greg's 30-day window. The card is a
+     one-line summary of the table's BEST column and must be on the table's
+     basis.
+     Deloads are NOT excluded: a reduced load can never be the maximum, so
+     filtering them is a no-op that would only invite this and the table to
+     disagree -- the same reasoning the allBest passes already use. */
+  function windowTopLoad(entries) {
+    var best = { lb: null, exId: null, date: null };
+    (entries || []).forEach(function (e) {
+      Object.keys((e || {}).exercises || {}).forEach(function (exId) {
+        var eff = entryLoadOf(e, exId);
+        if (!eff) return;
+        if (best.lb == null || eff.lb > best.lb) {
+          best = { lb: eff.lb, exId: exId, date: e.date };
+        }
+      });
+    });
+    return best;
+  }
+
   function exerciseVerdict(ctx, row) {
     var phrase = barPhrase(row.barApplied, row.thresh, row.rirAdd, row.unit);
     /* Staleness first. progressionState judges the most recent session however
@@ -6057,9 +6168,19 @@
         "trend (needs " + CONST.TREND_MIN_N + "). Keep logging." };
     }
     if (row.trend === "DECLINING") {
+      /* THE BASIS DISCLOSURE goes exactly where gapClause goes, and for the
+         same reason Greg gave on 2026-10-01: DECLINING drives an action --
+         hold the load, rebuild reps, check recovery -- so what the comparison
+         could not see bears on a decision. GROWING says hold course and gets
+         neither clause.
+         NOT on STALLED, deliberately: isStalled measures REPS only (the app's
+         inherited rule for the in-workout badge), so a load-basis change does
+         not bear on it, and caveating a reps judgment with a load caveat would
+         be a false statement about which figure was in doubt. */
       return { code: "DECLINING", text: "Top load is falling across " + row.nLoaded +
         " priced sessions" + gapClause(row.skippedGaps) + " (" +
-        trendFigures(row) + "). Hold the load and rebuild reps, and check recovery." };
+        trendFigures(row) + "). Hold the load and rebuild reps, and check recovery." +
+        mixedBasisClause(row.provMix) };
     }
     if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
         row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
@@ -6136,6 +6257,12 @@
            from one with NOTHING TO PRICE. Set here rather than recomputed
            there, because the entry is in hand and the row is not. */
         per[exId].push({ date: e.date, top: eff ? eff.lb : null,
+                         /* THE BASIS of this point, for provenanceMix. Taken
+                            here because the stamp is in hand; recomputing it
+                            in the row map would mean a second entryLoadOf
+                            pass over the whole window. */
+                         provenance: eff ? eff.provenance : null,
+                         era: eff ? eff.era : null,
                          hasBand: exUseHasBand(e, exId),
                          reps: reps, vol: vol, best: best,
                          bands: setBands((e.exercises[exId] || [])[0]) });
@@ -6222,6 +6349,10 @@
         /* The unpriced sessions the slope stepped over. Reported so DECLINING
            can say it compared across a span it did not fully measure. */
         skippedGaps: skippedGapCount(arr),
+        /* THE BASIS of the span this row's trend is computed over. Over the
+           PRICED points only -- an unpriced session has no basis to disagree
+           with. See provenanceMix. */
+        provMix: provenanceMix(priced),
         slopePct: sp,
         trend: classifyTrend(sp),
         bestReps: arr.reduce(function (m, x) { return x.best > m ? x.best : m; }, 0),
@@ -6308,8 +6439,11 @@
       Object.keys(e.exercises || {}).forEach(function (exId) {
         var eff = entryLoadOf(e, exId);
         if (!per[exId]) per[exId] = [];
-        /* `hasBand` -- see analyzeExercises' builder and skippedGapCount. */
+        /* `hasBand` -- see analyzeExercises' builder and skippedGapCount.
+           `provenance` / `era` -- see provenanceMix. */
         per[exId].push({ date: e.date, top: eff ? eff.lb : null,
+                         provenance: eff ? eff.provenance : null,
+                         era: eff ? eff.era : null,
                          hasBand: exUseHasBand(e, exId) });
       });
     });
@@ -6403,7 +6537,18 @@
            table come to disagree about whether one session was a record. */
         isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
         skippedGaps: skipped,
+        /* THE BASIS of the START -> LATEST span. Over the PRICED points, and
+           over the WINDOW's points only -- a carried-in START is marked on the
+           row separately and its basis belongs to a session outside the period
+           named at the top of the tab. See provenanceMix. */
+        provMix: provenanceMix(priced),
         lastDate: last.date,
+        /* `daysSince`, added 2026-10-07 alongside the STRENGTH tab's LAST
+           column. analyzeExercises has always carried it -- it is what
+           EX_DORMANT is decided on -- and this row did not, so the tab could
+           render a date and had no way to say whether it was stale without
+           re-deriving the arithmetic locally. Same expression, same asOf. */
+        daysSince: daysBetween(last.date, win.asOf),
         /* ALL-TIME on purpose, like allTimeBest beside it. An estimated max is
            a statement about demonstrated capacity, and scoping it to the
            window would report a different max every time the window button
@@ -6762,8 +6907,23 @@
      volume group, 5 ready-to-progress, 6 minor (neglected group, stalled
      isolation, prescribed-but-unlogged). OVER volume and PRs are reported in
      their own sections and never consume a slot - they are not problems to act
-     on. Capped at REC_CAP so the list stays actionable. */
-  function buildRecommendations(ctx, exRows, groupRows, unlogged) {
+     on. Capped at REC_CAP so the list stays actionable.
+
+     THE CAP IS A RANKING, NOT A FILTER (changed 2026-10-07). It used to be
+     both: `out.slice(0, 10)` was the whole story and the overflow went
+     nowhere, on no surface, with no count. Measured on Greg's log: the 30-day
+     window GENERATES 21 and showed 10; the 90-day window generates 35 and
+     showed 10; ALL TIME generates 50 and showed 10. Because READY is severity
+     5 it lost every slot to DECLINING (3) and EX_DORMANT (4), so on BOTH
+     retrospective windows all twelve READY items -- "Hit the 13r target,
+     progress the load: add the lightest band you own", the single most
+     directly actionable thing this app produces -- were dropped in silence.
+
+     `opts.cap` lets analyze() ask for the full ranked list and do the cutting
+     itself, so the overflow is reachable instead of discarded. The DEFAULT is
+     unchanged, which is what keeps every existing caller and assertion
+     correct: this function still returns ten unless asked otherwise. */
+  function buildRecommendations(ctx, exRows, groupRows, unlogged, opts) {
     var recs = [];
     (groupRows || []).forEach(function (g) {
       if (g.balance === "EXEMPT" || g.neglect === "EXEMPT") return;
@@ -6902,7 +7062,8 @@
       });
     });
     out.sort(function (a, b) { return a.severity - b.severity; });
-    return out.slice(0, CONST.REC_CAP);
+    var cap = (opts && opts.cap != null) ? opts.cap : CONST.REC_CAP;
+    return cap === Infinity ? out : out.slice(0, cap);
   }
 
   /* ---- the single public entry point ------------------------------------- */
@@ -6933,7 +7094,15 @@
     var groups = analyzeGroups(ctx, win, prog);
     var blocks = analyzeBlocks(ctx, win);
     var unlogged = unloggedPrescribed(ctx, win, prog);
-    var recommendations = buildRecommendations(ctx, exercises, groups, unlogged);
+    /* THE FULL RANKED LIST, cut here rather than inside the builder, so the
+       overflow survives to the surfaces. `recommendations` is byte-identical
+       to what it has always been -- the first REC_CAP by severity -- which is
+       what keeps buildAnalysisDoc's numbering and every existing assertion
+       unchanged. See buildRecommendations' header for the measurement. */
+    var recsAll = buildRecommendations(ctx, exercises, groups, unlogged,
+                                       { cap: Infinity });
+    var recommendations = recsAll.slice(0, CONST.REC_CAP);
+    var recommendationsMore = recsAll.slice(CONST.REC_CAP);
     /* Estimated one-rep max, one row per exercise already trained in this
        window, plus the two ORM flags for each. groupOf here must hand
        oneRmFlags the LABEL, not the {label,color} object ctx.groupOf itself
@@ -7037,6 +7206,13 @@
       },
       exercises: exercises, groups: groups, blocks: blocks,
       unlogged: unlogged, recommendations: recommendations, notes: notes,
+      /* THE OVERFLOW, and the total it was cut from. Empty array and an equal
+         total when nothing was cut, so a caller never has to test for the
+         fields' existence -- and a window that fits inside REC_CAP renders
+         exactly as it did before. */
+      recommendationsMore: recommendationsMore,
+      recommendationsTotal: recsAll.length,
+      recommendationsCap: CONST.REC_CAP,
       oneRm: oneRm,
       oneRmMethodName: oneRmMethodLabel(ctx.oneRmMethod)
     };
@@ -7225,14 +7401,31 @@
       }
     }
 
-    /* RECOMMENDATIONS */
-    sections.push({ heading: "RECOMMENDATIONS", type: "notes",
-      rows: res.recommendations.length
-        ? res.recommendations.map(function (r, i) {
-            return (i + 1) + ". [" + r.code + "] " + r.text;
-          })
-        : ["Nothing needs attention in this window - everything is either " +
-           "progressing or on schedule."] });
+    /* RECOMMENDATIONS. The capped list first, in severity order, then the
+       overflow under a rule -- NUMBERED CONTINUOUSLY, because they are one
+       ranked list and restarting at 1 would read as a second, lesser kind of
+       finding. A printed retrospective is exactly where the dropped items
+       mattered most: ALL TIME generates 50 and the heading used to show 10
+       without saying so. Silent when nothing was cut. */
+    var recRows = res.recommendations.length
+      ? res.recommendations.map(function (r, i) {
+          return (i + 1) + ". [" + r.code + "] " + r.text;
+        })
+      : ["Nothing needs attention in this window - everything is either " +
+         "progressing or on schedule."];
+    if ((res.recommendationsMore || []).length) {
+      recRows.push("--- below the top " + res.recommendations.length +
+        " by severity; " + res.recommendationsMore.length + " more of " +
+        res.recommendationsTotal + " ---");
+      res.recommendationsMore.forEach(function (r, i) {
+        recRows.push((res.recommendations.length + i + 1) + ". [" + r.code +
+          "] " + r.text);
+      });
+    }
+    sections.push({ heading: "RECOMMENDATIONS" +
+      ((res.recommendationsMore || []).length
+        ? " (" + res.recommendationsTotal + ")" : ""),
+      type: "notes", rows: recRows });
 
     if (res.unlogged.length) {
       sections.push({ heading: "PRESCRIBED BUT UNLOGGED", type: "notes",
@@ -8994,6 +9187,9 @@
     exerciseProgressionRows: exerciseProgressionRows,
     exerciseVerdict: exerciseVerdict,
     loadCoverage: loadCoverage,
+    provenanceMix: provenanceMix,
+    mixedBasisClause: mixedBasisClause,
+    windowTopLoad: windowTopLoad,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,
     refusedBetween: refusedBetween,

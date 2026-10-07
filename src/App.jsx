@@ -3020,8 +3020,17 @@ const BALANCE_COLOR = { UNDER: C.amber, OVER: C.readout, OK: C.green,
                         EXEMPT: C.dimGray, NONE: C.dimGray }
 const SEVERITY_COLOR = { 1:C.red, 2:C.red, 3:C.amber, 4:C.amber, 5:C.green, 6:C.dimGray }
 
+/* The verdict codes that name something to DO. BY EXERCISE defaults to these
+   because the list is 65-80 rows on Greg's retrospective windows and roughly
+   forty of them say "nothing to do here" at full height -- HOLDING 14,
+   GROWING 13 and EX_DORMANT 12 on his 90-day window alone. Nothing is hidden:
+   the chip row carries every code with its count, and ALL is one tap. */
+const ANALYZE_ACTION_CODES = ['DECLINING','STALLED','READY','NEAR','INSUFFICIENT_N']
+
 function AnalyzeTab({ log, gearInv, myBands, settings }) {
   const [win, setWin] = useState('90')
+  /* BY EXERCISE's own filter: 'action' (the default), 'all', or one verdict code. */
+  const [exFilter, setExFilter] = useState('action')
   const prog = PROGRAMS[Number(settings?.progIdx) || 0] || PROGRAMS[0]
 
   const res = useMemo(() => {
@@ -3145,8 +3154,19 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
 
       {/* Recommendations lead: the actionable part belongs at the top on screen. */}
       <div style={widget}>
-        <span style={lbl}>RECOMMENDATIONS</span>
-        {res.recommendations.length === 0 ? (
+        {/* THE COUNT IS THE POINT. REC_CAP is 10 and used to be a FILTER as
+            well as a ranking: the overflow went nowhere, with nothing said.
+            Measured on Greg's log 2026-10-07 — 30 DAYS generates 21, 90 DAYS
+            35, ALL TIME 50, and all 10 slots went to DECLINING (severity 3)
+            and EX_DORMANT (4), so on BOTH retrospective windows every one of
+            his twelve READY items disappeared. READY is the one that says
+            "add the lightest band you own". */}
+        <span style={lbl}>
+          RECOMMENDATIONS{res.recommendationsTotal > res.recommendations.length
+            ? ' — ' + res.recommendations.length + ' OF ' + res.recommendationsTotal
+            : ''}
+        </span>
+        {res.recommendationsTotal === 0 ? (
           <div style={{fontFamily:'monospace',fontSize:11,color:C.green}}>
             Nothing needs attention in this window.
           </div>
@@ -3161,6 +3181,34 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
             </span>
           </div>
         ))}
+        {(res.recommendationsMore || []).length ? (
+          <details style={{marginTop:10}}>
+            <summary style={{...lbl,cursor:'pointer',marginBottom:0}}>
+              {res.recommendationsMore.length} MORE, BELOW THE TOP {res.recommendations.length} BY SEVERITY
+              {(() => {
+                /* The CODES are named in the summary, closed. "25 more" says
+                   nothing about whether it is worth opening. */
+                const by = {}
+                res.recommendationsMore.forEach(r => { by[r.code] = (by[r.code]||0)+1 })
+                const parts = Object.keys(by).map(k => k + ' ×' + by[k])
+                return parts.length ? ' — ' + parts.join(', ') : ''
+              })()}
+            </summary>
+            <div style={{marginTop:6}}>
+              {res.recommendationsMore.map((r,i) => (
+                <div key={i} style={{display:'flex',gap:8,alignItems:'baseline',
+                  padding:'5px 0',borderBottom:'1px solid '+C.bgInput}}>
+                  <span style={{...pill(SEVERITY_COLOR[r.severity]||C.dimGray), fontSize:9, flexShrink:0}}>
+                    {r.code}
+                  </span>
+                  <span style={{fontFamily:'monospace',fontSize:11,color:C.textSec,lineHeight:1.5}}>
+                    {r.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
 
       <div style={widget}>
@@ -3193,9 +3241,63 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
         ))}
       </div>
 
+      {(() => {
+        /* ── BY EXERCISE ──────────────────────────────────────────────────
+           An IIFE so the chip counts and the rendered rows come from ONE
+           pass. Counting off res.exercises while rendering a filtered subset
+           is how a chip comes to promise rows that are not there. */
+        const counts = {}
+        res.exercises.forEach(r => { counts[r.verdict.code] = (counts[r.verdict.code]||0)+1 })
+        const actionN = res.exercises.filter(r => ANALYZE_ACTION_CODES.indexOf(r.verdict.code) >= 0).length
+        const shown = res.exercises.filter(r => {
+          if (exFilter === 'all') return true
+          if (exFilter === 'action') return ANALYZE_ACTION_CODES.indexOf(r.verdict.code) >= 0
+          return r.verdict.code === exFilter
+        })
+        /* Codes in SEVERITY order where they have one, so the chips read the
+           way the recommendations do rather than alphabetically. */
+        const codeOrder = ['DECLINING','STALLED','READY','NEAR','INSUFFICIENT_N',
+                           'GROWING','HOLDING','EX_DORMANT','EX_UNPRICED']
+        const codesPresent = codeOrder.filter(c => counts[c])
+          .concat(Object.keys(counts).filter(c => codeOrder.indexOf(c) < 0))
+        const chip = (key, label, n, color) => {
+          const on = exFilter === key
+          return (
+            <button key={key}
+              style={{...btn(on,color||C.accent),fontSize:9,padding:'3px 7px'}}
+              onClick={()=>setExFilter(on && key !== 'action' ? 'action' : key)}>
+              {label} {n}
+            </button>
+          )
+        }
+        return (
       <div style={widget}>
-        <span style={lbl}>BY EXERCISE</span>
-        {res.exercises.map(r => (
+        <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'baseline'}}>
+          <span style={{...lbl,marginBottom:0}}>BY EXERCISE</span>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+            {shown.length === res.exercises.length
+              ? res.exercises.length + ' lifts'
+              : 'showing ' + shown.length + ' of ' + res.exercises.length}
+          </span>
+        </div>
+        {/* THE VERDICT CHIPS. Every code with its count, so what is filtered
+            OUT is as visible as what is in -- a filter whose hidden rows are
+            uncounted is the same silence REC_CAP had. */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:8,marginBottom:4}}>
+          {chip('action','NEEDS ACTION',actionN,C.amber)}
+          {chip('all','ALL',res.exercises.length,C.accent)}
+          {codesPresent.map(c => chip(c, c, counts[c], VERDICT_COLOR[c] || C.dimGray))}
+        </div>
+        {shown.length === 0 ? (
+          <div style={{fontFamily:'monospace',fontSize:11,color:C.green,padding:'8px 0'}}>
+            {exFilter === 'action'
+              ? 'Nothing needs attention in this window — every lift is holding, growing or dormant.'
+              : 'No lift in this window carries that verdict.'}
+          </div>
+        ) : null}
+        {shown.map(r => {
+          const basis = basisNote(r.provMix)
+          return (
           <div key={r.id} style={{padding:'6px 0',borderBottom:'1px solid '+C.bgInput}}>
             <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
               <span style={{...pill(exGroup(Number(r.id)).color), fontSize:9}}>{r.group}</span>
@@ -3203,6 +3305,28 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
                 {r.n}× · {R2.fmtLb(r.firstTop)}→{R2.fmtLb(r.lastTop)} lb · {R2.fmtDelta(r.deltaPct)}
               </span>
+              {/* PRICED OF LOGGED, inline. The verdict text already says it for
+                  INSUFFICIENT_N, HOLDING and EX_UNPRICED; every other verdict
+                  kept it to itself, so a DECLINING row built on 12 of 32 priced
+                  sessions read as solidly as one built on 32. */}
+              {r.nLoaded < r.n ? (
+                <span style={{fontFamily:'monospace',fontSize:10,color:C.amber}}
+                  title={r.nLoaded + ' of ' + r.n + ' sessions carry a frozen load figure'}>
+                  {r.nLoaded}/{r.n} priced
+                </span>
+              ) : null}
+              {/* THE BASIS. The DECLINING verdict text now names it in full;
+                  this marker puts it on EVERY row that has one, and it is the
+                  first time era:"pre-fold" has appeared on this tab at all. */}
+              {basis ? (
+                <span style={{fontFamily:'monospace',fontSize:10,
+                  color: basis.mixed ? C.amber : C.dimGray}}
+                  title={basis.mixed
+                    ? 'This span mixes load bases, so part of the change may be a different kind of load figure rather than a change in strength.'
+                    : 'Every figure for this lift was stamped by an earlier version of the load model.'}>
+                  {basis.text}
+                </span>
+              ) : null}
               {r.isPR && <span style={{...pill(C.green), fontSize:9}}>PR</span>}
               <span style={{...pill(VERDICT_COLOR[r.verdict.code]||C.dimGray), fontSize:9, marginLeft:'auto'}}>
                 {r.verdict.code}
@@ -3212,8 +3336,11 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               {r.verdict.text}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
+        )
+      })()}
 
       {res.blocks.length > 0 && (
         <div style={widget}>
@@ -3291,8 +3418,63 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
   )
 }
 
+/* The EXERCISE PROGRESSION table's sort. `key: 'engine'` is the DEFAULT and
+   means "leave the module's own order alone" -- n desc, then priced before
+   unpriced, then load desc, which exerciseProgressionRows already applies and
+   explains. A sentinel rather than replicating that comparator here.
+   NULLS ALWAYS SORT LAST, in both directions: an em dash is an absent figure,
+   not a small one, so it must never win "smallest first".
+   Mirrors fitness_app.html. */
+const EX_SORT_VAL = {
+  name:    r => String(r.name).toLowerCase(),
+  group:   r => String(r.group),
+  n:       r => r.n,
+  start:   r => r.firstTop,
+  latest:  r => r.lastTop,
+  delta:   r => r.deltaPct,
+  best:    r => r.allTimeBest,
+  est:     r => r.oneRm.estMax,
+  bestmax: r => r.oneRm.bestMax,
+  pct:     r => r.oneRm.pctOfMax,
+  last:    r => r.lastDate,
+}
+function sortExRows(rows, sort) {
+  if (!sort || sort.key === 'engine' || !EX_SORT_VAL[sort.key]) return rows
+  const get = EX_SORT_VAL[sort.key]
+  const dir = sort.dir === 'asc' ? 1 : -1
+  const absent = v => v == null || v !== v        // null, undefined, NaN
+  return rows.slice().sort((a,b) => {
+    const x = get(a), y = get(b)
+    if (absent(x) && absent(y)) return 0
+    if (absent(x)) return 1
+    if (absent(y)) return -1
+    if (typeof x === 'string') return dir * x.localeCompare(y)
+    return dir * (x - y)
+  })
+}
+/* The per-row basis marker. provMix.mixed means the span DISAGREES WITH ITSELF
+   about how its readings were measured; eras are shown whenever present, mixed
+   or not, which is what finally puts era:"pre-fold" on these surfaces -- it had
+   been on the exercise card and nowhere else since 2026-08-06. */
+function basisNote(mix) {
+  if (!mix) return null
+  if (mix.mixed) {
+    const what = []
+    if (mix.provenances.length > 1) what.push(mix.provenances.join('+'))
+    if (mix.eras.length) what.push(mix.eras.join('+'))
+    return { text: '≠ ' + what.join(' · '), mixed: true }
+  }
+  if (mix.eras.length) return { text: mix.eras.join('+'), mixed: false }
+  return null
+}
+
 function StrengthTab({ user, log, gearInv, myBands, settings }) {
   const [win, setWin] = useState('30')
+  /* EXERCISE PROGRESSION's own filter and sort. Separate from the tab's WINDOW
+     because they answer a different question: the window says which sessions
+     count, these say which of the resulting rows you are reading. */
+  const [exGrp, setExGrp]   = useState('All')
+  const [exSort, setExSort] = useState({ key:'engine', dir:'desc' })
   /* The SAME program the ANALYZE tab reads, so the two tabs' section rows
      cannot disagree about what was prescribed. */
   const sProg = PROGRAMS[Number(settings?.progIdx) || 0] || PROGRAMS[0]
@@ -3379,6 +3561,12 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
   const gHasLandmark = gRows.some(g => g.landmark != null)
   /* The same count the ANALYZE tab and the printed note read. */
   const sCov = RBTS_REPORTS.loadCoverage(winEntries)
+  /* THE WINDOW'S HEAVIEST FROZEN STAMP, for the BEST SET LOAD card. Until
+     2026-10-07 that card read entryStats().topLoad, which is the VENDOR RATED
+     MIDPOINT -- while the EXERCISE PROGRESSION table two widgets below it read
+     the stamp. Both printed lb, side by side, with nothing to tell them apart:
+     450 against 627 on Greg's own 30-day window. */
+  const sTop = RBTS_REPORTS.windowTopLoad(winEntries)
   const gMaxWeekly = gRows.reduce((m,g) => Math.max(m, g.weeklySets), 0) || 1
   const card = (label, value, sub, color) => (
     <div style={{...widget,flex:'1 1 140px',minWidth:140}}>
@@ -3439,7 +3627,17 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
         {card('WORKOUTS', String(A.sessions), cfg.label, C.accent)}
         {card('TOTAL SETS', fmtNum(A.sets), A.sessions?('~'+fmtNum(A.sets/A.sessions)+' / workout · L+R = 1'):'L+R = 1 set', C.text)}
         {card('TOTAL REPS', fmtNum(A.reps), A.sessions?('~'+fmtNum(A.reps/A.sessions)+' / workout'):'', C.text)}
-        {card('BEST SET LOAD', fmtNum(A.top)+' lb', 'heaviest est. band load', C.green)}
+        {/* THE STAMP, on the table's basis. The subtitle names the window
+            because the table's BEST column is ALL-TIME on purpose, so the two
+            can legitimately differ in SCOPE now that they agree on BASIS. An
+            em dash when no session in the window carries a stamp, never a zero. */}
+        {card('BEST SET LOAD',
+          sTop.lb == null ? '—' : fmtNum(sTop.lb)+' lb',
+          sTop.lb == null
+            ? 'no frozen load figure in this window'
+            : 'heaviest frozen effective load in this window'
+              + (sTop.exId != null ? ' · ' + (EXERCISE_NAMES[sTop.exId] || ('#'+sTop.exId)) : ''),
+          C.green)}
       </div>
 
       {P ? (
@@ -3556,53 +3754,208 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
         </div>
       ) : null}
 
+      {(() => {
+        /* ── EXERCISE PROGRESSION ─────────────────────────────────────────
+           An IIFE so the filter, the sort and the footnote tests all read the
+           SAME row set. Footnotes driven off `exRows` while the table renders
+           a filtered subset would announce a marker that is not on screen. */
+        const groupsPresent = []
+        exRows.forEach(r => { if (groupsPresent.indexOf(r.group) < 0) groupsPresent.push(r.group) })
+        groupsPresent.sort()
+        const filtered = exGrp === 'All' ? exRows : exRows.filter(r => r.group === exGrp)
+        const shown = sortExRows(filtered, exSort)
+        const stranded = exGrp !== 'All' && groupsPresent.indexOf(exGrp) < 0
+
+        const hdr = (label, key, align) => {
+          const on = exSort.key === key
+          const arrow = on ? (exSort.dir === 'desc' ? ' ▾' : ' ▴') : ''
+          return (
+            <th style={{padding:0,textAlign:align||'left'}}>
+              <button onClick={()=>setExSort(on
+                  ? (exSort.dir === 'desc' ? { key, dir:'asc' } : { key:'engine', dir:'desc' })
+                  : { key, dir:'desc' })}
+                title={on ? 'Sort ascending, then back to default order' : 'Sort by this column'}
+                style={{background:'none',border:'none',cursor:'pointer',padding:'4px 6px',
+                  width:'100%',textAlign:align||'left',fontFamily:'monospace',fontSize:11,
+                  letterSpacing:'0.04em',color:on?C.accent:C.dimGray}}>
+                {label}{arrow}
+              </button>
+            </th>
+          )
+        }
+        const td = {padding:'4px 6px'}
+
+        return (
       <div style={widget}>
-        <span style={lbl}>EXERCISE PROGRESSION {cfg.key==='last' ? '(LATEST WORKOUT)' : '(WITHIN WINDOW)'}</span>
+        <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'baseline'}}>
+          <span style={{...lbl,marginBottom:0}}>
+            EXERCISE PROGRESSION {cfg.key==='last' ? '(LATEST WORKOUT)' : '(WITHIN WINDOW)'}
+          </span>
+          <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+            {shown.length === exRows.length
+              ? exRows.length + ' lifts'
+              : 'showing ' + shown.length + ' of ' + exRows.length}
+            {exSort.key !== 'engine' ? ' · sorted' : ''}
+          </span>
+          {exSort.key !== 'engine' ? (
+            <button onClick={()=>setExSort({ key:'engine', dir:'desc' })}
+              style={{background:'none',border:'none',color:C.dimGray,cursor:'pointer',
+                fontFamily:'monospace',fontSize:9,padding:0}}>✕ DEFAULT ORDER</button>
+          ) : null}
+        </div>
+        {/* THE GROUP FILTER. The same affordance the LIBRARY tab has had since
+            it was written, which STRENGTH never got -- and ALL TIME is 80 rows
+            across 14 sections. Only groups PRESENT in the window are offered:
+            a button that can only ever empty the table is not a filter. */}
+        {groupsPresent.length > 1 ? (
+          <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:8}}>
+            <button style={{...btn(exGrp==='All',C.accent),fontSize:9,padding:'3px 7px'}}
+              onClick={()=>setExGrp('All')}>All</button>
+            {groupsPresent.map(g => (
+              <button key={g}
+                style={{...btn(exGrp===g,(GROUP_META[g]&&GROUP_META[g].color)||C.accent),fontSize:9,padding:'3px 7px'}}
+                onClick={()=>setExGrp(exGrp===g?'All':g)}>{g}</button>
+            ))}
+          </div>
+        ) : null}
         <div style={{overflowX:'auto',marginTop:6}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontFamily:'monospace',fontSize:11}}>
             <thead>
-              <tr style={{color:C.dimGray,textAlign:'left'}}>
-                <th style={{padding:'4px 6px'}}>EXERCISE</th>
-                <th style={{padding:'4px 6px'}}>×</th>
-                <th style={{padding:'4px 6px'}}>START</th>
-                <th style={{padding:'4px 6px'}}>LATEST</th>
-                <th style={{padding:'4px 6px'}}>Δ LOAD</th>
-                <th style={{padding:'4px 6px'}}>BEST</th>
-                <th style={{padding:'4px 6px'}}>EST. MAX</th>
-                <th style={{padding:'4px 6px'}}>BEST MAX</th>
-                <th style={{padding:'4px 6px'}}>% OF MAX</th>
+              <tr>
+                {hdr('EXERCISE','name')}
+                {/* SESSIONS, not sets -- `r.n` is one entry per log entry.
+                    The PWA header was already the honest `×`; it is spelled out
+                    now so the two apps say the same word. */}
+                {hdr('SESSIONS','n')}
+                {hdr('LAST','last')}
+                {hdr('START','start')}
+                {hdr('LATEST','latest')}
+                {hdr('Δ LOAD','delta')}
+                {hdr('BEST','best')}
+                {hdr('EST. MAX','est')}
+                {hdr('BEST MAX','bestmax')}
+                {/* % OF BEST, renamed from % OF MAX 2026-10-07: the figure is
+                    the LATEST working load over the best estimated max, and it
+                    sat third in a run where a reader divides the first two.
+                    329 / 845 / 28, where 329/845 is 39. */}
+                {hdr('% OF BEST','pct')}
               </tr>
             </thead>
             <tbody>
-              {exRows.map(r => (
+              {shown.map(r => {
+                const basis = basisNote(r.provMix)
+                const partial = r.nLoaded < r.n
+                const gMeta = GROUP_META[r.group]
+                return (
                 <tr key={r.id} style={{borderTop:'1px solid rgba(255,255,255,0.06)',color:C.textSec}}>
-                  <td style={{padding:'4px 6px',color:C.text}}>{r.name} {r.isPR ? <span style={pill(C.green)}>PR</span> : null}</td>
-                  <td style={{padding:'4px 6px'}}>{r.n}</td>
-                  <td style={{padding:'4px 6px'}}>{RBTS_REPORTS.fmtLb(r.firstTop)}{r.carriedFrom ? <span style={{color:C.dimGray}}> &#8249;</span> : null}</td>
-                  <td style={{padding:'4px 6px'}}>{RBTS_REPORTS.fmtLb(r.lastTop)}</td>
-                  <td style={{padding:'4px 6px',color:(r.deltaPct==null?C.dimGray:(r.deltaPct>=0?C.green:C.amber))}}>{fmtPct(r.deltaPct)}</td>
-                  <td style={{padding:'4px 6px',color:C.green}}>{RBTS_REPORTS.fmtLb(r.allTimeBest)}</td>
-                  <td style={{padding:'4px 6px',color:C.text}}>{fmtRm(r.oneRm.estMax, r.oneRm.outOfRange)}</td>
-                  <td style={{padding:'4px 6px',color:C.green}}>{fmtRm(r.oneRm.bestMax)}</td>
-                  <td style={{padding:'4px 6px'}}>{fmtRmPct(r.oneRm.pctOfMax)}</td>
+                  <td style={{...td,color:C.text}}>
+                    <div style={{display:'flex',gap:6,alignItems:'baseline',flexWrap:'wrap'}}>
+                      <span style={{...pill((gMeta&&gMeta.color)||C.accent),fontSize:8}}>{r.group}</span>
+                      <span>{r.name}</span>
+                      {r.isPR ? <span style={pill(C.green)}>PR</span> : null}
+                    </div>
+                    {/* THE BASIS, named in place rather than footnoted: the
+                        reader needs to know WHICH bases before the number means
+                        anything, and a bare marker would send them hunting. */}
+                    {basis ? (
+                      <div title={basis.mixed
+                          ? 'This span mixes load bases, so part of the change may be a different kind of load figure rather than a change in strength.'
+                          : 'Every figure for this lift was stamped by an earlier version of the load model.'}
+                        style={{fontFamily:'monospace',fontSize:9,marginTop:2,
+                          color: basis.mixed ? C.amber : C.dimGray}}>
+                        {basis.text}
+                      </div>
+                    ) : null}
+                  </td>
+                  {/* PRICED OF LOGGED. 46 of 80 rows on Greg's ALL TIME window
+                      carry unpriced sessions inside their own span -- #1
+                      Standing Band Chest Press is priced in 18 of 37 -- and the
+                      row said 37 with nothing to mark the other 19. nLoaded and
+                      skippedGaps were both on the row and rendered nowhere. */}
+                  <td style={{...td,color:partial?C.amber:C.textSec}}
+                    title={partial
+                      ? r.nLoaded + ' of ' + r.n + ' sessions carry a frozen load figure; the load columns describe only those.'
+                      : r.n + ' sessions, all priced'}>
+                    {partial ? r.nLoaded + '/' + r.n : r.n}
+                    {r.skippedGaps > 0 ? <span style={{color:C.dimGray}}> *</span> : null}
+                  </td>
+                  {/* LAST. The engine has returned lastDate all along and
+                      neither tab rendered it. Dimmed past DORMANT_DAYS. */}
+                  <td style={{...td,whiteSpace:'nowrap',
+                      color: r.daysSince != null && r.daysSince >= RBTS_REPORTS.CONST.DORMANT_DAYS
+                        ? C.deload : C.dimGray}}
+                    title={r.lastDate + (r.daysSince != null ? ' · ' + r.daysSince + 'd ago' : '')}>
+                    {r.lastDate ? String(r.lastDate).slice(5) : '—'}
+                  </td>
+                  <td style={td}>{RBTS_REPORTS.fmtLb(r.firstTop)}{r.carriedFrom ? <span style={{color:C.dimGray}}> &#8249;</span> : null}</td>
+                  <td style={td}>{RBTS_REPORTS.fmtLb(r.lastTop)}</td>
+                  <td style={{...td,color:(r.deltaPct==null?C.dimGray:(r.deltaPct>=0?C.green:C.amber))}}>{fmtPct(r.deltaPct)}</td>
+                  <td style={{...td,color:C.green}}>{RBTS_REPORTS.fmtLb(r.allTimeBest)}</td>
+                  <td style={{...td,color:C.text}}>{fmtRm(r.oneRm.estMax, r.oneRm.outOfRange)}</td>
+                  <td style={{...td,color:C.green}}>{fmtRm(r.oneRm.bestMax)}</td>
+                  <td style={td}>{fmtRmPct(r.oneRm.pctOfMax)}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
+        {shown.length === 0 ? (
+          <div style={{fontFamily:'monospace',fontSize:11,color:C.dimGray,
+            textAlign:'center',padding:24}}>
+            {stranded
+              ? 'No ' + exGrp + ' work in this window. Widen the window, or clear the filter.'
+              : 'NO LIFTS MATCH FILTER'}
+          </div>
+        ) : null}
         {/* The carry-in marker. A window holding one session for a lift has
             no START of its own, so the module seeds it from that lift's last
             outing BEFORE the window -- otherwise START and LATEST are the same
             reading and the delta is a meaningless 0%. Marked rather than
             silent, because the figure comes from outside the period named at
             the top of the tab. */}
-        {exRows.some(r => r.carriedFrom) ? (
+        {/* THE SCOPE NOTE. Four columns move with the WINDOW button and three
+            do not: BEST, EST. MAX and BEST MAX are ALL-TIME on purpose. That
+            was documented in the engine and said nowhere on screen. */}
+        <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8,lineHeight:1.6}}>
+          SESSIONS, START, LATEST and Δ LOAD are WITHIN the window above. BEST,
+          EST. MAX and BEST MAX are ALL-TIME and do not move when the window does
+          — a demonstrated capacity should not change because you changed the period
+          you are looking at. % OF BEST is the LATEST working load against BEST MAX,
+          so it is not EST. MAX divided by BEST MAX.
+        </span>
+        {/* EVERY FOOTNOTE BELOW TESTS `shown`, NOT `exRows`. Driving them off
+            the unfiltered set would announce a marker that is not on screen. */}
+        {shown.some(r => r.carriedFrom) ? (
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
             &#8249; START carried in from this lift's previous session, before the window —
             only one session in this period
           </span>
         ) : null}
-        {exRows.some(r => r.oneRm.outOfRange) ? (
+        {shown.some(r => r.nLoaded < r.n) ? (
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+            <span style={{color:C.amber}}>18/37</span> in SESSIONS means 18 of 37 sessions
+            carry a frozen load figure — the load columns describe only those, while
+            SESSIONS counts them all. An em dash is an absent figure, never a measured zero.
+          </span>
+        ) : null}
+        {shown.some(r => r.skippedGaps > 0) ? (
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+            * the START → LATEST comparison steps over at least one unpriced session
+            INSIDE the span, so it compares across a stretch it did not fully measure
+          </span>
+        ) : null}
+        {shown.some(r => r.provMix && r.provMix.mixed) ? (
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
+            <span style={{color:C.amber}}>≠</span> this lift's span MIXES LOAD BASES, so
+            part of the change may be a different kind of load figure rather than a change
+            in strength. MEASURED is a force-scale reading, MODELED is geometry resolved,
+            and RATED is the degraded fallback written when the gear or geometry could not
+            be resolved — so a RATED reading between computed ones is a measurement
+            artifact. A name with no ≠ is an older model era, uniform across the span.
+          </span>
+        ) : null}
+        {shown.some(r => r.oneRm.outOfRange) ? (
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
             ! beyond this method's validated rep range — the estimate still prints, marked
           </span>
@@ -3614,17 +3967,32 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
             estimated. Found in a browser 2026-09-15 on a 24-rep set under
             Brzycki. The reason comes from the engine, so it names the method,
             the rep count, and Lombardi as the way out. */}
-        {exRows.filter(r => r.oneRm.refusedN).map(r => (
+        {shown.filter(r => r.oneRm.refusedN).map(r => (
           <span key={r.id} style={{fontFamily:'monospace',fontSize:9,color:C.amber,display:'block',marginTop:8}}>
             NOT ESTIMATED — {r.name}: {r.oneRm.refusedN} session(s) could not be
             estimated, the most recent on {r.oneRm.refusedLastDate}. The EST. MAX
             above is from the last session that could be. {r.oneRm.refusedBasis}
           </span>
         ))}
+        {/* THE BASIS NOTE, corrected 2026-10-07. It read "Load = estimated band
+            resistance (midpoint of each band's range; doubled/stacked bands
+            summed). Volume = load × reps." -- which is the RATED basis these
+            columns were moved OFF on 2026-10-01, when START / LATEST / Δ / BEST
+            went onto the frozen effectiveLoad stamp to stop disagreeing with
+            EST. MAX in the same row. The sentence survived the change and told
+            the reader the figures were band midpoints when they are stretch-,
+            gear- and fold-resolved stamps -- the two differ by 38% on Greg's own
+            30-day window. It also described a volume column this table has not
+            had since the same change. */}
         <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,display:'block',marginTop:8}}>
-          Load = estimated band resistance (midpoint of each band's range; doubled/stacked bands summed). Volume = load × reps. Estimates for trend tracking, not exact poundage.
+          Load is each workout's FROZEN EFFECTIVE LOAD — the stamp written at save time from
+          the bands, the gear, the stretch and the fold, read at the hardest point of the rep.
+          It is not the band's rated midpoint, and it is not comparable to a free-weight
+          poundage.
         </span>
       </div>
+        )
+      })()}
     </div>
   )
 }
@@ -4132,16 +4500,32 @@ function parseTs(v) {
   return s
 }
 
-// "+ ADD EXERCISE" form (Library tab). Calls onAdd({name,group,cls,url?,start?,end?})
-// then onDone to close. Group/class are stored explicitly (IDs ≥1000 sit
+// The custom-exercise form (Library tab). ONE form, TWO modes:
+//   ex absent  -> "+ ADD EXERCISE": onAdd({name,group,cls,url?,start?,end?})
+//   ex present -> EDIT #id: onEdit(id, {...}) rewrites that record in place,
+//                 keeping the id, because every logged set is keyed by it.
+// Then onDone to close. Group/class are stored explicitly (IDs ≥1000 sit
 // outside the ID-range group table). Video is optional; start/end accept mm:ss.
-function AddExerciseForm({ onAdd, onDone }) {
-  const [name, setName]   = useState('')
-  const [grp, setGrp]     = useState('CHEST')
-  const [cls, setCls]     = useState('iso')
-  const [url, setUrl]     = useState('')
-  const [start, setStart] = useState('')
-  const [end, setEnd]     = useState('')
+// MOUNT IT KEYED BY ex.id -- these useState initialisers run once per mount, so
+// moving from one exercise's EDIT to another's without a remount would show the
+// first one's values in the second one's form.
+function AddExerciseForm({ ex, onAdd, onEdit, onDone }) {
+  const editing = ex && ex.id != null ? ex : null
+  /* The stored record keeps start/end as SECONDS and the inputs take mm:ss.
+     fmtTs(undefined) is '' rather than '0:00' -- an untimed video must not come
+     back from an edit carrying a start of zero, which is a real value meaning
+     "from the top". */
+  const fmtTs = v => {
+    if (v == null || !isFinite(v)) return ''
+    const n = Math.max(0, Math.round(v)), m = Math.floor(n/60), sec = n%60
+    return m + ':' + (sec < 10 ? '0' : '') + sec
+  }
+  const [name, setName]   = useState(editing ? editing.name  : '')
+  const [grp, setGrp]     = useState(editing ? editing.group : 'CHEST')
+  const [cls, setCls]     = useState(editing ? (editing.cls || 'iso') : 'iso')
+  const [url, setUrl]     = useState(editing && editing.url ? editing.url : '')
+  const [start, setStart] = useState(editing ? fmtTs(editing.start) : '')
+  const [end, setEnd]     = useState(editing ? fmtTs(editing.end)   : '')
   const [err, setErr]     = useState('')
   const groups = ALL_GROUPS.filter(g => g !== 'All')
   const field = (label, node) => (
@@ -4154,17 +4538,26 @@ function AddExerciseForm({ onAdd, onDone }) {
     if (!nm) { setErr('Name is required.'); return }
     const u = url.trim()
     if ((start.trim() || end.trim()) && !u) { setErr('Add a video URL to use timestamps.'); return }
-    onAdd({
+    const rec = {
       name: nm, group: grp, cls,
       url: u || undefined,
       start: u ? parseTs(start) : undefined,
       end:   u ? parseTs(end)   : undefined,
-    })
+    }
+    if (editing) onEdit(editing.id, rec)
+    else         onAdd(rec)
     onDone()
   }
   return (
     <div style={{background:C.bgInput,borderRadius:6,padding:14,
       border:`1px solid ${C.accentDim}`,display:'flex',flexDirection:'column',gap:12}}>
+      {editing ? (
+        <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6}}>
+          <span style={{color:C.accent}}>EDITING #{editing.id}</span> — the number never
+          changes, so your logged history stays attached. Changing the MUSCLE GROUP
+          re-files every past set of this exercise under the new section.
+        </div>
+      ) : null}
       <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
         {field('EXERCISE NAME',
           <input value={name} onChange={e=>setName(e.target.value)}
@@ -4193,19 +4586,30 @@ function AddExerciseForm({ onAdd, onDone }) {
       </div>
       {err && <div style={{fontFamily:'monospace',fontSize:11,color:C.amber}}>{err}</div>}
       <div style={{display:'flex',gap:8}}>
-        <button style={btn(true,C.green)} onClick={save}>SAVE EXERCISE</button>
+        <button style={btn(true,C.green)} onClick={save}>{editing ? 'SAVE CHANGES' : 'SAVE EXERCISE'}</button>
         <button style={btn(false)} onClick={onDone}>CANCEL</button>
       </div>
     </div>
   )
 }
 
-function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
+function LibraryTab({ customEx, onAddEx, onEditEx, onDeleteEx }) {
   const [search, setSearch] = useState('')
   const [group, setGroup]   = useState('All')
   const [vidOnly, setVid]   = useState(false)
   const [adding, setAdding] = useState(false)   // add-exercise form open?
+  const [editId, setEditId] = useState(null)    // custom exercise being EDITED, or null
   const totalVerified       = Object.keys(VIDEOS).length
+
+  /* The STORED custom records, by id. The card grid is built from
+     EXERCISE_NAMES (built-ins and customs alike), but the EDIT form needs the
+     record as WRITTEN -- group as the stored string, cls, and the
+     url/start/end triple -- not the derived {label,color} exGroup returns. */
+  const customById = useMemo(() => {
+    const m = {}
+    ;(customEx || []).forEach(e => { m[Number(e.id)] = e })
+    return m
+  }, [customEx])
 
   const allEx = useMemo(() =>
     Object.entries(EXERCISE_NAMES).map(([id,name]) => ({
@@ -4240,12 +4644,21 @@ function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
             placeholder="SEARCH BY NAME OR #"
             style={{...inputStyle,width:220,letterSpacing:'0.04em'}}/>
           <button style={btn(vidOnly,C.green)} onClick={()=>setVid(!vidOnly)}>▶ WITH VIDEO ONLY</button>
-          <button style={btn(adding,C.accent)} onClick={()=>setAdding(a=>!a)}>
+          <button style={btn(adding,C.accent)}
+            onClick={()=>{ setEditId(null); setAdding(a=>!a) }}>
             {adding ? '✕ CANCEL' : '+ ADD EXERCISE'}
           </button>
         </div>
         {adding && (
           <AddExerciseForm onAdd={onAddEx} onDone={()=>setAdding(false)}/>
+        )}
+        {/* THE EDIT FORM, here rather than inside the card, because a 190px
+            grid cell cannot hold six fields. KEYED BY ID so moving from one
+            exercise's EDIT to another's remounts it -- the form reads its
+            initial values in useState, which runs once per mount. */}
+        {editId != null && customById[editId] && (
+          <AddExerciseForm key={editId} ex={customById[editId]}
+            onEdit={onEditEx} onDone={()=>setEditId(null)}/>
         )}
         <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
           {ALL_GROUPS.map(g => (
@@ -4267,10 +4680,17 @@ function LibraryTab({ customEx, onAddEx, onDeleteEx }) {
               <span style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={pill(ex.group.color)}>{ex.group.label}</span>
                 {ex.custom && (
+                  <button title="Edit custom exercise"
+                    style={{background:'none',border:'none',cursor:'pointer',
+                      color:editId===ex.id?C.accent:C.dimGray,
+                      fontFamily:'monospace',fontSize:11,padding:0,lineHeight:1}}
+                    onClick={()=>{ setAdding(false); setEditId(id => id===ex.id ? null : ex.id) }}>✎</button>
+                )}
+                {ex.custom && (
                   <button title="Delete custom exercise"
                     style={{background:'none',border:'none',color:C.dimGray,cursor:'pointer',
                       fontFamily:'monospace',fontSize:11,padding:0,lineHeight:1}}
-                    onClick={()=>{ if (confirm(`Delete "${ex.name}" (#${ex.id})? Logged history keeps the id but will show it as a number.`)) onDeleteEx(ex.id) }}>✕</button>
+                    onClick={()=>{ if (confirm(`Delete "${ex.name}" (#${ex.id})? Logged history keeps the id but will show it as a number.`)) { if (editId===ex.id) setEditId(null); onDeleteEx(ex.id) } }}>✕</button>
                 )}
               </span>
             </div>
@@ -6622,6 +7042,31 @@ export default function App() {
     return item
   }, [customEx, persistCustomEx])
 
+  /* EDIT one custom exercise in place. The ID NEVER MOVES: every logged set,
+     gear map, attach height and program slot is keyed by it, so renumbering on
+     edit would orphan the history. The record is REBUILT from the patch rather
+     than merged into it -- a merge leaves a removed url in place, because
+     {...old, url: undefined} still carries the old url through JSON.
+     Group changes are RETROACTIVE by design: exGroup reads EX_GROUP_OVERRIDE at
+     render time, so correcting a misfiled exercise re-buckets every past set of
+     it in STRENGTH, ANALYZE and the printed reports.
+     Mirrors fitness_app.html's updateCustomExercise. */
+  const handleEditCustomEx = useCallback((id, patch) => {
+    const n = Number(id)
+    if (!(n >= 1000)) return null          // never edit a built-in
+    if (!customEx.some(e => Number(e.id) === n)) return null
+    const item = { id: n, custom: true,
+      name: patch.name, group: patch.group, cls: patch.cls || 'iso' }
+    if (patch.url) item.url = patch.url
+    if (patch.start != null) item.start = patch.start
+    if (patch.end   != null) item.end   = patch.end
+    const next = customEx.map(e => (Number(e.id) === n ? item : e))
+    registerCustomEx(item)                 // this copy clears VIDEOS when url is absent
+    persistCustomEx(next)
+    setCustomEx(next)
+    return item
+  }, [customEx, persistCustomEx])
+
   const handleDeleteCustomEx = useCallback((id) => {
     const next = customEx.filter(e => Number(e.id) !== Number(id))
     unregisterCustomEx(id)
@@ -6754,7 +7199,7 @@ export default function App() {
         {tab==='strength' && <StrengthTab user={user} log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='analyze'  && <AnalyzeTab log={log} gearInv={gear} myBands={myBands} settings={settings}/>}
         {tab==='programs' && <ProgramsTab onProgramsChanged={handleProgramsChanged}/>}
-        {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
+        {tab==='library'  && <LibraryTab customEx={customEx} onAddEx={handleAddCustomEx} onEditEx={handleEditCustomEx} onDeleteEx={handleDeleteCustomEx}/>}
         {tab==='gear'     && <GearTab gear={gear} myBands={myBands} onSaveGear={handleSaveGear} onRemoveGear={handleRemoveGear} onSetMyBands={handleSetMyBands} onRestoreGear={handleRestoreGear} user={user}/>}
       </div>
     </div>
