@@ -3883,11 +3883,28 @@
       it in EX_UNILATERAL_BY_GEAR would let a bar that happens to be logged
       for another lift in the same session read it as bilateral. */
    234,                    // forearm twist -- no bar can do it
-   /* Shoulder alternatives, 2026-09-03. Only these two of the ten are one arm
+   /* Shoulder alternatives, 2026-09-03. Only these two of the ten were one arm
       at a time: 237 anchors the band under ONE leg and presses with the arm on
       that side, and 243 starts with the band drawn across the body so only the
-      far arm can abduct. The other eight are both arms at once. */
-   237, 243                // lying one-arm press, cross body lateral raise
+      far arm can abduct. The other eight were both arms at once.
+
+      244 JOINED THEM 2026-10-12 (Greg's ruling). The video replacement that
+      day moved it from "Bent Over Rear Delt Pull" to the ALTERNATING version,
+      and alternating is one arm at a time -- the name change carried the
+      sidedness with it, which is the third table the 2026-09-15 lesson says to
+      check and the easiest of the three to miss, because nothing about a video
+      swap suggests sidedness moved. It had zero logged sets, so the L/R
+      seeding is not retroactive. */
+   237, 243, 244,          // lying one-arm shoulder press, cross body lateral
+                           // raise, alternating bent-over rear delt pull
+   /* 233 Side Plank Lateral Raise, 2026-10-12. The slot held Band Lying Y-Raise
+      -- bilateral -- until the duplicate at 223 absorbed it; the side plank
+      that replaced it is one side at a time by the shape of the position, the
+      same reading 220 Band Side Plank Row and 222 Bird Dog already carry two
+      lines up. STRUCTURAL, not gear-conditional: no bar, footplate or anchor
+      makes a side plank two-sided. It had zero logged sets when this landed,
+      so the L/R seeding is not retroactive for anything. */
+   233                     // side plank lateral raise
   ].forEach(function (id) { EX_UNILATERAL[id] = true; });
 
   /* The gear-conditional group, each carrying the answer for when NO gear is
@@ -8575,19 +8592,26 @@
     "51":  "pull",   // Band Rear Delt Fly   (SHOULDERS -> push day)
     "56":  "pull",   // Band Upright Row     (SHOULDERS -> push day)
     "220": "pull",   // Band Side Plank Row  (CORE -> push day)
-    /* 223 and 233 are the SAME movement under two ids. 233 is the one the
-       programs prescribe; 223 is kept defined so old history still resolves,
-       the exercise-id counterpart of the band-id stability rule. Both need the
-       entry -- omitting 223 would leave a stale log entry on the wrong day. */
+    /* 223 is the ONLY Band Lying Y-Raise as of 2026-10-12. It carried no video
+       at all, which is why 233 was authored beside it on 2026-08-12 to hold a
+       working clip; the duplicate is now collapsed -- 223 took that clip and
+       233 was reused for Side Plank Lateral Raise. 233's entry is GONE rather
+       than repointed: a side-plank lateral raise abducts the arm AWAY from the
+       body, which already agrees with the SHOULDERS push day, exactly like the
+       two lateral raises at 242 and 243 that were never tagged. */
     "223": "pull",   // Band Lying Y-Raise   (SHOULDERS -> push day)
-    "233": "pull",   // Band Lying Y-Raise   (SHOULDERS -> push day)
     /* Shoulder alternatives, 2026-09-03. Three of the ten move the band TOWARD
        the body and so disagree with the SHOULDERS push day. The other seven --
        the presses and the front/lateral raises -- push it away and are already
        routed correctly, which is why they are absent rather than tagged
        "push". 246 is here on the 56 Band Upright Row precedent: the hands drag
-       up the body into abduction, the same shape of pull. */
-    "244": "pull",   // Bent Over Rear Delt Pull (SHOULDERS -> push day)
+       up the body into abduction, the same shape of pull.
+
+       The 2026-10-12 video replacement did not disturb any of this: every one
+       of the eight kept its id, its group and its push/pull reading, and the
+       three tagged here are still the three that pull. 244 is now ALTERNATING
+       and still a pull. */
+    "244": "pull",   // Alternating Bent-Over Rear Delt Pull (SHOULDERS -> push)
     "245": "pull",   // Banded High Pull         (SHOULDERS -> push day)
     "246": "pull"    // Hip Huggers              (SHOULDERS -> push day)
   };

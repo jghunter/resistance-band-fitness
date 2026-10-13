@@ -1058,9 +1058,30 @@ getLocalCustomEx().forEach(registerCustomEx)
 // VIDEO HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 function resolveVideo(id) {
-  const v = VIDEOS[id]
-  if (!v) return null
-  if (typeof v === 'string') return { url:v, embedUrl:null }
+  const raw = VIDEOS[id]
+  if (!raw) return null
+  /* THE BARE-STRING FORM IS NOT THE OBJECT FORM WITH DEFAULTS. A string has
+     always returned embedUrl null -- so a bare-string YouTube link opens in a
+     tab rather than embedding, and most of the catalog is bare strings. That
+     is long-standing behaviour and NOT swept up here: `bare` carries the
+     distinction past the direct-file check below so it can be honoured
+     unchanged. A custom exercise with no clip window is stored as a bare
+     string, which is why the check has to see both forms. */
+  const bare = typeof raw === 'string'
+  const v = bare ? { url:raw } : raw
+  /* A DIRECT video file is not an embeddable player URL, and the YouTube
+     matcher below returns null for one -- which is why nine athleanx .mp4
+     clips offered a plain link instead of playing. The modal plays them
+     itself now. mediaUrl and embedUrl are mutually exclusive: one names an
+     <iframe> source, the other a <video> source. A clip window becomes a
+     media fragment, which is how a direct file expresses start/end. */
+  if (/\.(mp4|webm|ogv|ogg|mov|m4v)(\?|#|$)/i.test(v.url)) {
+    const frag = v.start != null
+      ? '#t=' + v.start + (v.end != null ? ',' + v.end : '')
+      : ''
+    return { url:v.url, embedUrl:null, mediaUrl:v.url + frag, label:v.label ?? null }
+  }
+  if (bare) return { url:v.url, embedUrl:null }
   // Extract the YouTube video id from any common URL shape: watch?v=, /shorts/,
   // youtu.be/, or /embed/. Shorts embed fine via the /embed/ID player.
   const m = v.url.match(/[?&]v=([^&]+)/) || v.url.match(/\/shorts\/([^?&/]+)/)
@@ -1077,7 +1098,7 @@ function resolveVideo(id) {
   }
 }
 
-function VideoModal({ embedUrl, onClose }) {
+function VideoModal({ embedUrl, mediaUrl, url, onClose }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -1095,12 +1116,29 @@ function VideoModal({ embedUrl, onClose }) {
           letterSpacing:'0.1em',opacity:0.8,
         }}>✕ CLOSE</button>
         <div style={{position:'relative',paddingBottom:'56.25%',height:0}}>
-          <iframe src={embedUrl}
-            style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',
-              border:'none',borderRadius:6}}
-            allow="autoplay; encrypted-media"
-            allowFullScreen/>
+          {mediaUrl
+            ? <video src={mediaUrl} controls autoPlay playsInline
+                style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',
+                  border:'none',borderRadius:6,background:'#000'}}/>
+            : <iframe src={embedUrl}
+                style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',
+                  border:'none',borderRadius:6}}
+                allow="autoplay; encrypted-media"
+                allowFullScreen/>}
         </div>
+        {/* An ESCAPE HATCH, and only for the direct-file branch. A third-party
+            .mp4 can refuse to play in-page where opening it in a tab still
+            works -- hotlink protection keys on the Referer, not on the file --
+            and a silent black box with no way out would be worse than the
+            plain link this replaced. The iframe branch needs no such hatch:
+            YouTube either embeds or was never matched in the first place. */}
+        {mediaUrl &&
+          <a href={url} target="_blank" rel="noreferrer"
+            style={{display:'block',marginTop:8,color:C.dimGray,fontSize:10,
+              fontFamily:'monospace',letterSpacing:'0.08em',
+              textDecoration:'none',textAlign:'right'}}>
+            WON'T PLAY? OPEN IN NEW TAB ↗
+          </a>}
       </div>
     </div>
   )
@@ -1112,7 +1150,7 @@ function WatchDemoButton({ id }) {
   const base = {fontSize:10,fontFamily:'monospace',letterSpacing:'0.08em'}
   if (!video)
     return <span style={{...base,color:C.dimGray}}>— VIDEO PENDING —</span>
-  if (!video.embedUrl)
+  if (!video.embedUrl && !video.mediaUrl)
     return <a href={video.url} target="_blank" rel="noreferrer"
              style={{...base,color:C.green,textDecoration:'none'}}>▶ WATCH DEMO</a>
   return (
@@ -1120,7 +1158,8 @@ function WatchDemoButton({ id }) {
       <button onClick={()=>setOpen(true)}
         style={{...base,color:C.green,background:'none',border:'none',
           cursor:'pointer',padding:0,textAlign:'left'}}>▶ WATCH DEMO</button>
-      {open && <VideoModal embedUrl={video.embedUrl} onClose={()=>setOpen(false)}/>}
+      {open && <VideoModal embedUrl={video.embedUrl} mediaUrl={video.mediaUrl}
+                 url={video.url} onClose={()=>setOpen(false)}/>}
     </>
   )
 }

@@ -122,12 +122,16 @@ export const EXERCISE_NAMES = {
   // >=1000 mean "custom" (nextCustomExId hands out 1000 on any device with an
   // empty rbts_customExercises), so leaving them at 1000-1008 would have let
   // the next "+ ADD EXERCISE" overwrite one and a later delete strip it from
-  // the catalog. 233 replaces 223 in the workbook programs' upperB shoulderIso
-  // slot; 223 is KEPT so any history that ever referenced it still resolves.
+  // the catalog. 233 ONCE stood in for 223 in the workbook programs' upperB
+  // shoulderIso slot, because 223 carried no video; on 2026-10-12 that
+  // duplicate was collapsed the other way -- 223 took the working clip, the
+  // programs point at 223, and 233 was reused for Side Plank Lateral Raise.
+  // 223 remains the id history resolves against, which is why it is the one
+  // that survived rather than the newer 233.
   226:"Low Bar Squat (Shallow Squat)", 227:"Cross Block", 228:"Rowboat",
   229:"Copenhagen Plank", 230:"Hourglass Laterals",
   231:"Resisted Dorsiflexion", 232:"Posterior Tibialis",
-  233:"Band Lying Y-Raise", 234:"Forearm Twist",
+  233:"Side Plank Lateral Raise", 234:"Forearm Twist",
   /* 235/236 added 2026-08-20 for the substitution feature. 235 pairs with 33
      (Band Face Pull) and 236 with 43 (Standing Band Overhead Press), so each
      lands in the first band of the other's substitute list. */
@@ -135,15 +139,25 @@ export const EXERCISE_NAMES = {
   /* ── Shoulder alternatives (2026-09-03) ──────────────────────────────────
      Ten movements Greg brought back after a session that exposed shoulders as
      his weakest area, most of them picked because they load the delt without
-     the positions that hurt. Nine come from ONE ATHLEAN-X band-shoulder video
-     (NtaPROZOcmM), each with its own clip window; 239 is an Instagram reel.
-     All ten are SHOULDERS, so substituteCandidates puts them in the FIRST
-     band for any shoulder lift already scheduled -- which is the point: no
-     program had to change for them to be reachable. */
-  237:"Lying One-Arm Press",     238:"Push Press Pull-Aparts",
+     the positions that hurt. All ten are SHOULDERS, so substituteCandidates
+     puts them in the FIRST band for any shoulder lift already scheduled --
+     which is the point: no program had to change for them to be reachable.
+
+     RE-VIDEOED 2026-10-12. Nine of the ten originally shared ONE ATHLEAN-X
+     reel (NtaPROZOcmM), each windowed to its own segment. Greg had since
+     re-authored eight as customs pointing at the SAME source's per-exercise
+     .mp4 files and preferred those, so the customs were promoted onto these
+     ids: names and videos moved, ids, groups and classes did not. Only 239
+     (Instagram) and 240 (its own clip) are untouched, because neither has a
+     per-exercise file. Nothing here shares a clip any more, so there are no
+     windows left to get wrong -- but seven entries are now DIRECT FILES,
+     which resolveVideo plays through <video> rather than an iframe. 244 also
+     became the ALTERNATING version and so gained sidedness; see CLAUDE.md,
+     "Eight shoulder videos replaced". */
+  237:"Lying One-Arm Shoulder Press", 238:"Push-Press Pull-Apart",
   239:"Front Raise Pull-Aparts", 240:"Stretch Front Raise",
-  241:"Kneeling Up and Overs",   242:"Short Arc Lateral Raise",
-  243:"Cross Body Lateral Raise",244:"Bent Over Rear Delt Pull",
+  241:"Kneeling Up and Overs",   242:"Short-Arc Lateral Raise",
+  243:"Cross Body Lateral Raise",244:"Alternating Bent-Over Rear Delt Pull",
   245:"Banded High Pull",        246:"Hip Huggers",
 };
 
@@ -401,6 +415,10 @@ export const VIDEOS = {
   /* 218/219/224 added 2026-08-24. None is timed, so all three play whole. */
   218:{url:"https://www.youtube.com/shorts/-utR7gQmaMo"},
   219:{url:"https://www.youtube.com/shorts/t95MKRptEX4"},
+  /* 223 had NO entry at all until 2026-10-12 -- the absence is why 233 was
+     authored beside it in the first place. It now holds the clip 233 carried,
+     and 233 has been reused; see the EXERCISE_NAMES comment on 226-234. */
+  223:{url:"https://www.youtube.com/watch?v=CSispgPqROE", start:0,   end:75},
   224:{url:"https://www.youtube.com/shorts/5eMkKAGm5B0"},
   // Promoted from customs 1000-1008 (2026-08-12). 226 is not a YouTube link:
   // resolveVideo returns it with embedUrl null and never appends a timestamp,
@@ -413,7 +431,7 @@ export const VIDEOS = {
   230:{url:"https://www.youtube.com/watch?v=eZzdrLDpqbo", start:1556, end:1650},
   231:{url:"https://www.youtube.com/shorts/QPZDLanJwEk", start:0,    end:11},
   232:{url:"https://www.youtube.com/shorts/1LrQxgIu1eA", start:0,    end:43},
-  233:{url:"https://www.youtube.com/watch?v=CSispgPqROE", start:0,   end:75},   // replaces 223
+  233:{url:"https://www.youtube.com/watch?v=alWWqJ8blZg", start:312, end:339},  // side plank lateral raise 5:12-5:39
   234:{url:"https://www.youtube.com/watch?v=5YNRp21YXw0", start:305, end:384},
   /* No clip window on either: neither has been timed. Both play whole. */
   235:{url:"https://www.youtube.com/watch?v=2NZuRdHC9v0"},
@@ -428,16 +446,16 @@ export const VIDEOS = {
      240 plays WHOLE by decision, not by omission (Greg, 2026-09-03): it is its
      own video rather than a segment of the 13-exercise reel, so there is
      nothing to trim past. Do not "finish" it by adding a window. */
-  237:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:95,  end:130},  // 1:35-2:10
-  238:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:137, end:160},  // 2:17-2:40
+  237:{url:"https://www.youtube.com/watch?v=FtQ8pDdh8ug"},
+  238:{url:"https://cfvideo.athleanx.com/2021/02/push-press-pull-apart.mp4"},
   239:{url:"https://www.instagram.com/reels/DVo5cZckmRh/"},
   240:{url:"https://www.youtube.com/watch?v=--Z-GbvQf6U"},
-  241:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:164, end:190},  // 2:44-3:10
-  242:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:317, end:344},  // 5:17-5:44
-  243:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:350, end:380},  // 5:50-6:20
-  244:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:459, end:517},  // 7:39-8:37
-  245:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:400, end:427},  // 6:40-7:07
-  246:{url:"https://www.youtube.com/watch?v=NtaPROZOcmM", start:428, end:453},  // 7:08-7:33
+  241:{url:"https://cfvideo.athleanx.com/2021/02/kneeling-up-and-over.mp4"},
+  242:{url:"https://cfvideo.athleanx.com/2021/07/short-arc-lateral-raise.mp4"},
+  243:{url:"https://cfvideo.athleanx.com/2021/07/cross-body-lateral-raise.mp4"},
+  244:{url:"https://cfvideo.athleanx.com/2021/07/Alternating-Bend-Over-Rear-Delt-Pull.mp4"},
+  245:{url:"https://cfvideo.athleanx.com/2021/07/banded-high-pull.mp4"},
+  246:{url:"https://cfvideo.athleanx.com/2021/07/hip-hugger.mp4"},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1239,7 +1257,7 @@ export const PROGRAMS = [
     sessions: {
       upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
       lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
-      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:233} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
       lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
     },
     techniques: {
@@ -1323,7 +1341,7 @@ export const PROGRAMS = [
     sessions: {
       upperA: { primary:{chestComp:6, chestIso:13}, accessories:{shoulderComp:45, biIso:133, triIso:148, shoulderComp2:56, shoulderIso:51} },
       lowerA: { primary:{quadComp:98, hamComp:118}, accessories:{gluteComp:81, calfIso:168, quadComp2:103, coreSides:73, coreComp:63} },
-      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:233} },
+      upperB: { primary:{chestComp:4, backComp:225}, accessories:{backIso:40, biIso:141, triIso:145, backIso2:39, shoulderIso:223} },
       lowerB: { primary:{quadComp:102, hamComp:119}, accessories:{gluteComp:80, hamIso:123, calfIso:170, coreComp:221, coreComp2:220} },
     },
     techniques: {
