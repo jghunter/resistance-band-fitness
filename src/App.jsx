@@ -5300,6 +5300,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
      is: re-opening a workout must not silently drop a choice that is already
      priced into its stamp. */
   const [ps, setPs] = useState(() => JSON.parse(JSON.stringify(entry.pressSetup || {})))
+  /* THE SESSION NOTE, editable here since 2026-10-13. It always survived an
+     edit -- the save below spreads `entry` -- but could never be changed, so a
+     note written mid-workout was permanent. Named `nt` to match this file's
+     two-letter editor-state convention (ex, gr, at, op, bp, ps). */
+  const [nt, setNt] = useState(() => entry.notes || '')
 
   const mapSet = (id, i, fn) => setEx(prev => {
     const n = { ...prev }
@@ -5428,6 +5433,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     const updated = RBTS_REPORTS.applyLoadStamp(
       { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
         opening: cleanOpening, bandPath: cleanBandPath, pressSetup: cleanPressSetup,
+        /* undefined, not '', so clearing the field really clears it --
+           JSON.stringify drops an undefined value on save. */
+        notes: nt.trim() || undefined,
         editedAt: new Date().toISOString() },
       loadStamp)
     onSave(updated)
@@ -5584,6 +5592,15 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
             onClick={()=>addSet(id)}>+ SET</button>
         </div>
       ))}
+      <div style={{background:C.bgInput,borderRadius:5,padding:'8px 10px'}}>
+        <span style={lbl}>SESSION NOTES</span>
+        <textarea value={nt}
+          onChange={e=>setNt(e.target.value)}
+          placeholder="how it felt, other training that day, anything to remember"
+          style={{...inputStyle,width:'100%',minHeight:44,resize:'vertical',
+            boxSizing:'border-box',fontFamily:'monospace',fontSize:11,
+            lineHeight:1.5,paddingTop:6}}/>
+      </div>
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <button style={{...btn(true,C.green),padding:'6px 18px',fontSize:11}} onClick={save}>SAVE CHANGES</button>
         <button style={{...btn(false),padding:'6px 18px',fontSize:11}} onClick={()=>onDone(false)}>CANCEL</button>
