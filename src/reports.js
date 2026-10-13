@@ -4711,6 +4711,50 @@
       isDeload: deloadOf ? !!deloadOf(e) : false,
     };
   }
+  /* THE LAST NOTE FROM THE SAME SESSION, for the setup sheet.
+
+     This exists because the sheet has NO CONCEPT OF A PREVIOUS SESSION.
+     buildSetupDoc resolves every slot independently through
+     lastUse(log, id, date), so a five-slot sheet can draw from five different
+     past sessions. A session note is session-level, so there is nothing for it
+     to attach to and no existing accessor answers the question.
+
+     Returns null, or { date, note, isDeload }.
+
+     THREE RULES, all deliberate:
+
+     1. SCOPED TO programId AS WELL AS sKey. Session keys repeat across
+        programs -- F, C and G each appear in more than one -- so an unscoped
+        match could surface a differently-shaped day's note. Just after a
+        program switch this answers null, which is honest.
+
+     2. IT DOES NOT REACH FURTHER BACK. If the last same-session entry carries
+        no note, the answer is null rather than an older note, which would be
+        presented as though it were recent.
+
+     3. DELOADS ARE INCLUDED, and reported via isDeload. lastUse excludes them
+        because deload LOADS are not comparable; that reasoning does not
+        extend to prose. A deload note is still a note about that day. */
+  function lastSessionNote(log, programId, sKey, beforeDate, deloadOf) {
+    var same = (log || []).filter(function (e) {
+      if (!e || e.date == null || e.date === "") return false;
+      if (String(e.programId) !== String(programId)) return false;
+      if (String(e.session) !== String(sKey)) return false;
+      return beforeDate == null || String(e.date) < String(beforeDate);
+    }).sort(function (a, b) {
+      return String(b.date).localeCompare(String(a.date));
+    });
+    if (!same.length) return null;
+    var e = same[0];
+    /* Rule 2 lives here: only same[0] is consulted. */
+    var note = e.notes == null ? "" : String(e.notes);
+    if (!note.replace(/\s/g, "")) return null;
+    return {
+      date: e.date,
+      note: note,
+      isDeload: deloadOf ? !!deloadOf(e) : false,
+    };
+  }
   /* WORKING history only - deloads are reduced load, which is junk data for
      every progression and trend judgment. */
   function exHistory(log, exId, beforeDate, n, deloadOf) {
@@ -5653,15 +5697,38 @@
     var loadNotes = { heading: "LOAD METHOD NOTES", type: "notes",
       rows: loadCaveatNotes(rawEntries, ctx.gearOf) };
 
+    /* WHAT YOU TOLD YOURSELF LAST TIME YOU DID THIS DAY. Session-level prose
+       reached only the printed HISTORY report until 2026-10-13, and planning
+       the next session is where it is most use -- "right shoulder tight on
+       OHP" is worth reading before setting up, not after.
+
+       SPLIT ON NEWLINES. Both renderers emit one row per line (markdown pushes
+       each with a blank after, print wraps each in a <div class="ln">), so a
+       multi-line note handed over as ONE row would render as one long line. */
+    var lastNote = lastSessionNote(ctx.log, prog.id, sKey, opts.date, ctx.deloadOf);
+    var noteSections = [];
+    if (lastNote) {
+      noteSections.push({
+        heading: "LAST " + sessionHeading(ctx.sessionLabelOf(prog, sKey), sKey) +
+                 " - " + lastNote.date + (lastNote.isDeload ? " (DELOAD)" : ""),
+        type: "notes",
+        rows: lastNote.note.split(/\r?\n/),
+      });
+    }
+
     return {
       kind: "setup",
       title: "WORKOUT SETUP SHEET",
       meta: meta,
-      sections: [
+      /* The note goes FIRST, ahead of the PULL LIST. The pull list is what
+         you gather; the note is context for the whole session and is the
+         thing to read before any of it. An empty noteSections contributes
+         nothing -- silent when the last same-session entry had no note. */
+      sections: noteSections.concat([
         { heading: "PULL LIST", type: "kv", rows: pullRows },
         { heading: "EXERCISES", type: "exercises", rows: exRows },
         loadNotes
-      ],
+      ]),
       generatedAt: new Date().toISOString()
     };
   }
@@ -9111,6 +9178,7 @@
     setVolume: setVolume,
     sortedLog: sortedLog,
     lastUse: lastUse,
+    lastSessionNote: lastSessionNote,
     exHistory: exHistory,
     isStalled: isStalled,
     progressionState: progressionState,
