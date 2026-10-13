@@ -264,7 +264,16 @@ export const VIDEOS = {
   67:"https://www.youtube.com/shorts/64RP6a4zK7Q",
   68: {url:"https://www.youtube.com/watch?v=2LrjmwFDCFI", start:56, end:104},
   69: {url:"https://www.youtube.com/watch?v=R4cYlVkcp7w", start:100, end:123},
-  70:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
+  /* 2026-10-13: was a bare-string 6ffBlaBBWmA, which only ever opened a tab.
+     Promoted from custom 1016, which Greg prefers -- a window into
+     MfjpqCII2Z0, so this one EMBEDS. Same reel as 1015 Ab Twist at [30-42];
+     the two windows do not overlap. 70 keeps its id because it carries six
+     log references and fills three program slots (core P-F, coreFront P-C,
+     coreComp P-G). Only the video moved: 70 is curated comp in EX_COMP_IDS
+     while every custom is the ADD form's "iso" default, and it stays OUT of
+     EX_UNILATERAL -- Greg watched the clip, it is one continuous alternating
+     set, not per-side. */
+  70:{url:"https://www.youtube.com/watch?v=MfjpqCII2Z0", start:100, end:125},
   71: {url:"https://www.youtube.com/watch?v=R4cYlVkcp7w", start:123, end:132},
   72: {url:"https://www.youtube.com/watch?v=R4cYlVkcp7w", start:212, end:229},
   73:"https://www.youtube.com/shorts/x2h7QqBYg1U",
@@ -419,6 +428,20 @@ export const VIDEOS = {
      authored beside it in the first place. It now holds the clip 233 carried,
      and 233 has been reused; see the EXERCISE_NAMES comment on 226-234. */
   223:{url:"https://www.youtube.com/watch?v=CSispgPqROE", start:0,   end:75},
+  /* 222 had NO entry at all until 2026-10-13 and read "video pending" --
+     the same absence that caused 233 to be authored beside 223. Promoted
+     from custom 1013.
+
+     A BARE STRING ON PURPOSE (Greg's call). The URL is a .gif, and
+     resolveVideo's direct-file matcher lists mp4/webm/ogv/ogg/mov/m4v only,
+     so this falls to the bare-string branch and WATCH DEMO opens it in a
+     tab -- exactly how custom 1013 behaved. Adding gif to that matcher
+     would be WRONG, not merely out of scope: a <video> tag cannot decode a
+     GIF at all, so it would render a black box. Playing it in-page needs an
+     imageUrl branch plus an <img> in VideoModal, which was declined as out
+     of scope and is recorded in TODO_open_items.md. 1012 Banded Plank Walk
+     is the other GIF custom and is in the same position. */
+  222:"https://i0.wp.com/post.healthline.com/wp-content/uploads/2021/01/400x400_Resistance_Band_Workout_Abs_Banded_Bird_Dog.gif?h=840",
   224:{url:"https://www.youtube.com/shorts/5eMkKAGm5B0"},
   // Promoted from customs 1000-1008 (2026-08-12). 226 is not a YouTube link:
   // resolveVideo returns it with embedUrl null and never appends a timestamp,
