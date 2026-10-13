@@ -4785,6 +4785,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
      every other per-exercise map is keyed by the performed id. */
   const [subsLogs, setSubsLogs] = useState({})
   const [saved, setSaved]         = useState(false)
+  /* SESSION NOTES. This app could not author one at all until 2026-10-13 --
+     and worse, handleSaveEntry does next[idx] = entry, a wholesale replace,
+     against the entry object built below. With no `notes` field there, logging
+     a session with a note in fitness_app.html and re-saving it here DESTROYED
+     the note silently. Giving this app the field closes that by construction:
+     the restore effect seeds it and handleSave writes it back. */
+  const [notes, setNotes]         = useState('')
   /* Which day the SETUP SHEET covers: 'today' or 'next'. Deliberately NOT
      persisted -- a remembered 'next' would silently print the wrong day the
      following week, and there is no screen that would show it was still on.
@@ -4865,6 +4872,11 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
             sessionPrescribedIds(info.prog, info.session),
             EXERCISE_NAMES))
       setSaved(!!(existing?.completedAt))
+      /* No draft branch, because THIS APP HAS NO DRAFT MECHANISM -- the
+         standing-subs comment above says so, and adding one here would mean
+         building the whole mechanism the PWA deliberately lacks. The HTML
+         app's three-way seed (draft, then entry, then empty) does not apply. */
+      setNotes(existing?.notes ?? '')
     }
   }, [info.session, todayISO, log])
 
@@ -4930,6 +4942,10 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       bandPath: cleanBandPath,
       pressSetup: cleanPressSetup,
       subs: cleanSubs,
+      /* Trimmed, and ABSENT rather than an empty string when there is nothing
+         to say -- matching fitness_app.html, so an entry saved in either app
+         has the same shape and a cleared note really clears. */
+      notes: notes.trim() || undefined,
       completedAt:new Date().toISOString(),
     }
     /* Stamp AFTER cleaning so the load reflects exactly the sets being saved.
@@ -5206,6 +5222,15 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               onOpeningChange={o=>{setOpeningLogs(o); setSaved(false)}}
               onAttachChange={a=>{setAttachLogs(a);setSaved(false);}}
               todayDate={todayISO} log={log}/>
+          </div>
+          <div style={widget}>
+            <span style={lbl}>SESSION NOTES — how it felt, other training, anything to remember</span>
+            <textarea value={notes}
+              onChange={e=>{setNotes(e.target.value); setSaved(false)}}
+              placeholder="e.g. X3 Force Bar · right shoulder tight on OHP · also did 3x5 deadlift Tue"
+              style={{...inputStyle,width:'100%',minHeight:44,resize:'vertical',
+                boxSizing:'border-box',fontFamily:'monospace',fontSize:11,
+                lineHeight:1.5,paddingTop:6}}/>
           </div>
           <div style={{...widget,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
             <button style={{...btn(saved,saved?C.green:C.accent),padding:'8px 28px',fontSize:12}}
