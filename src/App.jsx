@@ -5928,6 +5928,19 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                   { entries: [e], single: true })}
                 name={() => `session_${e.date}_${e.session}.md`}/>
             </div>
+            {/* THE SESSION NOTE, on the card rather than only in the printed
+                report. buildHistoryDoc has rendered e.notes since it was
+                written; nothing on screen in either app did until 2026-10-13.
+                pre-wrap because the field is multi-line and a collapsed note
+                is barely more use than a hidden one. Silent when absent. */}
+            {e.notes ? (
+              <div style={{background:C.bgInput,borderRadius:5,padding:'7px 10px',
+                marginBottom:8,borderLeft:'2px solid '+C.accentDim}}>
+                <span style={{...lbl,marginBottom:3}}>SESSION NOTES</span>
+                <div style={{fontFamily:'monospace',fontSize:11,color:C.textSec,
+                  lineHeight:1.5,whiteSpace:'pre-wrap'}}>{e.notes}</div>
+              </div>
+            ) : null}
             {isEditing ? (
               <HistoryEntryEditor entry={e} onSave={onSaveEntry} onDelete={onDeleteEntry}
                 onDone={()=>setEditKey(null)} gearInv={gearInv} log={log}/>
