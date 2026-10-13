@@ -3589,6 +3589,12 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
   const exRows = RBTS_REPORTS.exerciseProgressionRows(rmCtx, W, { carryIn: true })
 
   const series = winEntries.map(e => ({ date:e.date, sets:entryStats(e).sets }))
+  /* THE NOTES IN THIS WINDOW. Session-level prose is what makes a volume
+     trend readable -- "also did 3x5 deadlift Tuesday" explains a dip the
+     numbers alone present as a decline. NEWEST FIRST: resolveWindow hands
+     back ascending entries, which is right for the chart below and wrong
+     for a list read top-down. */
+  const sessionNotes = winEntries.filter(e => !!e.notes).slice().reverse()
   const maxSets = series.reduce((m,x) => Math.max(m,x.sets), 0) || 1
   const deltaColor = setDelta == null ? C.dimGray : (setDelta >= 0 ? C.green : C.amber)
 
@@ -3685,6 +3691,30 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
           <span style={{fontFamily:'monospace',fontSize:13,color:deltaColor,fontWeight:700}}>SETS {fmtPct(setDelta)}</span>
           <span style={{fontFamily:'monospace',fontSize:13,color:(repDelta==null?C.dimGray:(repDelta>=0?C.green:C.amber))}}>REPS {fmtPct(repDelta)}</span>
           <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>prior: {P.sessions} workouts · {fmtNum(P.sets)} sets · {fmtNum(P.reps)} reps</span>
+        </div>
+      ) : null}
+
+      {/* SILENT WHEN THERE ARE NONE -- the BodyweightWidget rule: says
+          nothing unless there is something to say. A panel reading
+          "no notes" on every window is noise. */}
+      {sessionNotes.length > 0 ? (
+        <div style={widget}>
+          <span style={lbl}>SESSION NOTES — {sessionNotes.length} IN THIS {cfg.label}</span>
+          <div style={{display:'flex',flexDirection:'column',gap:7,marginTop:6}}>
+            {sessionNotes.map(e => (
+              <div key={e.date+'_'+e.session} style={{display:'flex',gap:10,
+                alignItems:'flex-start',flexWrap:'wrap'}}>
+                <span style={{fontFamily:'monospace',fontSize:10,color:C.readout,
+                  minWidth:92,flexShrink:0}}>
+                  {e.date} {e.session}
+                </span>
+                <span style={{fontFamily:'monospace',fontSize:11,color:C.textSec,
+                  lineHeight:1.5,whiteSpace:'pre-wrap',flex:1,minWidth:180}}>
+                  {e.notes}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
