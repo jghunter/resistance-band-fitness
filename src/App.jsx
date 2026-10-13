@@ -5949,8 +5949,12 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                 report. buildHistoryDoc has rendered e.notes since it was
                 written; nothing on screen in either app did until 2026-10-13.
                 pre-wrap because the field is multi-line and a collapsed note
-                is barely more use than a hidden one. Silent when absent. */}
-            {e.notes ? (
+                is barely more use than a hidden one. Silent when absent.
+                Hidden while EDITING since 2026-10-13: the editor carries its
+                own editable notes field, and showing the saved copy above it
+                displayed the same note twice with the upper one looking live
+                when it is not. */}
+            {!isEditing && e.notes ? (
               <div style={{background:C.bgInput,borderRadius:5,padding:'7px 10px',
                 marginBottom:8,borderLeft:'2px solid '+C.accentDim}}>
                 <span style={{...lbl,marginBottom:3}}>SESSION NOTES</span>
