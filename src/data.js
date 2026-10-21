@@ -424,6 +424,23 @@ export const VIDEOS = {
   /* 218/219/224 added 2026-08-24. None is timed, so all three play whole. */
   218:{url:"https://www.youtube.com/shorts/-utR7gQmaMo"},
   219:{url:"https://www.youtube.com/shorts/t95MKRptEX4"},
+  /* 221 had NO entry at all until 2026-10-20 -- the same absence that
+     caused 233 to be authored beside 223 and 1013 beside 222. Greg's pick:
+     Undersun Fitness, "Fire up those Abs | Banded V-Up with Resistance
+     Bands". Title confirmed against YouTube's oembed endpoint 2026-10-20.
+
+     THE OBJECT FORM, not a bare string, and the difference is visible on
+     screen: a bare-string YouTube link returns embedUrl null and only ever
+     opens a tab, while this EMBEDS and plays in-page. It carries no clip
+     window -- the video is this one movement, so there is nothing to trim
+     past (the 218/219/224 and 240 precedent). No window also means the
+     file:// clip limitation from 2026-10-14 cannot reach this entry at all.
+
+     221 STAYS BILATERAL. A V-up lifts both legs and both arms at once, so
+     it stays out of EX_UNILATERAL -- the third of the three tables the
+     2026-09-15 lesson names, and the one a video edit makes least obvious
+     that it is in play. */
+  221:{url:"https://www.youtube.com/watch?v=4IiuyO0jBSI"},
   /* 223 had NO entry at all until 2026-10-12 -- the absence is why 233 was
      authored beside it in the first place. It now holds the clip 233 carried,
      and 233 has been reused; see the EXERCISE_NAMES comment on 226-234. */
