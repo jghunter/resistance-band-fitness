@@ -5407,6 +5407,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     setEx(prev => { const n = { ...prev }; delete n[id]; return n })
     setGr(prev => { const n = { ...prev }; delete n[id]; return n })
     setAt(prev => { const n = { ...prev }; delete n[id]; return n })
+    /* The other THREE maps this editor holds, added 2026-10-21. They were
+       orphaned here while this app's in-session removeEx already cleared all
+       six. Remove an exercise and re-add it -- one click away, the ADD form
+       is right there -- and it would inherit the removed one's opening, band
+       path and press setup. None of the three is inert: all three are PRICING
+       inputs, so the re-added exercise would be stamped against a rig nobody
+       chose. Mirrors fitness_app.html. */
+    setOp(prev => { const n = { ...prev }; delete n[id]; return n })
+    setBp(prev => { const n = { ...prev }; delete n[id]; return n })
+    setPs(prev => { const n = { ...prev }; delete n[id]; return n })
   }
   const updateAttach = (id, h) => setAt(prev => {
     const n = { ...prev }
