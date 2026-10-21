@@ -424,6 +424,41 @@ export const VIDEOS = {
   /* 218/219/224 added 2026-08-24. None is timed, so all three play whole. */
   218:{url:"https://www.youtube.com/shorts/-utR7gQmaMo"},
   219:{url:"https://www.youtube.com/shorts/t95MKRptEX4"},
+  /* 220 had NO entry at all until 2026-10-21. Promoted from custom 1014
+     "Side Plank Rows", which carried this clip and which Greg prefers.
+
+     220 KEEPS ITS ID because it is PRESCRIBED: three generated workbook
+     programs list it as an accessory, so retiring it would empty three
+     program slots. The 223/233 rule -- the newer id is the one that moves.
+
+     ONLY THE VIDEO MOVED. 220 keeps the name "Band Side Plank Row" (the
+     custom's own spelling was the plural "Side Plank Rows"), keeps CORE,
+     and keeps its curated class COMP -- the custom record says "iso",
+     which is the ADD form's default rather than a ruling. That is the same
+     rule the 2026-10-12 and 2026-10-13 promotions followed, and it is why
+     EX_GROUP_OVERRIDE and EX_CLASS_OVERRIDE needed no edit.
+
+     THE WINDOW IS LOAD-BEARING, not a trim. The video is Clench Fitness,
+     "5 Innovative Exercises For A Stronger Core" -- five movements in one
+     reel -- so a wrong window plays a DIFFERENT EXERCISE, not merely the
+     wrong moment. 195-270 is 3:15-4:30. Title confirmed against YouTube's
+     oembed endpoint 2026-10-21.
+
+     SO THIS ENTRY IS SUBJECT TO THE 2026-10-14 file:// LIMITATION, and it
+     is one of the entries that limitation matters most for. A page opened
+     by double-clicking has no origin to send, YouTube's embedded player
+     then ignores start and end, and a compilation reel plays from 0:00 --
+     the wrong exercise. VideoModal says so: the clip range in amber, one
+     line of explanation, and an OPEN AT 3:15 link. Serve the file over
+     http:// and the window is honoured.
+
+     220 IS UNILATERAL AND STAYS SO. Greg, 2026-10-21: "you exercise the
+     left side and the right side separately." It has been in EX_UNILATERAL
+     since before this change, so the third of the three tables needed no
+     edit -- but the absence of an edit is now PINNED rather than merely
+     true, because a video swap is where sidedness is least obviously in
+     play. */
+  220:{url:"https://www.youtube.com/watch?v=KxI_ZVT51hA", start:195, end:270},
   /* 221 had NO entry at all until 2026-10-20 -- the same absence that
      caused 233 to be authored beside 223 and 1013 beside 222. Greg's pick:
      Undersun Fitness, "Fire up those Abs | Banded V-Up with Resistance
