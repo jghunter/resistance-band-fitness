@@ -498,6 +498,37 @@ function rirTargetNow() {
           && TRAINING_STYLE.rirTarget >= 0)
          ? TRAINING_STYLE.rirTarget : rirTargetResolved()
 }
+/* THE SAME TREATMENT FOR progressReps, added 2026-10-21, and it matters more
+   than the RIR one: progressionState reads progressReps and has NOT read
+   rirTarget since 2026-09-17, when the bar started sliding on each set's own
+   logged rir. So that change gave the live read to the field the module
+   stopped reading and left the snapshot on the field it reads.
+
+   PROG_TARGET_REPS is snapshotted at module load. fitness_app.html says that
+   is "fine because nothing edits it" and there it is TRUE -- that app has no
+   Firestore, and its REPLACE ALL alert tells you to reload. HERE IT IS FALSE:
+   a cloud adopt rewrites rbts_profiles mid-session and refreshProfileHolders
+   exists precisely so the running session follows it. The comment travelled
+   across without the condition that made it true.
+
+   Measured on a genuine discarding adopt with no reload (emulator, same uid,
+   older local): set rows went 1 -> 3 and the seeded RIR 0 -> 2, both correct,
+   while the printed bar stayed at >=13 with progressReps already 20 in
+   storage. A reload then showed >=21.
+
+   There is no holder for this field -- readTrainingStyle does not carry it --
+   so this RE-RESOLVES from storage, exactly like rirTargetResolved, and falls
+   back to the snapshot on any failure. */
+function progTargetRepsNow() {
+  try {
+    const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const raw = ps.find(x => x.id === ap) || null
+    if (!raw) return PROG_TARGET_REPS
+    const r = (RBTS_PHASE1 && RBTS_PHASE1.resolveProfile) ? RBTS_PHASE1.resolveProfile(raw) : raw
+    return (r && typeof r.progressReps === 'number') ? r.progressReps : PROG_TARGET_REPS
+  } catch { return PROG_TARGET_REPS }
+}
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
@@ -2271,7 +2302,12 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       <div style={{borderTop:'1px solid rgba(255,255,255,0.07)',paddingTop:8}}>
         <span style={{...lbl,marginBottom:2}}>LOG SETS</span>
         <div style={{fontFamily:'monospace',fontSize:10,color:C.dimGray,marginBottom:6}}>
-          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{PROG_TARGET_REPS + 1} REPS, +1 PER RIR → MOVE UP A BAND
+          {/* progTargetRepsNow(), not PROG_TARGET_REPS: this line STATES the
+              bar that progressionState judges on, so the two must not be read
+              from different places. The ctx below was corrected first and this
+              line stayed stale, which is how the second consumer was found --
+              a proxy for a badge is not the badge. */}
+          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{progTargetRepsNow() + 1} REPS, +1 PER RIR → MOVE UP A BAND
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
@@ -2816,8 +2852,12 @@ function makeReportCtx({ log, gear, myBands }) {
   return {
     log: log || [],
     programs: PROGRAMS,
-    // Profile-driven progression targets, NOT the module's fallbacks.
-    progressReps: PROG_TARGET_REPS,
+    /* Profile-driven progression targets, NOT the module's fallbacks.
+       progTargetRepsNow(), not PROG_TARGET_REPS -- read LIVE so a cloud
+       profile adopt reaches READY / STALLED without a reload. This is the
+       field progressionState actually reads; see the comment above
+       progTargetRepsNow. */
+    progressReps: progTargetRepsNow(),
     // rirTargetNow(), not RIR_TARGET -- read live so a RIR control edit
     // reaches READY / STALLED without a reload. See the 2026-09-17 comment
     // above rirTargetNow's definition.
