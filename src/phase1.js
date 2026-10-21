@@ -247,7 +247,18 @@
     deloadStyle: "intensity",  // volume | intensity | rest
     deloadScope: "week",       // week | session
     allowedIntensifiers: Object.keys(INTENSIFIERS),
-    splitId: "body_part_5",    // legacy default so nothing changes until opted in
+    /* THERE IS NO splitId HERE, AND THAT IS DELIBERATE (removed 2026-10-21).
+       The field sat here from the start and NOTHING EVER READ IT. Session
+       derivation reads the profile-SCOPED localStorage key -- lsGet("splitId")
+       in fitness_app.html, settings.splitId in the PWA, both resolving to
+       rbts_<profileId>_splitId -- so the active split was never this object's
+       business. The field was worse than inert: it rode both apps' exports
+       while the key that decides the prescription rode neither, so two export
+       comments and one import alert concluded the split was backed up. Greg's
+       call: delete the dead field and export the real key.
+       Do not re-add it. If the split should ever become a profile field, the
+       scoped key has to be migrated INTO it in the same change, or a cleared
+       override silently becomes whatever the profile happens to say. */
     ownedBands: [],            // migrates from rbts_myBands
     /* How many set rows an exercise seeds with in the workout logger.
        null = follow whatever the PROGRAM prescribes (progDefaultSets), which
@@ -479,7 +490,11 @@
       population: "older_adult",
       experience: "advanced",
       rirTarget: 1,                 // 0–1 in practice
-      splitId: "upper_lower",       // his balanced upper/lower (neck+forearms upper, core lower)
+      /* splitId was here until 2026-10-21 ("upper_lower", his balanced
+         upper/lower). Removed with the dead PROFILE_DEFAULTS field: it is not
+         what the app reads, and this function is the RECORD OF WHAT HE TRAINS,
+         so a value nothing consults does not belong in it. His real override
+         lives in rbts_greg_splitId and was CLEARED when this was written. */
       deloadEvery: 5,               // older adult → recover a touch more often
       defaultSets: 1,               // HIT: one set to failure, not the program's 3
       volumeModel: "hit",
@@ -655,7 +670,8 @@
     /* NOTHING PERSONAL IS SEEDED HERE (changed 2026-08-21, Greg's ruling).
        This used to apply gregSeedOverrides() -- population "older_adult",
        experience "advanced", rirTarget 1, defaultSets 1, volumeModel "hit",
-       deloadEvery 5, splitId "upper_lower" -- to EVERY profile this function
+       deloadEvery 5 (and a splitId that nothing read, removed 2026-10-21)
+       -- to EVERY profile this function
        creates. That is correct for exactly one person, and this function runs
        at module load on ANY device with no profile, so the first person handed
        the app inherited a training philosophy they never chose: the logger

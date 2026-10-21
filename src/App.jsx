@@ -5640,7 +5640,11 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   )
 }
 
-function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user, onProgramsChanged }) {
+/* `settings` and `onChangeSettings` are here for ONE field: settings.splitId,
+   the split override. It decides which sessions every training day prescribes
+   and rode neither app's export until 2026-10-21 -- and this app has only a
+   MERGE, so the import below has to ask before changing a prescription. */
+function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user, onProgramsChanged, settings, onChangeSettings }) {
   const uid = user ? user.uid : null
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate]     = useState(() => localISO())
@@ -5715,13 +5719,34 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
          cannot read as a deliberate wipe on import. */
       ...(Object.keys(getLocalBandGeom()).length ? { rbts_bandGeom: getLocalBandGeom() } : {}),
       ...(getLocalBodyweight().length ? { rbts_bodyweight: getLocalBodyweight() } : {}),
-      /* The PROFILE carries rirTarget, defaultSets, volumeModel and splitId,
-         which live nowhere else. The PWA has no editor for them, so this file
-         is the ONLY way a training-style change made in the HTML app reaches
-         the PWA — and without it the two apps quietly disagree about how many
-         sets to seed and whether volume landmarks apply. Same omit-when-empty
-         rule as above, so an export from a device with no profile cannot read
-         as a deliberate wipe. Mirrors fitness_app.html. */
+      /* THE SPLIT OVERRIDE, in a backup since 2026-10-21 and in NONE before
+         that. It decides which sessions every training day prescribes. It does
+         sync between this app's devices (settings reaches
+         users/{uid}/meta/settings), but fitness_app.html has NO Firestore, so
+         without this line the two apps could hold different overrides and
+         prescribe different sessions for the same day with no route between
+         them. Unconditional, and `|| ''` is the stored meaning rather than a
+         placeholder: '' IS the cleared state, i.e. each program uses its own
+         split. */
+      rbts_splitId: settings.splitId || '',
+      /* The PROFILE carries rirTarget, defaultSets and volumeModel.
+
+         TWO CLAIMS WERE CUT FROM THIS COMMENT ON 2026-10-21, both stale and
+         both load-bearing. It said the profile also carries `splitId`, "which
+         live[s] nowhere else" -- the profile had that field, it rode this
+         export, and NOTHING EVER READ IT; the active split is rbts_splitId
+         above. And it claimed this app had no editor for these fields, which
+         stopped being true on 2026-08-27 when the TRAINING STYLE panel shipped
+         here. A reader who trusted either sentence concluded the split was
+         backed up here, which is how finding B stayed invisible. (Neither old
+         sentence is quoted verbatim: the parity suite asserts both ABSENT over
+         this whole file, and quoting one would defeat its own assertion.)
+
+         The file is still the only way a training-style change crosses
+         between the two apps, and without it they quietly disagree about how
+         many sets to seed and whether volume landmarks apply. Same
+         omit-when-empty rule as above, so an export from a device with no
+         profile cannot read as a deliberate wipe. Mirrors fitness_app.html. */
       ...(getLocalProfiles().length
             ? { rbts_profiles: getLocalProfiles(),
                 rbts_activeProfile: localStorage.getItem('rbts_activeProfile') || '' }
@@ -5787,6 +5812,41 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
            device only and the next reconcile from another device merges it
            away as absent. */
         if (mergedProgs && onProgramsChanged) onProgramsChanged()
+        /* THE SPLIT OVERRIDE, behind a confirm, and the confirm is the whole
+           design. This app has no REPLACE ALL, so the merge is the only door
+           -- but the split decides WHICH SESSIONS every training day
+           prescribes, and a merge changing that silently would be the loudest
+           possible change arriving through the quiet, additive door. The HTML
+           app can restore it without asking because there it sits on the
+           REPLACE ALL path, which already means "make this device look like
+           the file". Same shape as the inventory confirm below, this file's
+           established pattern for "the file wins, but say so first".
+
+           THE GUARD IS A typeof TEST, NOT A TRUTHINESS TEST. '' is a REAL
+           value here -- it means "each program uses its own split" -- so a
+           truthy check would silently refuse to restore a deliberately
+           CLEARED override. A file written before 2026-10-21 carries no such
+           key and this does nothing, the rule the measurements follow.
+
+           SKIPPED ENTIRELY when the file agrees with this device, so an
+           ordinary same-owner merge asks nothing. */
+        let splitMsg = ''
+        if (typeof (state && state.rbts_splitId) === 'string') {
+          const SPL = RBTS_PHASE1?.SPLITS || {}
+          const fileSplit = state.rbts_splitId
+          const mySplit = (settings && settings.splitId) || ''
+          const nameOf = v => v ? ((SPL[v] && SPL[v].label) || v)
+                                : "cleared \u2014 each program's own split"
+          if (fileSplit !== mySplit) {
+            if (window.confirm(
+                  `File sets the SPLIT OVERRIDE to ${nameOf(fileSplit)}. `
+                + `This device currently uses ${nameOf(mySplit)}. `
+                + `That changes which sessions every training day prescribes. Continue?`)) {
+              onChangeSettings({ splitId: fileSplit })
+              splitMsg = ` Split override: ${nameOf(fileSplit)}.`
+            } else splitMsg = ' Split override: skipped.'
+          }
+        }
         // Inventory (gear + MY BANDS) is independent of the log merge.
         const invMsg = onImportInventory ? await onImportInventory(state) : ''
         /* Measurements ride along too — the two apps do not share an origin,
@@ -5824,18 +5884,21 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           try {
             saveLocalProfiles(state.rbts_profiles, uid)
             if (state.rbts_activeProfile) localStorage.setItem('rbts_activeProfile', state.rbts_activeProfile)
-            measMsg += ' Profile restored (RIR, set seeding, volume model, split) — RELOAD for it to take effect.'
+            /* "split" was in this list until 2026-10-21 and was never true: the
+               profile had a splitId field and nothing ever read it. The split
+               override is reported by splitMsg, from the key that decides it. */
+            measMsg += ' Profile restored (RIR, set seeding, volume model) — RELOAD for it to take effect.'
           } catch { /* storage full: the rest of the import still stands */ }
         }
         if (!incoming) {
-          if (customs.length || invMsg || measMsg || mergedProgs) {
+          if (customs.length || invMsg || measMsg || splitMsg || mergedProgs) {
             /* A file carrying ONLY tombstones has no log and no list, and
                lands here. It must still report what it removed. */
             alert('No rbts_log in file.' +
               (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
               (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total.` : '') +
               (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
-              invMsg + measMsg)
+              invMsg + measMsg + splitMsg)
             return
           }
           alert('Invalid file — expected an rbts_log array.'); return
@@ -5864,10 +5927,10 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                abandons the LOG merge and nothing else. This whole item exists
                because an alert misdescribed what a merge did to the log; the
                same sentence one layer out is the same defect. */
-            alert('Log merge cancelled. Your log is unchanged.' + invMsg +
+            alert('Log merge cancelled. Your log is unchanged.' + invMsg + splitMsg +
                   '\n\nAnything else this file carried -- custom exercises, ' +
-                  'programs, band calibration -- was already merged before ' +
-                  'this point.')
+                  'programs, band calibration, the split override -- was ' +
+                  'already merged before this point.')
             return
           }
           policy = window.confirm(`Use the FILE'S version of those ` +
@@ -5887,7 +5950,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           alert('Could not save the merged log on this device — storage is ' +
                 'probably full.\n\nWhat you see on screen has merged, but it ' +
                 'will be lost on reload. Nothing was sent to the cloud.' +
-                invMsg + measMsg)
+                invMsg + measMsg + splitMsg)
           return
         }
         alert(`Added ${res ? res.added : '?'} session(s), ` +
@@ -5900,7 +5963,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total — RELOAD to see them.` : '') +
           (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
-          invMsg + measMsg)
+          invMsg + measMsg + splitMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }
     }
     reader.readAsText(file); e.target.value = ''
@@ -6881,7 +6944,16 @@ export default function App() {
             } catch {}
           }
         } catch (e) { console.error('Band calibration sync failed:', e) }
-        // Profile (RIR target, set seeding, volume model, split): the same
+        /* Profile (RIR target, set seeding, volume model): the same
+           whole-document rule as band calibration.
+
+           THE SPLIT WAS IN THAT LIST UNTIL 2026-10-21 and was never carried by
+           this document. The profile had a splitId field that nothing read;
+           the active split is settings.splitId, which reaches
+           users/{uid}/meta/settings by its own path. This was the FIFTH place
+           to repeat the claim -- found by the parity assertion written for the
+           other four, which is the argument for absence tests over source. */
+        // The one difference from band calibration, which
         // whole-document rule as band calibration with ONE difference, which
         // reconcileProfiles owns and documents — an unstamped local profile
         // is treated as empty, because phase1.migrateToProfiles manufactures
@@ -7315,8 +7387,11 @@ export default function App() {
           </div>
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
-        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user} onProgramsChanged={handleProgramsChanged}/>}
-        {/* gearInv and myBands because makeReportCtx REQUIRES all three, and
+        {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user} onProgramsChanged={handleProgramsChanged} settings={settings} onChangeSettings={handleChangeSettings}/>}
+        {/* settings and onChangeSettings for the SPLIT OVERRIDE alone -- the
+            export carries it since 2026-10-21 and the merge can restore it,
+            behind a confirm, because this app has no REPLACE ALL.
+            gearInv and myBands because makeReportCtx REQUIRES all three, and
             `gear: []` would pass every test while being wrong: the load a
             1RM is read off was frozen on the entry at save time, so an empty
             inventory changes nothing TODAY and everything later. `user`
