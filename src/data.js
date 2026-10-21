@@ -441,15 +441,18 @@ export const VIDEOS = {
      THE WINDOW IS LOAD-BEARING, not a trim. The video is Clench Fitness,
      "5 Innovative Exercises For A Stronger Core" -- five movements in one
      reel -- so a wrong window plays a DIFFERENT EXERCISE, not merely the
-     wrong moment. 195-270 is 3:15-4:30. Title confirmed against YouTube's
-     oembed endpoint 2026-10-21.
+     wrong moment. 194-275 is 3:14-4:35, which Greg TIMED BY HAND on
+     2026-10-21. Custom 1014 carried 195-270, one second late and five
+     seconds short -- the promotion took that window verbatim and he
+     corrected it after watching the result. Title confirmed against
+     YouTube's oembed endpoint 2026-10-21.
 
      SO THIS ENTRY IS SUBJECT TO THE 2026-10-14 file:// LIMITATION, and it
      is one of the entries that limitation matters most for. A page opened
      by double-clicking has no origin to send, YouTube's embedded player
      then ignores start and end, and a compilation reel plays from 0:00 --
      the wrong exercise. VideoModal says so: the clip range in amber, one
-     line of explanation, and an OPEN AT 3:15 link. Serve the file over
+     line of explanation, and an OPEN AT 3:14 link. Serve the file over
      http:// and the window is honoured.
 
      220 IS UNILATERAL AND STAYS SO. Greg, 2026-10-21: "you exercise the
@@ -458,7 +461,7 @@ export const VIDEOS = {
      edit -- but the absence of an edit is now PINNED rather than merely
      true, because a video swap is where sidedness is least obviously in
      play. */
-  220:{url:"https://www.youtube.com/watch?v=KxI_ZVT51hA", start:195, end:270},
+  220:{url:"https://www.youtube.com/watch?v=KxI_ZVT51hA", start:194, end:275},
   /* 221 had NO entry at all until 2026-10-20 -- the same absence that
      caused 233 to be authored beside 223 and 1013 beside 222. Greg's pick:
      Undersun Fitness, "Fire up those Abs | Banded V-Up with Resistance
