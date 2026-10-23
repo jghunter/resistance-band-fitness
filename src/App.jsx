@@ -5883,7 +5883,21 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         let splitMsg = ''
         if (typeof (state && state.rbts_splitId) === 'string') {
           const SPL = RBTS_PHASE1?.SPLITS || {}
-          const fileSplit = state.rbts_splitId
+          /* unq, BECAUSE THE FILE MAY CARRY THE STORAGE ENCODING RATHER THAN
+             THE VALUE. fitness_app.html writes this key through useLS, which
+             JSON.stringifies, and its export shipped lsGet's RAW result until
+             2026-10-23 -- so every backup that app has ever written carries
+             `"upper_lower_4"` WITH ITS QUOTE CHARACTERS, 15 of them, not 13.
+             Compared bare, the two sides always differed: the confirm fired on
+             an ordinary same-owner merge claiming a change that did not exist,
+             printed the raw key where the label belongs (nameOf cannot find a
+             quoted key, so it falls through to v), and on OK stored a
+             DOUBLY-encoded value that unquoteSched only half unwraps, leaving
+             userSplitId's splitsReg lookup to miss and answer "" -- the
+             override silently CLEARED, and pushed to Firestore and the phone.
+             The quotes are stripped here rather than only at the source,
+             because the files that already exist cannot be rewritten. */
+          const fileSplit = unq(state.rbts_splitId)
           const mySplit = (settings && settings.splitId) || ''
           const nameOf = v => v ? ((SPL[v] && SPL[v].label) || v)
                                 : "cleared \u2014 each program's own split"
