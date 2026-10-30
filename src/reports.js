@@ -1797,12 +1797,33 @@
      the model has no term for it -- the same exclusion HANDLE_TOP_SPAN
      already makes. The overhead presses 43-46 are simply out of scope and
      nothing is guessed for them. */
-  var PRESS_SETUPS_ALL  = ["body", "plate", "bench"];
+  /* `bench` MEANS FLAT and is priced from benchPadHeightIn exactly as it
+     always was. `bench_angled` is priced from a TAPED STRAIGHT-LINE BAND RUN
+     and refuses without one.
+
+     WHY A TAPED LINE AND NOT AN ANGLE. pressTerms builds travel as a VERTICAL
+     sum, which is the band's real run only while the bench is flat. Angle the
+     back and the shoulders rise while the press direction tilts, so the run
+     becomes a diagonal the sum understates -- understating stretch, and so
+     understating load, which is the direction this model already errs in.
+     One tape of the finished line absorbs the back angle, the shoulder rise,
+     the press direction and the horizontal offset from plate to hands, and
+     needs no field, table or assumption for any of them. Same ruling as
+     `consumedIn` being THE WHOLE PATH on a footplate (2026-08-14) and
+     `torsoWidthIn` being a PATH rather than a chord (2026-09-24). Both of
+     those were settled after building a figure out of parts went wrong.
+
+     THE LIST CAN GROW, which is why pressSetup is a stable STRING and never
+     an index. Greg's bench has EIGHT settings and SETTING 1 IS FLAT; the
+     20-degree decline is not one of them and has no taped line, so it must be
+     logged as bench_angled and will refuse until one exists. */
+  var PRESS_SETUPS_ALL  = ["body", "plate", "bench", "bench_angled"];
   var PRESS_SETUPS_BODY = ["body"];
   var PRESS_SETUP_LABELS = {
-    body:  "BAND AROUND THE BODY",
-    plate: "LYING ON THE FOOTPLATE",
-    bench: "BENCH ON THE FOOTPLATE"
+    body:         "BAND AROUND THE BODY",
+    plate:        "LYING ON THE FOOTPLATE",
+    bench:        "BENCH ON THE FOOTPLATE",
+    bench_angled: "BENCH ON THE FOOTPLATE, ANGLED"
   };
   var PRESS_EXERCISES = {
     1:  { setups: PRESS_SETUPS_ALL,  span: "shoulderWidthIn", strands: 2 },
@@ -1944,6 +1965,44 @@
     singleArmHoldIn:  "single-arm hold"
   };
 
+  /* The taped band runs for one bench's stamped settings, numbered 1..n AS
+     STAMPED, so the number on screen is the number on the bench. Greg's
+     Yoleo has EIGHT and SETTING 1 IS FLAT.
+
+     ON THE PROFILE, NOT ON THE BENCH ITEM. These describe one bench PLUS one
+     plate band path PLUS one top end PLUS one body, and only the profile
+     holds all four. Putting them in GEAR_DIMS under the bench would repeat
+     the hookOffsetIn misfiling of 2026-09-25, where two ROPE readings sat on
+     two BARS because the hardware looked like the obvious home for them.
+
+     A CONVENIENCE, NOT A CLAIM. These fill the typed pressTravel field; the
+     typed INCHES are the only thing stored, and nothing on the log entry
+     records which button was tapped. An INDEX on a log entry would silently
+     repoint if the array were ever re-taped -- the band-id stability rule
+     through a different door, and why bandPaths keys are stable strings.
+
+     `n` IS THE ARRAY INDEX PLUS ONE, so the array order IS the numbering
+     printed on the bench. Keep it in setting order, FLAT FIRST. The X Straps
+     shipped with their seven readings reversed for exactly this reason and
+     every button named the position at the opposite end.
+
+     A DROPPED entry does not renumber its successors, which is why the loop
+     reads `i` rather than pushing a running counter: a half-typed array must
+     offer FEWER buttons, never buttons pointing at the wrong setting.
+
+     The property is `inches`, not `in`. `in` is a reserved word, legal as an
+     unquoted property name in ES5 and a needless hazard in a file that is
+     inlined into two other places. */
+  function benchTravelOptions(body) {
+    var arr = body && body.benchTravelOptionsIn;
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    arr.forEach(function (v, i) {
+      if (finitePos(v)) out.push({ n: i + 1, inches: v });
+    });
+    return out;
+  }
+
   /* What spans the top. A bar WINS: the band ends on the bar's hook points,
      not in the palms, so the grip is irrelevant whenever one is in the rig
      (Greg, 2026-09-14). Only with no bar does the exercise's own hand span
@@ -1975,7 +2034,8 @@
   /* What pins the band, and how far the top travels. Either may be null,
      and the basis names the SPECIFIC field that is missing -- blaming the
      wrong input is how someone re-measures a band that was fine. */
-  function pressTerms(exId, setupK, body, plateDims, bandPath, benchDims) {
+  function pressTerms(exId, setupK, body, plateDims, bandPath, benchDims,
+                      travelOverrideIn) {
     var rule = pressExercise(exId);
     var out = { consumedIn: null, travelIn: null,
                 strands: rule ? rule.strands : 2, basis: "" };
@@ -1999,6 +2059,32 @@
     }
 
     /* travel */
+    /* A TAPED LINE WINS ON EVERY SETUP. It is placed ABOVE the chest-depth
+       and press-reach guards deliberately: with a measured run in hand those
+       two fields are not inputs at all, so refusing for want of them would
+       refuse a rig this model can describe exactly.
+
+       finitePos, NOT isFinite: isFinite(null), isFinite("") and
+       isFinite("55") are all true, which is how an empty input box and an
+       imported string have twice passed for a measurement here. */
+    if (finitePos(travelOverrideIn)) {
+      out.travelIn = travelOverrideIn;
+      out.basis = "press geometry, on your measured band run";
+      return out;
+    }
+    /* An angled bench has no computable travel. The vertical sum below
+       describes a FLAT bench and nothing else, so returning it here would be
+       a plausible, confident, silent wrong number -- the exact failure this
+       model exists to remove. Task 2 lets a taped run satisfy this (above).
+       This check must run BEFORE the chestThicknessIn / pressReachIn guards
+       below: for bench_angled those two body fields are not inputs to this
+       setup at all, so letting either guard fire first blames a measurement
+       that has nothing to do with the actual missing input -- the
+       wrong-field-blame failure this model exists to prevent. */
+    if (setupK === "bench_angled") {
+      out.basis = "press setup: no measured band run recorded for this bench angle";
+      out.consumedIn = null; return out;
+    }
     if (!finitePos(body.chestThicknessIn)) {
       out.basis = "press setup: " + PRESS_FIELD_LABELS.chestThicknessIn + " not measured";
       out.consumedIn = null; return out;
@@ -2025,7 +2111,7 @@
      as beltReach does. ONE strand does not, and instead subtracts the
      length of the strand that never moves. */
   function pressReach(band, geom, exId, setupK, doubled, body, gearIds, gearOf,
-                      plateDims, bandPath, benchDims) {
+                      plateDims, bandPath, benchDims, travelOverrideIn) {
     var rule = pressExercise(exId);
     if (!rule || !band || !body) return null;
     var rest = (geom && isFinite(geom.restLengthIn) && geom.restLengthIn > 0)
@@ -2033,7 +2119,12 @@
     if (!rest) return null;
     var d = doubled ? 2 : 1;
     var usableC = 2 * rest / d;
-    var terms = pressTerms(exId, setupK, body, plateDims, bandPath, benchDims);
+    /* The override is passed through ONLY so that bench_angled resolves its
+       consumedIn. This function reads consumedIn and nothing else from
+       pressTerms, so the override cannot move the reach -- which is what
+       keeps this whole change small, and is asserted directly. */
+    var terms = pressTerms(exId, setupK, body, plateDims, bandPath, benchDims,
+                           travelOverrideIn);
     if (terms.consumedIn == null) return null;
 
     if (rule.strands === 1) {
@@ -2937,7 +3028,13 @@
           return out;
         }
       }
-      if (setupK === "bench") {
+      /* BOTH bench setups require the ITEM; only the FLAT one requires its
+         pad height. With a taped run in hand benchPadHeightIn is never read,
+         so an unmeasured pad must not refuse an angled press -- which is why
+         pressTerms keeps its pad check inside `setupK === "bench"` rather
+         than widening alongside this. A careless `===` here leaves the new
+         setup half-wired: priced with no bench present. */
+      if (setupK === "bench" || setupK === "bench_angled") {
         var benchItem = pressBenchOf(gearIds, ctx.gearOf);
         if (!benchItem) {
           out.basis = "press setup: no bench in this rig";
@@ -2969,7 +3066,14 @@
         out.basis = pSpan.basis;
         return out;
       }
-      var pTerms = pressTerms(o.exId, setupK, ctx.body, pPlateDims, pBandPath, pBenchDims);
+      /* Passed through RAW, not guarded here: pressTerms' own finitePos
+         already refuses a "55", a 0 and a -5, and a value it rejects must
+         DEGRADE loudly there rather than be quietly dropped to undefined
+         here and degrade for a different stated reason. Same rule openingN
+         and bandPathK follow in stampLoad. */
+      var pTravel = o.pressTravel;
+      var pTerms = pressTerms(o.exId, setupK, ctx.body, pPlateDims, pBandPath,
+                              pBenchDims, pTravel);
       if (pTerms.travelIn == null) {
         out.basis = pTerms.basis;
         return out;
@@ -2982,7 +3086,8 @@
         if (!b) return;
         var geom = ctx.bandGeomOf ? (ctx.bandGeomOf(id) || {}) : {};
         var reachP = pressReach(b, geom, o.exId, setupK, o.doubled, ctx.body,
-                                gearIds, ctx.gearOf, pPlateDims, pBandPath, pBenchDims);
+                                gearIds, ctx.gearOf, pPlateDims, pBandPath,
+                                pBenchDims, pTravel);
         var sP = pressStretch(reachP, pTerms.travelIn);
         if (sP == null) return;
         anyP = true;
@@ -3031,6 +3136,10 @@
       out.romBlind = false;
       out.attachHeightIn = null;
       out.pressSetupK = setupK;
+      /* Frozen only when a taped run actually produced this figure. A rig
+         that fell back to the computed sum records nothing, so a stamp can
+         never imply a measurement that was not supplied. */
+      out.pressTravelIn = finitePos(pTravel) ? pTravel : null;
       if (pBandPath) {
         out.bandPathK = pBandPath.k;
         out.bandPathLabel = pBandPath.l;
@@ -3567,7 +3676,7 @@
      MEASURED and MODELED share a tier: both are real loads on the same scale,
      and picking by provenance there would report a lighter set as the top. */
   function bestSetLoad(ctx, sets, gearIds, attachHeightIn, exId, opening, bandPath,
-                       pressSetup) {
+                       pressSetup, pressTravel) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
       var bands = Array.isArray(s.segments)
@@ -3577,6 +3686,7 @@
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
                               exId: exId, opening: opening, bandPath: bandPath,
                               pressSetup: pressSetup,
+                              pressTravel: pressTravel,
                               /* Per-SET, like `doubled`. A one-sided set has no
                                  top span at all -- see effectiveLoad. */
                               side: setSide(s) });
@@ -3637,7 +3747,7 @@
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
   function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap,
-                     pressSetupMap) {
+                     pressSetupMap, pressTravelMap) {
     /* THROWS on a bad ctx. It used to `return undefined`, which is the wrong
        failure mode for this function: every caller is a SAVE path, and
        applyLoadStamp treats undefined as "there was nothing to stamp". So a
@@ -3680,8 +3790,11 @@
          undefined here and degrade for a different stated reason. */
       var bandPathK = bandPathMap ? bandPathMap[exId] : undefined;
       var pressSetupK = pressSetupMap ? pressSetupMap[exId] : undefined;
+      /* RAW, like openingN and bandPathK: pressTerms' finitePos is the one
+         guard, and a value it refuses must degrade loudly there. */
+      var pressTravelN = pressTravelMap ? pressTravelMap[exId] : undefined;
       var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN, bandPathK,
-                             pressSetupK);
+                             pressSetupK, pressTravelN);
       if (!best) return;
       any = true;
       /* One key, one meaning: a gear DELTA or an ABSOLUTE stretch, never
@@ -3731,6 +3844,11 @@
                        as though the user had chosen it. */
                     pressSetupK: (best.pressSetupK && pressSetupK)
                                  ? best.pressSetupK : undefined,
+                    /* Frozen only when a taped run ACTUALLY priced this
+                       figure AND one was supplied -- the same two halves
+                       bandPathK and pressSetupK use. */
+                    pressTravelIn: (best.pressTravelIn && pressTravelN)
+                                   ? best.pressTravelIn : undefined,
                     belowRated: best.belowRated || undefined,
                     romBlind: best.romBlind || undefined };
     });
@@ -9263,10 +9381,12 @@
     setsOneSided: setsOneSided,
     attachTopSpan: attachTopSpan,
     PRESS_EXERCISES: PRESS_EXERCISES,
+    PRESS_SETUPS_ALL: PRESS_SETUPS_ALL,
     PRESS_SETUP_LABELS: PRESS_SETUP_LABELS,
     PRESS_FIELD_LABELS: PRESS_FIELD_LABELS,
     pressExercise: pressExercise,
     pressSetupOptions: pressSetupOptions,
+    benchTravelOptions: benchTravelOptions,
     attachRowApplies: attachRowApplies,
     attachRowShown: attachRowShown,
     seedPressSetups: seedPressSetups,
