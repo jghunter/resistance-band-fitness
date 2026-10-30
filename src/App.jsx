@@ -1877,7 +1877,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           <div style={{marginTop:6}}>
             <div style={lbl}>PRESS SETUP</div>
             <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
-              Where the band is pinned. AROUND THE BODY wraps your back. The other two run the band under the footplate, with you on the plate or on a bench standing on it.
+              Where the band is pinned. AROUND THE BODY wraps your back. The other three run the band under the footplate, with you on the plate, or on a bench standing on it — flat, or at an angle whose band run you have taped.
             </div>
             <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
               {opts.map(o => (
