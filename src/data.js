@@ -2652,6 +2652,18 @@ export function bodyMeasureNum(v) {
   return (typeof v === 'number' && isFinite(v) && v > 0) ? v : null
 }
 
+/* benchTravelOptionsIn is an ARRAY, not a scalar -- bodyMeasureNum alone
+   returns null for the whole array (typeof [] !== 'number'), which fails
+   SILENTLY: the editor would appear to save and only the next read would
+   come back empty. This guard keeps the array SHAPE and nulls bad entries
+   one at a time -- it must never drop an entry, because benchTravelOptions
+   numbers the quick-pick buttons by array INDEX and a dropped entry would
+   renumber every setting after it. Byte-identical to fitness_app.html's. */
+export function benchTravelArr(v) {
+  if (!Array.isArray(v)) return null
+  return v.map(x => bodyMeasureNum(x))
+}
+
 /* Split out of the IIFE for the same reason as readTrainingStyle above. */
 function readBodyMeasure() {
   const empty = { kneeHeightIn: null, midThighHeightIn: null, hipHeightIn: null,
@@ -2659,7 +2671,8 @@ function readBodyMeasure() {
                    handsAtRestIn: null, bodyWidthIn: null,
                    shoulderWidthIn: null, torsoWidthIn: null, chestThicknessIn: null,
                    pressReachIn: null, closeGripSpanIn: null, singleArmHoldIn: null,
-                   overheadReachIn: null, seatedShoulderHeightIn: null, rowTopHeightIn: null }
+                   overheadReachIn: null, seatedShoulderHeightIn: null, rowTopHeightIn: null,
+                   benchTravelOptionsIn: null }
   try {
     const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
     const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
@@ -2714,6 +2727,17 @@ function readBodyMeasure() {
       overheadReachIn:        num(p.overheadReachIn),
       seatedShoulderHeightIn: num(p.seatedShoulderHeightIn),
       rowTopHeightIn:         num(p.rowTopHeightIn),
+      /* ── ADDED for the bench quick-pick, Task 6 ───────────────────────
+         An ARRAY, not a scalar -- deliberately NOT in the field list the
+         BODY MEASUREMENTS panel maps over in App.jsx, which renders one
+         number input per entry; an array there would render a box that
+         can only destroy the data typed into it. Same withholding the X
+         Straps' series-of-openings field gets from that same per-field
+         list, for the same reason. Guarded by benchTravelArr, not
+         bodyMeasureNum. Absent from PROFILE_DEFAULTS and
+         gregSeedOverrides -- a fresh install stays neutral. Consumed by
+         RBTS_REPORTS.benchTravelOptions(BODY_MEASURE). */
+      benchTravelOptionsIn: benchTravelArr(p.benchTravelOptionsIn),
     }
   } catch (e) { return empty }
 }

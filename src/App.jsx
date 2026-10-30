@@ -5350,6 +5350,30 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               </div>
             ))}
           </div>
+          <div style={{marginTop:8}}>
+            <div style={lbl}>BENCH BAND RUN BY SETTING (IN)</div>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
+              One taped straight line per bench setting, in setting order, FLAT FIRST.
+              Footplate top surface to where the band ends, at full arm extension.
+              These are specific to this bench — replace the bench and re-tape all of them.
+            </div>
+            <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+              {[0,1,2,3,4,5,6,7].map(i => (
+                <input key={i} type="text" inputMode="decimal"
+                  placeholder={String(i+1)}
+                  value={(BODY_MEASURE.benchTravelOptionsIn||[])[i] == null
+                         ? '' : String((BODY_MEASURE.benchTravelOptionsIn||[])[i])}
+                  onChange={e => {
+                    const a = (BODY_MEASURE.benchTravelOptionsIn||[]).slice()
+                    while (a.length < 8) a.push(null)
+                    const v = parseFloat(e.target.value)
+                    a[i] = isFinite(v) && v > 0 ? v : null
+                    saveTrainingStyle({ benchTravelOptionsIn: a }, user?.uid); setTsTick(tsTick+1)
+                  }}
+                  style={{...inputStyle,width:46,fontSize:10,padding:'4px 6px'}} />
+              ))}
+            </div>
+          </div>
         </div>
       </details>
 
