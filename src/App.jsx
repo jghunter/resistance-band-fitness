@@ -3661,10 +3661,6 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
      method change has to announce itself. Same tick the TRAINING STYLE panel
      uses, and for the same reason. */
   const [tsTick, setTsTick] = useState(0)
-  /* RAW TEXT per bench-run box while it is being typed, keyed by index.
-     Mirror of fitness_app.html: a half-typed "49." lives here and never
-     reaches the stored array. */
-  const [travelBuf, setTravelBuf] = useState({})
   const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
 
   if (data.length === 0) {
@@ -4978,6 +4974,19 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
      the panel bumps this to force the re-render that shows the new choice.
      Same pattern and same reason as fitness_app.html's tsTick. */
   const [tsTick, setTsTick]       = useState(0)
+  /* RAW TEXT per bench-run box while it is being typed, keyed by index.
+     Mirror of fitness_app.html: a half-typed "49." lives here and never
+     reaches the stored array.
+
+     IT MUST LIVE IN TodayTab, BESIDE THIS tsTick, because the eight inputs
+     do. StrengthTab declares a tsTick of its own with different spacing, so
+     an exact-string patch aimed at "const [tsTick, setTsTick] = useState(0)"
+     lands THERE and still passes a count-of-one uniqueness check -- which is
+     how `travelBuf` shipped into the wrong component on 2026-10-31 and took
+     the deployed app down with ReferenceError: travelBuf is not defined.
+     NEITHER `npm run build` NOR check_jsx.cjs can see an out-of-scope
+     identifier; only loading the page can. */
+  const [travelBuf, setTravelBuf] = useState({})
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
   const todayISO   = localISO()
