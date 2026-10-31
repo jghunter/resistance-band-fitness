@@ -4382,7 +4382,26 @@
     var isPress = pressExercise(o.exId) != null;
     var setupChanged = isPress &&
       ((o.prevPressSetup || null) !== (o.pressSetup || null));
-    if (a === b && !pathChanged && !setupChanged) return null;
+    /* A TAPED BAND RUN change moves the load with the gear ids, the band path
+       AND the press setup all untouched -- the same bench at a different
+       notch. Measured 2026-10-30 in a browser: setting 1 (49.5in) against
+       setting 8 (57.75in) on one band is 19.9 lb against 27.9 lb, a 40%
+       move, and without this clause `gearChange` returned null for it.
+
+       That is the exact argument the setupChanged line above was added with
+       on 2026-09-15, and the exact hole: `a === b` and nothing else noticed.
+       The 2026-10-29 design doc said this function "needs no edit" because it
+       already refuses to PRICE a press -- true, and about a different thing.
+       Refusing to price is what the banner says once it has decided to
+       appear; this test decides whether it appears at all.
+
+       finitePos on BOTH sides, not a bare `||` null-coalesce: an unset run
+       and a run of 0 are the same fact (nothing taped), and a "55" that
+       pressTerms would refuse must not read as a change either. */
+    var travelPrev = finitePos(o.prevPressTravel) ? o.prevPressTravel : null;
+    var travelNow  = finitePos(o.pressTravel)     ? o.pressTravel     : null;
+    var travelChanged = isPress && travelPrev !== travelNow;
+    if (a === b && !pathChanged && !setupChanged && !travelChanged) return null;
     var names = function (list) {
       return (list || []).map(function (id) {
         var g = ctx.gearOf ? ctx.gearOf(id) : null;
@@ -4410,8 +4429,16 @@
        this module keeps deleting. */
     if (isPress) {
       out.mode = "incomparable"; out.deltaIn = null; out.direction = "unknown";
+      /* THE BAND-RUN CASE IS NAMED SEPARATELY, and that is the point of
+         splitting this. "that pinning just changed" is false when the pinning
+         is identical and only the bench notch moved -- a reason that names
+         the wrong thing sends the reader to check the wrong setting. It is
+         still `incomparable`: a delta here would be a second implementation
+         of the press arithmetic outside effectiveLoad. */
       out.reason = setupChanged
         ? "a chest press is priced by where the band is pinned and how far the hands travel, and that pinning just changed"
+        : travelChanged
+        ? "the taped band run changed, so the hands travel a different distance; this is a different lift, not a stronger or weaker one"
         : "a chest press is priced by its own band path, which this comparison does not model";
       return out;
     }
@@ -4754,9 +4781,21 @@
        nothing that worked per-row could, because this was the only accessor.
        null rather than absent, so provenanceMix can treat "no era" as a value
        and notice when only SOME points carry one. */
+    /* `pressTravelIn` RIDES ALONG for the same reason, added 2026-10-30.
+       stampLoad freezes the taped band run that actually priced the set, and
+       a bench notch moves the load with the gear, the band, the band path
+       and the press setup all identical -- so a trend span that changed it
+       is partly reporting a change of equipment position. Nothing working
+       per-row could see that, because THIS IS THE ONLY ACCESSOR for a stamp;
+       the field was written for two weeks and read by nothing. Exactly the
+       hole `era` was in before it was added here.
+
+       finitePos, not a bare truthiness test: a 0 or an imported "55" is not
+       a measured run, and travelSpan compares these figures for equality. */
     return { lb: ld.lb,
              provenance: ld.provenance || "RATED",
              era: ld.era || null,
+             pressTravelIn: finitePos(ld.pressTravelIn) ? ld.pressTravelIn : null,
              romBlind: !!ld.romBlind };
   }
   /* Top load = heaviest single phase of the set (not the last, not the sum). */
@@ -6338,6 +6377,43 @@
       "DOUBLES the load by construction, so part of this change is a change in " +
       "how the band was used rather than in how much you can move.";
   }
+  /* THE SAME SHAPE OF FACT AS THE FOLD, through the bench instead of the band.
+     A taped band run is a straight line the lifter measured once per bench
+     setting, so moving the backrest moves the load with the gear, the band,
+     the band path and the press setup all identical. Measured 2026-10-30:
+     Greg's setting 1 (49.5in) against setting 8 (57.75in) on one band is
+     19.9 lb against 27.9 lb -- a 29% drop going the other way, which a
+     DECLINING verdict would otherwise report as lost strength and tell him to
+     check his recovery. That is exactly what happened to #39 Band Reverse Fly
+     on 2026-10-07 before foldChangeClause existed.
+
+     DELIBERATELY NOT built on MIXED_BASIS_WHY, for foldChangeClause's reason:
+     that sentence says the figures may be "a different kind of load figure",
+     which is the right claim about a provenance change and a false one here.
+     A band-run change produces a real load change, correctly computed, on one
+     basis throughout.
+
+     The inches are PRINTED. Unlike a fold, which has three named states, a
+     band run is a number the lifter can match against the notch on his own
+     bench -- naming it is what turns the caveat into something he can act
+     on.
+
+     TWO decimals, trailing zeros trimmed, because the bench settings are
+     taped to the QUARTER INCH. One decimal turns Greg's 57.75 into 57.8,
+     which matches no notch he can find and quietly contradicts the figure in
+     his own profile -- the first draft of this clause did exactly that. */
+  function travelInches(v) {
+    return String(Math.round(v * 100) / 100);
+  }
+  function travelChangeClause(span) {
+    if (!span || !span.changed) return "";
+    var f = travelInches(span.first), l = travelInches(span.last);
+    return " Note: the taped band run was " + f + "in on the first of these " +
+      "sessions and " + l + "in on the last, so the bench was at a different " +
+      "setting. The hands travel a different distance, which moves the load " +
+      "on its own -- part of this change is where the bench was set rather " +
+      "than how much you can move.";
+  }
 
   /* The heaviest FROZEN STAMP anywhere in a set of entries, with what and when.
      Added 2026-10-07 for the STRENGTH tab's BEST SET LOAD card, which read
@@ -6447,7 +6523,8 @@
       return { code: "DECLINING", text: "Top load is falling across " + row.nLoaded +
         " priced sessions" + gapClause(row.skippedGaps) + " (" +
         trendFigures(row) + "). Hold the load and rebuild reps, and check recovery." +
-        mixedBasisClause(row.provMix) + foldChangeClause(row.foldSpan) };
+        mixedBasisClause(row.provMix) + foldChangeClause(row.foldSpan) +
+        travelChangeClause(row.travelSpan) };
     }
     if (row.trend === "FLAT" && row.bestReps < row.barApplied &&
         row.bestReps >= row.barApplied - CONST.NEAR_REPS) {
@@ -6533,6 +6610,16 @@
                          /* THE FOLD of this session, for foldChangeClause.
                             true / false / "mixed" -- see foldStateOf. */
                          fold: foldStateOf(e.exercises[exId] || []),
+                         /* THE TAPED BAND RUN of this session, for
+                            travelChangeClause. Read off the FROZEN STAMP, not
+                            off e.pressTravel: the stamp records the figure
+                            that actually priced the set, and stampLoad writes
+                            it only when a supplied run was used. A run typed
+                            on the entry but never consumed -- a flat bench,
+                            say -- must not read as a change of equipment
+                            position, because it moved no number. */
+                         travel: (eff && finitePos(eff.pressTravelIn))
+                                 ? eff.pressTravelIn : null,
                          hasBand: exUseHasBand(e, exId),
                          reps: reps, vol: vol, best: best,
                          bands: setBands((e.exercises[exId] || [])[0]) });
@@ -6633,6 +6720,26 @@
         foldSpan: (priced.length >= 2)
           ? { first: pFirst.fold, last: pLast.fold,
               changed: pFirst.fold !== pLast.fold }
+          : null,
+        /* THE TAPED BAND RUN at the two ENDS of the span, same endpoints-only
+           rule as foldSpan and for the same reason: the DECLINING verdict
+           compares pFirst to pLast, so those two are the readings the clause
+           is about, and testing "anywhere inside" duplicates clauses that
+           already fire.
+
+           NULL ON EITHER END MEANS NO CHANGE TO REPORT. A span that moves
+           from an angled bench to a flat one changes the SETUP, which is a
+           different fact with its own disclosure; comparing 55in against
+           "nothing taped" would announce a band-run change where there is no
+           band run to compare. Only two real figures that differ qualify.
+
+           NOT on exerciseProgressionRows' rows, matching foldSpan: no per-row
+           marker was asked for, and a field nobody renders is how the two row
+           builders drift apart. */
+        travelSpan: (priced.length >= 2 &&
+                     pFirst.travel != null && pLast.travel != null)
+          ? { first: pFirst.travel, last: pLast.travel,
+              changed: pFirst.travel !== pLast.travel }
           : null,
         slopePct: sp,
         trend: classifyTrend(sp),
@@ -9482,6 +9589,7 @@
     mixedBasisClause: mixedBasisClause,
     foldStateOf: foldStateOf,
     foldChangeClause: foldChangeClause,
+    travelChangeClause: travelChangeClause,
     windowTopLoad: windowTopLoad,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,
