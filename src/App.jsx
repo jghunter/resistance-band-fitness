@@ -1943,12 +1943,23 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
               </div>
             )}
             <span style={{display:'flex',alignItems:'center',gap:3,fontFamily:'monospace',fontSize:9}}>
-              <input type="number" step="0.25" min="0"
+              {/* type="text", NOT type="number". This box already had the
+                    text buffer, which is why it survived a "55"; a number
+                    input reports `.value === ""` for a half-typed "49." and
+                    the buffer would then hold that empty string, clearing the
+                    field under the user mid-decimal. Measured 2026-10-30 on
+                    the profile editor, which had the identical pairing. */}
+              <input type="text" inputMode="decimal"
                 value={travelText != null ? travelText : (cur == null ? '' : String(cur))}
                 onChange={e => {
                   const v = e.target.value
                   setTravelText(v)
-                  ;(onPressTravelChange||(()=>{}))(v === '' ? undefined : Number(v))
+                  /* An unparseable entry is refused rather than stored as NaN:
+                     pressTerms guards with finitePos, but a NaN written here
+                     would degrade the card for the wrong stated reason. */
+                  const n = v.trim() === '' ? undefined : Number(v)
+                  if (n !== undefined && (!isFinite(n) || n <= 0)) return
+                  ;(onPressTravelChange||(()=>{}))(n)
                 }}
                 onBlur={() => setTravelText(null)}
                 style={{...inputStyle,width:56,fontSize:10,padding:'3px 5px'}}/>
@@ -3650,6 +3661,10 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
      method change has to announce itself. Same tick the TRAINING STYLE panel
      uses, and for the same reason. */
   const [tsTick, setTsTick] = useState(0)
+  /* RAW TEXT per bench-run box while it is being typed, keyed by index.
+     Mirror of fitness_app.html: a half-typed "49." lives here and never
+     reaches the stored array. */
+  const [travelBuf, setTravelBuf] = useState({})
   const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
 
   if (data.length === 0) {
@@ -5358,6 +5373,12 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               These are specific to this bench — replace the bench and re-tape all of them.
             </div>
             <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+              {/* type="text" WITH A TEXT BUFFER -- mirror of
+                  fitness_app.html, whose comment carries the full account.
+                  A number input reports `.value === ""` for a half-typed
+                  "49.", so the previous version wrote null over the stored
+                  figure on the keystroke that typed the point. The buffer
+                  holds the raw text; only a value that parses is stored. */}
               {[0,1,2,3,4,5,6,7].map(i => (
                 /* type="number" and the EARLY RETURN, exactly as the sixteen
                    scalar measurements above do it. The first version was
@@ -5366,19 +5387,24 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                    restoration erased the decimal point on the keystroke that
                    typed it: TYPING 52.5 STORED 525. Six of the eight real
                    figures carry a decimal. Mirror of fitness_app.html. */
-                <input key={i} type="number" step="0.25" min="0"
+                <input key={i} type="text" inputMode="decimal"
                   placeholder={String(i+1)}
-                  value={(BODY_MEASURE.benchTravelOptionsIn||[])[i] == null
-                         ? '' : (BODY_MEASURE.benchTravelOptionsIn||[])[i]}
+                  value={travelBuf[i] != null ? travelBuf[i]
+                         : ((BODY_MEASURE.benchTravelOptionsIn||[])[i] == null
+                            ? '' : String((BODY_MEASURE.benchTravelOptionsIn||[])[i]))}
                   onChange={e => {
                     const raw = e.target.value
-                    const v = raw === '' ? null : Number(raw)
+                    setTravelBuf({ ...travelBuf, [i]: raw })
+                    const v = raw.trim() === '' ? null : Number(raw)
                     if (v !== null && (!isFinite(v) || v <= 0)) return
                     const a = (BODY_MEASURE.benchTravelOptionsIn||[]).slice()
                     while (a.length < 8) a.push(null)
                     /* NULLED, never dropped -- the buttons are numbered by INDEX. */
                     a[i] = v
                     saveTrainingStyle({ benchTravelOptionsIn: a }, user?.uid); setTsTick(tsTick+1)
+                  }}
+                  onBlur={() => {
+                    const nb = { ...travelBuf }; delete nb[i]; setTravelBuf(nb)
                   }}
                   style={{...inputStyle,width:46,fontSize:10,padding:'4px 6px'}} />
               ))}
