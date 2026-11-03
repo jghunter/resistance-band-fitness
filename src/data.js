@@ -513,6 +513,17 @@ export const VIDEOS = {
      is the other GIF custom and is in the same position. */
   222:"https://i0.wp.com/post.healthline.com/wp-content/uploads/2021/01/400x400_Resistance_Band_Workout_Abs_Banded_Bird_Dog.gif?h=840",
   224:{url:"https://www.youtube.com/shorts/5eMkKAGm5B0"},
+  /* 225 took its FIRST video on 2026-11-03, from Greg, when P37 and P38
+     made it Baye's "Front Pulldown" in two programs. It had none before.
+
+     THE OBJECT FORM WITH NO WINDOW -- like 224 directly above, and on the
+     221 Band V-Up and 248 Banded Hip Adduction precedent: a bare string
+     returns embedUrl null and only ever opens a tab, while the object form
+     EMBEDS. Measured by running the shipped resolveVideo on this exact
+     url in all three shapes. With no window the 2026-10-14 file://
+     limitation cannot reach it, which matters because Greg opens this
+     page by double-clicking it. */
+  225:{url:"https://www.youtube.com/shorts/Nwp7kKkagIo"},
   // Promoted from customs 1000-1008 (2026-08-12). 226 is not a YouTube link:
   // resolveVideo returns it with embedUrl null and never appends a timestamp,
   // so start/end are carried but inert — kept because they record where in
@@ -1574,6 +1585,175 @@ export const PROGRAMS = [
     },
   },
   // ===== END generated: 24-Week Upper/Lower Tracker programs =====
+  /* ===== P37 / P38: Drew Baye's Upper/Lower A/B =============================
+     Spec: docs/superpowers/specs/2026-11-03-baye-programs-design.md
+
+     HAND-WRITTEN, AND DELIBERATELY PLACED AFTER THE GENERATED SENTINEL.
+     gen_workbook_programs.py's splice() replaces exactly the text from its
+     BEGIN marker through its END marker, so anything below that END line
+     survives a regeneration. Authored inside the sentinels, these two would
+     be erased the next time anyone ran the workbook generator.
+
+     Baye writes for Nautilus and MedX machines; these are the band
+     equivalents. 29 exercises each, across the four upper_lower_4 days.
+
+     `primary` HOLDS BAYE'S FIRST TWO EXERCISES OF EACH DAY, not the two
+     biggest compounds. HIT sequencing is deliberate -- he orders to fatigue
+     larger muscles first -- so fidelity to his order beats fidelity to a
+     layout convention. A compound in `accessories` is not novel: P28's
+     lowerA already has gluteComp there.
+
+     AUTHORED ORDER IS THE DISPLAYED ORDER, AND IT TAKES A focusCycles
+     OVERRIDE TO ACHIEVE THAT -- see the comment on that field below. The
+     first version of these programs declared none and was WRONG: the SPLIT
+     supplies a rotating focus of its own, and all three render paths re-sort
+     each day's accessories by it. Greg's ruling is Baye's order on every
+     surface. Asserted BEHAVIOURALLY in test_baye_programs.cjs, by running
+     the real focus path over all eight days rather than by checking a field.
+
+     A `2`-SUFFIXED SLOT KEY IS HOW TWO SAME-MUSCLE EXERCISES SHARE A DAY
+     (two forearm curls, two neck movements, two back compounds). SLOT_MUSCLE
+     carries no backComp2 / chestComp2 / forearmIso2 / neckIso2 / gluteIso2 /
+     shoulderIso2 entry and does not need one: slotMuscle falls back to
+     exMuscle(exId), and every id used here has a group that maps to a muscle.
+     P28's backIso2 is the precedent. The alternative is not merely untidy --
+     a DUPLICATE key would silently overwrite its twin and one of Baye's
+     exercises would vanish from the day with no error anywhere.
+
+     185 Band Deadlift (P38 lowerB) is filed FULL BODY and exMuscle(185) is
+     null, but SLOT_MUSCLE.hinge is "hamstrings" and slotMuscle consults the
+     SLOT first. It is dropped from P28's derived sessions by the
+     one-compound-per-muscle flatten, where hamComp:117 wins -- not by an
+     unroutable group. P38 carries exactly one hamstrings compound, so nothing
+     competes with it.
+
+     Both are native for Greg: they declare upper_lower_4 and his override is
+     upper_lower_4, and CLEARING the override makes each program use its own
+     splitId, which is still upper_lower_4. Only an active override to a
+     different split would derive them at all.                              */
+  {
+    id: 37, name: "Drew Baye Initial",
+    note: "Drew Baye HIT. One set to momentary muscular failure, slow controlled tempo, 8 weeks, no deload. Upper A / Lower A / Upper B / Lower B.",
+    splitId: "upper_lower_4",
+    lengthWeeks: 8,
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    /* GREG'S CALL, 2026-11-03: KEEP BAYE'S ORDER ON EVERY SURFACE.
+
+       THE SPLIT SUPPLIES A ROTATING FOCUS WHETHER A PROGRAM ASKS FOR ONE OR
+       NOT. focusCycleFor(prog, dayKey) tries prog.focusCycles[dayKey] first
+       and then falls back to SPLITS[splitId].focusCycles[dayKey] -- and
+       upper_lower_4 declares its own: upperB cycles
+       Presses -> Rows -> Shoulders. Every program on that split inherits it,
+       and all THREE render paths call
+       orderSlotsByFocus(accessories, focusMuscleOf(focusLabel)): the
+       PROGRAMS tab, the IN-WORKOUT card list, and the printed setup sheet.
+       Measured on P37 upperB week 1: the "Presses" focus hoisted 17 Banded
+       Dip above 22 Seated Band Row, where Baye has the row third and the
+       dip fourth.
+
+       "As Written" IS NOT IN FOCUS_MUSCLE, and that is the whole mechanism.
+       focusMuscleOf returns null for an unmapped label, and
+       orderSlotsByFocus returns its entries untouched when focusMuscle is
+       falsy -- so the badge still reads FOCUS: AS WRITTEN while the re-sort
+       is suppressed. The comment above FOCUS_MUSCLE documents exactly this
+       case ("unmapped labels show the badge only, no reorder"), so this is
+       intended behaviour rather than a trick.
+
+       AN EMPTY ARRAY WOULD NOT WORK: focusCycleFor takes the per-program
+       override only `if (pc && pc.length)`, so [] falls through to the split
+       and the rotation returns. One unmapped label is the minimum that
+       holds.
+
+       HIT sequencing is why this matters: Baye orders each day to fatigue
+       larger muscles first, so a rotating emphasis does not merely re-sort a
+       list, it changes the training. */
+    focusCycles: { upperA: ["As Written"], lowerA: ["As Written"],
+                   upperB: ["As Written"], lowerB: ["As Written"] },
+    sessions: {
+      // 1 Front Pulldown, 2 Shoulder Press, 3 Wide Row, 4 Chest Press,
+      // 5 Wrist Extension, 6 Wrist Curl, 7 Neck Extension, 8 Neck Flexion
+      upperA: { primary: { backComp:225, shoulderComp:43 },
+                accessories: { backComp2:25, chestComp:1, forearmIso:158, forearmIso2:157, neckIso:178, neckIso2:177 } },
+      // 1 Leg Extension, 2 Leg Press, 3 Leg Curl, 4 Stiff-Legged Deadlift,
+      // 5 Abdominal Flexion, 6 Hip Adduction, 7 Hip Abduction
+      lowerA: { primary: { quadIso:219, quadComp:218 },
+                accessories: { hamIso:121, hamComp:119, coreFront:59, gluteIso:248, gluteIso2:91 } },
+      // 1 Wide Pulldown, 2 Incline Press, 3 Low (Yates) Row, 4 Seated Dip,
+      // 5 Wrist Extension, 6 Wrist Curl, 7 Neck Lateral Flexion.
+      // 179 is ONE slot and seeds an L row and an R row -- which is the shape
+      // Baye's single numbered exercise asks for, and was impossible before
+      // the 2026-11-03 collapse retired 180.
+      upperB: { primary: { backComp:28, chestComp:3 },
+                accessories: { backComp2:22, chestComp2:17, forearmIso:158, forearmIso2:157, neckIso:179 } },
+      // 1 Leg Extension, 2 Leg Press, 3 Leg Curl, 4 Stiff-Legged Deadlift,
+      // 5 Oblique Flexion, 6 Calf Press, 7 Dorsiflexion.
+      // THE FIRST FOUR REPEAT lowerA DELIBERATELY -- that is Baye's program
+      // as written (Greg confirmed 2026-11-03), not a transcription error.
+      // His Initial program varies only the accessories between lower days.
+      lowerB: { primary: { quadIso:219, quadComp:218 },
+                accessories: { hamIso:121, hamComp:119, coreSides:247, calfIso:167, tibIso:231 } },
+    },
+  },
+  {
+    id: 38, name: "Drew Baye Updated",
+    note: "Drew Baye HIT, revised template. One set to momentary muscular failure, slow controlled tempo, 8 weeks, no deload. Upper A / Lower A / Upper B / Lower B.",
+    splitId: "upper_lower_4",
+    lengthWeeks: 8,
+    deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    /* GREG'S CALL, 2026-11-03: KEEP BAYE'S ORDER ON EVERY SURFACE.
+
+       THE SPLIT SUPPLIES A ROTATING FOCUS WHETHER A PROGRAM ASKS FOR ONE OR
+       NOT. focusCycleFor(prog, dayKey) tries prog.focusCycles[dayKey] first
+       and then falls back to SPLITS[splitId].focusCycles[dayKey] -- and
+       upper_lower_4 declares its own: upperB cycles
+       Presses -> Rows -> Shoulders. Every program on that split inherits it,
+       and all THREE render paths call
+       orderSlotsByFocus(accessories, focusMuscleOf(focusLabel)): the
+       PROGRAMS tab, the IN-WORKOUT card list, and the printed setup sheet.
+       Measured on P37 upperB week 1: the "Presses" focus hoisted 17 Banded
+       Dip above 22 Seated Band Row, where Baye has the row third and the
+       dip fourth.
+
+       "As Written" IS NOT IN FOCUS_MUSCLE, and that is the whole mechanism.
+       focusMuscleOf returns null for an unmapped label, and
+       orderSlotsByFocus returns its entries untouched when focusMuscle is
+       falsy -- so the badge still reads FOCUS: AS WRITTEN while the re-sort
+       is suppressed. The comment above FOCUS_MUSCLE documents exactly this
+       case ("unmapped labels show the badge only, no reorder"), so this is
+       intended behaviour rather than a trick.
+
+       AN EMPTY ARRAY WOULD NOT WORK: focusCycleFor takes the per-program
+       override only `if (pc && pc.length)`, so [] falls through to the split
+       and the rotation returns. One unmapped label is the minimum that
+       holds.
+
+       HIT sequencing is why this matters: Baye orders each day to fatigue
+       larger muscles first, so a rotating emphasis does not merely re-sort a
+       list, it changes the training. */
+    focusCycles: { upperA: ["As Written"], lowerA: ["As Written"],
+                   upperB: ["As Written"], lowerB: ["As Written"] },
+    sessions: {
+      // 1 Wide Row, 2 Chest Press, 3 Pullover, 4 Lateral Raise, 5 Biceps Curl,
+      // 6 Triceps Extension, 7 Shrug, 8 Humeral External Rotation
+      upperA: { primary: { backComp:25, chestComp:1 },
+                accessories: { chestIso:13, shoulderIso:48, biIso:129, triIso:145, backIso:40, shoulderIso2:53 } },
+      // 1 Leg Press, 2 Leg Curl, 3 Hip Adduction, 4 Hip Abduction,
+      // 5 Abdominal Flexion, 6 Neck Extension, 7 Neck Flexion
+      lowerA: { primary: { quadComp:218, hamIso:121 },
+                accessories: { gluteIso:248, gluteIso2:91, coreFront:59, neckIso:178, neckIso2:177 } },
+      // 1 Front Pulldown, 2 Shoulder Press, 3 Back Fly, 4 Chest Fly,
+      // 5 Hammer Curl, 6 Seated Dip (Triceps Emphasis), 7 Wrist Extension,
+      // 8 Wrist Curl.
+      // 150 Band Dip (TRICEPS) here against 17 Banded Dip (CHEST) in P37 --
+      // Baye's two different names for the movement, and Greg's call.
+      upperB: { primary: { backComp:225, shoulderComp:43 },
+                accessories: { backIso:39, chestIso:9, biIso:131, triComp:150, forearmIso:158, forearmIso2:157 } },
+      // 1 Deadlift, 2 Leg Extension, 3 Calf Press, 4 Dorsiflexion,
+      // 5 Oblique Flexion, 6 Neck Lateral Flexion
+      lowerB: { primary: { hinge:185, quadIso:219 },
+                accessories: { calfIso:167, tibIso:231, coreSides:247, neckIso:179 } },
+    },
+  },
 ];
 
 // ── Custom programs (user-authored via the program builder) ──────────────────
