@@ -330,7 +330,7 @@ export const VIDEOS = {
   124:"https://www.youtube.com/watch?v=wwZmfFB9vrA",
   125:"https://www.youtube.com/watch?v=NO-NevrDrjE",
   126:"https://www.youtube.com/watch?v=tBxxWNtEW7c",
-  127:"https://www.youtube.com/watch?v=_V0WOAL0_k0",
+  127:{url:"https://www.youtube.com/watch?v=_V0WOAL0_k0", start:114, end:222},   // the 38->127 collapse moved only the SLOTS; the video stayed a bare string and silently regressed to a 0:00 tab-open. Restored the object form with 38's own proven bounds (2026-11-02)
   128:"https://www.youtube.com/watch?v=NaKsZos0bIY",
   129: {url:"https://www.youtube.com/watch?v=_shs2CkZcAQ", start:0, end:149},
   130:"https://www.youtube.com/watch?v=2QAy7DfDmgA",
@@ -2360,7 +2360,9 @@ export function deriveSession(prog, splitId, dayKey) {
   /* One exercise's day. Identical to md[muscle] unless the ACTIVE SPLIT
      declares movementDays -- only push_pull does -- and this exercise is one
      of the six in RBTS_REPORTS.EX_MOVEMENT whose movement disagrees with its
-     muscle group. */
+     muscle group; OR the ACTIVE SPLIT declares everyMuscleEveryDay -- only
+     full_body_3 does -- in which case movement routing is skipped entirely
+     and every muscle is on every day. See dayOf below. */
   /* everyMuscleEveryDay -- full_body_3 alone. A full-body day holds every
      muscle, so "does this muscle belong on this day" is always yes, and all
      three days derive the SAME flattened session: the split-level counterpart
