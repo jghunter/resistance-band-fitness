@@ -1603,14 +1603,13 @@ export const PROGRAMS = [
      layout convention. A compound in `accessories` is not novel: P28's
      lowerA already has gluteComp there.
 
-     AUTHORED ORDER IS THE DISPLAYED ORDER, on both surfaces, BUT ONLY
-     BECAUSE THESE DECLARE NO focusCycles. The in-workout list is
-     Object.values(primary) then Object.values(accessories), which is
-     insertion order; the printed setup sheet goes through orderSlotsByFocus,
-     which returns insertion order UNCHANGED only while focusMuscle is falsy
-     -- and that argument comes from the program's focusCycles. Declaring one
-     would silently re-sort the sheet Greg prints and carries. That absence is
-     load-bearing and is asserted in test_baye_programs.cjs.
+     AUTHORED ORDER IS THE DISPLAYED ORDER, AND IT TAKES A focusCycles
+     OVERRIDE TO ACHIEVE THAT -- see the comment on that field below. The
+     first version of these programs declared none and was WRONG: the SPLIT
+     supplies a rotating focus of its own, and all three render paths re-sort
+     each day's accessories by it. Greg's ruling is Baye's order on every
+     surface. Asserted BEHAVIOURALLY in test_baye_programs.cjs, by running
+     the real focus path over all eight days rather than by checking a field.
 
      A `2`-SUFFIXED SLOT KEY IS HOW TWO SAME-MUSCLE EXERCISES SHARE A DAY
      (two forearm curls, two neck movements, two back compounds). SLOT_MUSCLE
@@ -1638,6 +1637,38 @@ export const PROGRAMS = [
     splitId: "upper_lower_4",
     lengthWeeks: 8,
     deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    /* GREG'S CALL, 2026-11-03: KEEP BAYE'S ORDER ON EVERY SURFACE.
+
+       THE SPLIT SUPPLIES A ROTATING FOCUS WHETHER A PROGRAM ASKS FOR ONE OR
+       NOT. focusCycleFor(prog, dayKey) tries prog.focusCycles[dayKey] first
+       and then falls back to SPLITS[splitId].focusCycles[dayKey] -- and
+       upper_lower_4 declares its own: upperB cycles
+       Presses -> Rows -> Shoulders. Every program on that split inherits it,
+       and all THREE render paths call
+       orderSlotsByFocus(accessories, focusMuscleOf(focusLabel)): the
+       PROGRAMS tab, the IN-WORKOUT card list, and the printed setup sheet.
+       Measured on P37 upperB week 1: the "Presses" focus hoisted 17 Banded
+       Dip above 22 Seated Band Row, where Baye has the row third and the
+       dip fourth.
+
+       "As Written" IS NOT IN FOCUS_MUSCLE, and that is the whole mechanism.
+       focusMuscleOf returns null for an unmapped label, and
+       orderSlotsByFocus returns its entries untouched when focusMuscle is
+       falsy -- so the badge still reads FOCUS: AS WRITTEN while the re-sort
+       is suppressed. The comment above FOCUS_MUSCLE documents exactly this
+       case ("unmapped labels show the badge only, no reorder"), so this is
+       intended behaviour rather than a trick.
+
+       AN EMPTY ARRAY WOULD NOT WORK: focusCycleFor takes the per-program
+       override only `if (pc && pc.length)`, so [] falls through to the split
+       and the rotation returns. One unmapped label is the minimum that
+       holds.
+
+       HIT sequencing is why this matters: Baye orders each day to fatigue
+       larger muscles first, so a rotating emphasis does not merely re-sort a
+       list, it changes the training. */
+    focusCycles: { upperA: ["As Written"], lowerA: ["As Written"],
+                   upperB: ["As Written"], lowerB: ["As Written"] },
     sessions: {
       // 1 Front Pulldown, 2 Shoulder Press, 3 Wide Row, 4 Chest Press,
       // 5 Wrist Extension, 6 Wrist Curl, 7 Neck Extension, 8 Neck Flexion
@@ -1669,6 +1700,38 @@ export const PROGRAMS = [
     splitId: "upper_lower_4",
     lengthWeeks: 8,
     deloadPolicy: { every: 0, style: "intensity", scope: "week" },
+    /* GREG'S CALL, 2026-11-03: KEEP BAYE'S ORDER ON EVERY SURFACE.
+
+       THE SPLIT SUPPLIES A ROTATING FOCUS WHETHER A PROGRAM ASKS FOR ONE OR
+       NOT. focusCycleFor(prog, dayKey) tries prog.focusCycles[dayKey] first
+       and then falls back to SPLITS[splitId].focusCycles[dayKey] -- and
+       upper_lower_4 declares its own: upperB cycles
+       Presses -> Rows -> Shoulders. Every program on that split inherits it,
+       and all THREE render paths call
+       orderSlotsByFocus(accessories, focusMuscleOf(focusLabel)): the
+       PROGRAMS tab, the IN-WORKOUT card list, and the printed setup sheet.
+       Measured on P37 upperB week 1: the "Presses" focus hoisted 17 Banded
+       Dip above 22 Seated Band Row, where Baye has the row third and the
+       dip fourth.
+
+       "As Written" IS NOT IN FOCUS_MUSCLE, and that is the whole mechanism.
+       focusMuscleOf returns null for an unmapped label, and
+       orderSlotsByFocus returns its entries untouched when focusMuscle is
+       falsy -- so the badge still reads FOCUS: AS WRITTEN while the re-sort
+       is suppressed. The comment above FOCUS_MUSCLE documents exactly this
+       case ("unmapped labels show the badge only, no reorder"), so this is
+       intended behaviour rather than a trick.
+
+       AN EMPTY ARRAY WOULD NOT WORK: focusCycleFor takes the per-program
+       override only `if (pc && pc.length)`, so [] falls through to the split
+       and the rotation returns. One unmapped label is the minimum that
+       holds.
+
+       HIT sequencing is why this matters: Baye orders each day to fatigue
+       larger muscles first, so a rotating emphasis does not merely re-sort a
+       list, it changes the training. */
+    focusCycles: { upperA: ["As Written"], lowerA: ["As Written"],
+                   upperB: ["As Written"], lowerB: ["As Written"] },
     sessions: {
       // 1 Wide Row, 2 Chest Press, 3 Pullover, 4 Lateral Raise, 5 Biceps Curl,
       // 6 Triceps Extension, 7 Shrug, 8 Humeral External Rotation
