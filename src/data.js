@@ -89,7 +89,7 @@ export const EXERCISE_NAMES = {
   173:"Bent-Knee Calf Raise", 174:"Explosive Calf Raise",
   175:"Calf Raise with Band Assist", 176:"Seated Tibialis Raise",
   177:"Neck Flexion", 178:"Neck Extension",
-  179:"Lateral Neck Flexion (Left)", 180:"Lateral Neck Flexion (Right)",
+  179:"Lateral Neck Flexion",
   181:"Isometric Neck Flexion Hold", 182:"Isometric Neck Extension Hold",
   183:"Chin Tuck (Neck Retraction)", 184:"Isometric Lateral Hold",
   185:"Band Deadlift", 186:"Band RDL to Row", 187:"Band Thruster",
@@ -383,7 +383,6 @@ export const VIDEOS = {
   177:"https://www.youtube.com/watch?v=PsBmNkba9yI",
   178:"https://www.youtube.com/watch?v=eskCgvDgu6w",
   179:"https://www.youtube.com/watch?v=1EG7z_qsYNY",
-  180:"https://www.youtube.com/watch?v=1EG7z_qsYNY",
   181:"https://www.youtube.com/watch?v=LqJSszVWabw",
   182:"https://www.youtube.com/watch?v=LqJSszVWabw",
   183:"https://www.youtube.com/watch?v=JkTnzMJpgt4",
@@ -562,7 +561,7 @@ export const PROGRAMS = [
     sessions:{
       C:{primary:{chestComp:2,chestIso:10},accessories:{back:33,triceps:148,biceps:133,forearms:158,neck:178,calves:168,coreFront:60, glutes: 79}},
       D:{primary:{backComp:22,backIso:29},accessories:{chest:7,triceps:151,biceps:130,calves:169,coreBack:71, hams: 118, quads:108, glutes:88}},
-      E:{primary:{triComp:150,triIso:145},accessories:{chest:4,back:34,biceps:132,forearms:164,neck:180,calves:170,coreSides:66}},
+      E:{primary:{triComp:150,triIso:145},accessories:{chest:4,back:34,biceps:132,forearms:164,neck:179,calves:170,coreSides:66}},
       F:{primary:{biComp:135,biIso:130},accessories:{chest:12,back:26,triceps:154,calves:171,core:65, shoulders: 44, quads:103, hams:124}},
       G:{primary:{coreComp:64,coreIso:61},accessories:{chest:5,back:40,triceps:146,biceps:137,forearms:166,neck:182,calves:172, quads: 98}},
     },
@@ -592,7 +591,7 @@ export const PROGRAMS = [
   },
   { id:4, name:"Single-Arm Focus",
     sessions:{
-      C:{primary:{chestComp:4,chestIso:12},accessories:{back:21,triceps:152,biceps:133,forearms:160,neck:180,calves:170,coreFront:62, glutes: 81}},
+      C:{primary:{chestComp:4,chestIso:12},accessories:{back:21,triceps:152,biceps:133,forearms:160,neck:179,calves:170,coreFront:62, glutes: 81}},
       D:{primary:{backComp:24,backIso:33},accessories:{chest:8,triceps:154,biceps:132,calves:171,coreBack:69, hams: 120, quads:110, glutes:90}},
       E:{primary:{triComp:149,triIso:147},accessories:{chest:6,back:28,biceps:135,forearms:162,neck:182,calves:172,coreSides:68}},
       F:{primary:{biComp:139,biIso:132},accessories:{chest:14,back:23,triceps:156,calves:173,core:70, shoulders: 46, quads:105, hams:126}},
@@ -660,7 +659,7 @@ export const PROGRAMS = [
       D:{primary:{backComp:31,backIso:40},accessories:{chest:19,triceps:147,biceps:131,calves:175,coreBack:42, hams: 124, quads:114, glutes:94}},
       E:{primary:{triComp:150,triIso:154},accessories:{chest:10,back:21,biceps:143,forearms:166,neck:178,calves:176,coreSides:64}},
       F:{primary:{biComp:138,biIso:140},accessories:{chest:18,back:34,triceps:146,calves:167,core:59, shoulders: 50, quads:109, hams:118}},
-      G:{primary:{coreComp:70,coreIso:60},accessories:{chest:13,back:26,triceps:153,biceps:129,forearms:158,neck:180,calves:168, quads: 104}},
+      G:{primary:{coreComp:70,coreIso:60},accessories:{chest:13,back:26,triceps:153,biceps:129,forearms:158,neck:179,calves:168, quads: 104}},
     },
     techniques:{
       week1:[t("E","triComp","super_slow"),t("F","biComp","1_quarter_reps")],
@@ -690,7 +689,7 @@ export const PROGRAMS = [
     sessions:{
       C:{primary:{chestComp:15,chestIso:11},accessories:{back:24,triceps:146,biceps:131,forearms:166,neck:178,calves:176,coreFront:61, glutes: 87}},
       D:{primary:{backComp:36,backIso:42},accessories:{chest:1,triceps:149,biceps:129,calves:167,coreBack:75, hams: 126, quads:116, glutes:96}},
-      E:{primary:{triComp:149,triIso:156},accessories:{chest:12,back:23,biceps:142,forearms:158,neck:180,calves:168,coreSides:72}},
+      E:{primary:{triComp:149,triIso:156},accessories:{chest:12,back:23,biceps:142,forearms:158,neck:179,calves:168,coreSides:72}},
       F:{primary:{biComp:142,biIso:143},accessories:{chest:20,back:36,triceps:151,calves:169,core:62, shoulders: 53, quads:111, hams:120}},
       G:{primary:{coreComp:74,coreIso:62},accessories:{chest:2,back:28,triceps:156,biceps:136,forearms:160,neck:182,calves:170, quads: 106}},
     },
@@ -720,7 +719,7 @@ export const PROGRAMS = [
   },
   { id:12, name:"Peak Intensity",
     sessions:{
-      C:{primary:{chestComp:19,chestIso:13},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:180,calves:168,coreFront:69, glutes: 89}},
+      C:{primary:{chestComp:19,chestIso:13},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:179,calves:168,coreFront:69, glutes: 89}},
       D:{primary:{backComp:127,backIso:30},accessories:{chest:3,triceps:151,biceps:143,calves:169,coreBack:42, hams: 128, quads:98, glutes:79}},
       E:{primary:{triComp:153,triIso:145},accessories:{chest:14,back:40,biceps:139,forearms:160,neck:182,calves:170,coreSides:64}},
       F:{primary:{biComp:135,biIso:130},accessories:{chest:4,back:41,triceps:154,calves:171,core:75, shoulders: 57, quads:113, hams:122}},
@@ -756,7 +755,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 134  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 97 , legIso: 121},
@@ -796,7 +795,7 @@ export const PROGRAMS = [
       },
       E: {
         primary:     { triComp: 149 , triIso: 145},
-        accessories: { chest: 7, back: 35, biceps: 130, forearms: 159, neck: 180, calves: 169, coreSides: 66 }
+        accessories: { chest: 7, back: 35, biceps: 130, forearms: 159, neck: 179, calves: 169, coreSides: 66 }
       },
       F: {
         primary:     {  biComp: 142  , biIso: 129},
@@ -850,7 +849,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 134  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 102 , legIso: 121},
@@ -894,7 +893,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 139  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 99  , legIso: 123},
@@ -939,7 +938,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 142  , biIso: 132},
-        accessories: { chest: 8, back: 22, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 64 }
+        accessories: { chest: 8, back: 22, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 64 }
       },
       G: {
         primary:     { legComp: 97  , legIso: 109},
@@ -991,7 +990,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 134  , biIso: 129},
-        accessories: { lats: 23, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { lats: 23, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 97  , legIso: 110},
@@ -1035,7 +1034,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 142  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { hinge: 119, legComp: 97  },
@@ -1080,7 +1079,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 134  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 97  , legIso: 121},
@@ -1124,7 +1123,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 134  , biIso: 129},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     { legComp: 115 , legIso: 121},
@@ -1167,7 +1166,7 @@ export const PROGRAMS = [
       },
       F: {
         primary:     {  biComp: 139  , biIso: 132},
-        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 180, calves: 170, core: 63 }
+        accessories: { chest: 11, back: 26, triceps: 152, forearms: 160, neck: 179, calves: 170, core: 63 }
       },
       G: {
         primary:     {  legComp: 97  , coreIso: 60},
