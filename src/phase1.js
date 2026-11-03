@@ -217,6 +217,48 @@
         lowerB: ["Hamstrings", "Calves", "Deadlifts"],
       },
     },
+    /* THREE DIFFERENT full-body workouts, which the one-day `full_body` split
+       above cannot express: ProgramBuilder draws one day tab per split day, so
+       FULL BODY offers a single tab and everything piles into one session.
+       Greg hit exactly that on 2026-11-02 -- 21 exercises in one `fb`
+       session, where he wanted workout 1 Monday, 2 Wednesday, 3 Friday.
+
+       This is NOT the same thing as a program's `fullBody: true` flag. That
+       flag makes ONE authored session answer every day key of every split,
+       which is right for Big Five and 30-10-30 -- one workout repeated. It is
+       also source-only; ProgramBuilder cannot write it, so a custom program
+       can never have it. */
+    full_body_3: {
+      label: "Full Body (3-day A/B/C)", days: ["fb1", "fb2", "fb3"],
+      validDayCounts: [3, 6],
+      dayLabels: { fb1: "WORKOUT 1", fb2: "WORKOUT 2", fb3: "WORKOUT 3" },
+      /* THE ONLY SPLIT THAT DECLARES THIS -- the same exclusion mechanism
+         push_pull's movementDays uses. A split without the flag cannot be
+         reached by the deriveSession branch it enables. It makes all three
+         days derive the SAME flattened session, because a full-body day holds
+         every muscle and "does this muscle belong on this day" is always yes. */
+      everyMuscleEveryDay: true,
+      /* NOT decoration, and NOT what puts every muscle on all three days --
+         the flag above does that. muscleDay has exactly TWO readers in each
+         app, deriveSession and buildTechSchedule, and the flag short-circuits
+         the first, so buildTechSchedule is the only one left: under an
+         OVERRIDE it routes a technique onto the day its exercise's muscle
+         lands on, and it needs a definite answer. Mapping all thirteen to fb1
+         also means that if the flag is ever dropped this split degrades to
+         "everything on day one" rather than to the silent total loss the
+         TIBIALIS omission caused in 2026-08.
+
+         (phase1 line 65 claims muscleDay also "lets B6 check per-day
+         balance". That half was never wired -- nothing in ANALYZE reads this
+         table; balance is judged on the program's own prescribed share. Do
+         not design against it.) */
+      muscleDay: {
+        chest: "fb1", back: "fb1", shoulders: "fb1",
+        biceps: "fb1", triceps: "fb1", forearms: "fb1", neck: "fb1",
+        quads: "fb1", hamstrings: "fb1", glutes: "fb1", calves: "fb1",
+        tibialis: "fb1", core: "fb1",
+      },
+    },
     body_part_5: { label: "Body-Part (legacy)", days: ["C", "D", "E", "F", "G"],
                    legacy: true,
                    // freeRotation: designed to drift — C–G rotate continuously
