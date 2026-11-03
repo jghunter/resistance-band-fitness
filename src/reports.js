@@ -79,7 +79,7 @@
   /* Time-based movements progress on SECONDS (CONST.PROG_SECS), never on the
      rep threshold, and never earn a "add a heavier band" suggestion from the
      rep rule.
-     177-180 (dynamic cervical flexion / extension / lateral flexion) were added
+     177-179 (dynamic cervical flexion / extension / lateral flexion) were added
      2026-07-30. They are programmed ~70 times and were progressing on the same
      12-rep rule as a chest press, so the app proposed a heavier band for
      dynamic neck loading every time the rule fired. At 66 cervical
@@ -87,7 +87,7 @@
      and time-based is the correct mode and it already existed here for the
      isometric holds (181/182/184). Sets still store their number in `reps` -
      only the unit label and the threshold change - so no stored data moves. */
-  var TIME_BASED = [71, 72, 166, 177, 178, 179, 180, 181, 182, 184];
+  var TIME_BASED = [71, 72, 166, 177, 178, 179, 181, 182, 184];
   function isTimeBased(id) { return TIME_BASED.indexOf(Number(id)) >= 0; }
   /* progressReps is the PROFILE's target (ctx.progressReps). Omit it and the
      CONST fallback applies. Time-based exercises always use PROG_SECS. */
@@ -187,8 +187,10 @@
     // Cervical spine. Programmed ~70 times across the library.
     177: "Sub-maximal only, and slow. Stop immediately for tingling, numbness, or pain radiating into the shoulder, arm or hand — that is a nerve symptom, not a training symptom.",
     178: "Sub-maximal only, and slow. Never force end-range extension. Stop for any radiating or electric sensation.",
+    /* 180 (the Right half) retired 2026-11-03 into 179, which is now
+       unilateral and carries both sides. The caution text was identical
+       on the two, so nothing was lost. */
     179: "Sub-maximal only. Keep the movement small and controlled; do not let the head drop into the end range.",
-    180: "Sub-maximal only. Keep the movement small and controlled; do not let the head drop into the end range.",
     181: "Build the hold gradually. Breathe through it — do not brace against a held breath.",
     182: "Build the hold gradually. Breathe through it — do not brace against a held breath.",
     183: "This is a low-load positional drill. If it is ever making noise or pinching, reduce the range.",
@@ -3975,6 +3977,26 @@
    133, 146, 147, 152,     // concentration curl, 1-arm OH ext, kickback, 1-arm pushdown
    163,                    // finger extension -- the band is round ONE hand's fingers
    169,                    // single-leg calf raise
+   /* 179 Lateral Neck Flexion, 2026-11-03. Until today this was a PAIR --
+      179 "(Left)" and 180 "(Right)" -- two catalog entries for one
+      exercise, which Greg had been logging twice per session with
+      identical reps, bands, rir, gear and load stamp on both. Greg,
+      2026-11-02: "I never thought having neck (left) and neck (right) as
+      two different exercise made sense ... Logically I still think it
+      should have just been neck unilateral as just one exercise." 180 is
+      retired and the sidedness moved HERE, where it belongs.
+
+      STRUCTURAL, not gear-conditional: a neck is not held in the hands,
+      so no bar, footplate, handle or anchor says anything about whether
+      one side or both are working. 177 and 178 stay bilateral -- flexion
+      and extension are in the sagittal plane and have no left and right.
+
+      THE L/R SEEDING IS RETROACTIVE HERE, uniquely. Every other collapse
+      in this project landed on an id with zero logged sets; his five
+      sessions were rewritten to L/R rows by
+      migrate_catalog_2026-11-03.cjs, and that is safe only because both
+      rows already existed and were identical. */
+   179,                    // lateral neck flexion -- one side at a time
    217,                    // split squat (belt)
    220, 222,               // side plank row, bird dog (per-side)
    /* FOUR FROM THE PROMOTED 226-234 BLOCK, added 2026-09-15 on Greg's report
@@ -4029,7 +4051,24 @@
       lines up. STRUCTURAL, not gear-conditional: no bar, footplate or anchor
       makes a side plank two-sided. It had zero logged sets when this landed,
       so the L/R seeding is not retroactive for anything. */
-   233                     // side plank lateral raise
+   233,                    // side plank lateral raise
+   /* 248 Banded Hip Adduction, promoted 2026-11-03 from custom 1024.
+      Greg, 2026-11-02: "one side at a time."
+
+      STRUCTURAL -- the band goes around ONE leg, and no bar,
+      footplate, handle or anchor distinguishes one leg from two, so
+      EX_UNILATERAL_BY_GEAR would add a switch nothing can ever flip,
+      which is worse than no switch. Same reading as 231 and 232.
+
+      247 Kneeling Alternating Side Crunch, promoted the SAME DAY from
+      custom 1020, is deliberately NOT here: it alternates left and
+      right WITHIN one rep, so it cannot be split into a left set and a
+      right set. Greg: "Alternates back and forth doing left and right
+      count as one rep." That is the 70 Banded Bicycle Crunch reading,
+      and note "alternating" points the OPPOSITE way for 244, where
+      alternating arms IS one arm at a time -- the word alone decides
+      nothing. 247's absence is asserted in test_unilateral_gear.cjs. */
+   248                     // banded hip adduction -- one leg at a time
   ].forEach(function (id) { EX_UNILATERAL[id] = true; });
 
   /* The gear-conditional group, each carrying the answer for when NO gear is
