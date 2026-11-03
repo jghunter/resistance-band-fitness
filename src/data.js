@@ -2361,9 +2361,17 @@ export function deriveSession(prog, splitId, dayKey) {
      declares movementDays -- only push_pull does -- and this exercise is one
      of the six in RBTS_REPORTS.EX_MOVEMENT whose movement disagrees with its
      muscle group. */
+  /* everyMuscleEveryDay -- full_body_3 alone. A full-body day holds every
+     muscle, so "does this muscle belong on this day" is always yes, and all
+     three days derive the SAME flattened session: the split-level counterpart
+     of a program's fullBody flag. Movement routing is skipped deliberately,
+     because push and pull cannot mean anything when every muscle is on every
+     day. Without this line md sends all thirteen muscles to fb1 and days two
+     and three derive EMPTY. */
   const dayOf = (id, m) =>
-    (RBTS_REPORTS && RBTS_REPORTS.exMovementDay)
-      ? RBTS_REPORTS.exMovementDay(sp, id, md[m]) : md[m];
+    (sp && sp.everyMuscleEveryDay) ? dayKey
+      : (RBTS_REPORTS && RBTS_REPORTS.exMovementDay)
+        ? RBTS_REPORTS.exMovementDay(sp, id, md[m]) : md[m];
   MUSCLE_ORDER.forEach(m => {
     const e = me[m]; if (!e) return;
     /* Tested SEPARATELY: an exception can send a muscle's isolation to the
