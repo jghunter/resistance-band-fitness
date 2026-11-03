@@ -3962,6 +3962,13 @@
    44, 49,                 // single-arm OHP, leaning lateral raise
    63, 64, 65,             // Pallof press, with rotation, overhead
    66, 67,                 // woodchop high-to-low, reverse woodchop low-to-high
+   74,                     /* tall-kneeling band rotation. Greg, 2026-11-02:
+                              "the rep rotates one way only, one side at a time".
+                              Missing while the whole rotational-core family beside
+                              it (63-67) was tagged; found when its VIDEO was
+                              swapped, which is the 2026-10-12 lesson that a clip
+                              change is when sidedness is least obvious. He had
+                              logged it ZERO times, so nothing is left untagged. */
    80, 91, 92,             // single-leg hip thrust, standing abduction, glute kickback
    93, 102, 103, 104, 106, 107, 108,   // lunges, Bulgarian split squat, step-up
    118,                    // single-leg RDL
