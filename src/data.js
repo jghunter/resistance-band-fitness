@@ -34,7 +34,7 @@ export const EXERCISE_NAMES = {
   30:"Straight-Arm Band Pulldown", 31:"Banded Pull-Up Assist",
   32:"Band-Resisted Pull-Up", 33:"Band Face Pull", 34:"Band Pull-Apart",
   35:"Overhead Band Pull-Apart", 36:"Y-T-W-L Raise", 37:"Band Romanian Deadlift",
-  38:"Band Good Morning", 39:"Band Reverse Fly", 40:"Band Shrug",
+  38:"Standing Back Extension", 39:"Band Reverse Fly", 40:"Band Shrug",
   41:"Band Shrug with Hold", 42:"Superman with Band",
   43:"Standing Band Overhead Press", 44:"Single-Arm Overhead Press",
   45:"Arnold Press with Band", 46:"Push Press with Band", 47:"Band Front Raise",
@@ -154,6 +154,16 @@ export const EXERCISE_NAMES = {
      which resolveVideo plays through <video> rather than an iframe. 244 also
      became the ALTERNATING version and so gained sidedness; see CLAUDE.md,
      "Eight shoulder videos replaced". */
+  /* Promoted from customs 1020 and 1024, 2026-11-03. 247 corrects a
+     misspelling in the stored custom record, which was missing the r in
+     "Alternating". THE WRONG SPELLING IS NOT WRITTEN OUT HERE ON
+     PURPOSE: the parity suite asserts it appears nowhere in either
+     source, and an absence test over source text cannot tell prose from
+     code -- a comment quoting the string would defeat the very check
+     protecting its removal. That happened three times in one session on
+     2026-10-21. The migration script still expects the misspelling,
+     because its gate reads Greg's export, not this catalog. */
+  247:"Kneeling Alternating Side Crunch", 248:"Banded Hip Adduction",
   237:"Lying One-Arm Shoulder Press", 238:"Push-Press Pull-Apart",
   239:"Front Raise Pull-Aparts", 240:"Stretch Front Raise",
   241:"Kneeling Up and Overs",   242:"Short-Arc Lateral Raise",
@@ -232,7 +242,13 @@ export const VIDEOS = {
   35:{url:"https://www.youtube.com/watch?v=tzYip9kdVUU", start:3, end:49},
   36:"https://www.youtube.com/watch?v=VCHwZgGPJJA",
   37:{url:"https://www.youtube.com/watch?v=NaKsZos0bIY", start:5, end:87},
-  38:{url:"https://www.youtube.com/watch?v=_V0WOAL0_k0", start:114, end:222},
+  /* 38 took Standing Back Extension on 2026-11-03. A TIKTOK url cannot
+     embed -- resolveVideo matches YouTube shapes and direct media files
+     only -- so this is a BARE STRING and WATCH DEMO opens a tab, the
+     same path 239's Instagram link takes. The clip that was here was
+     Band Good Morning's, left behind by the 2026-11-02 collapse that
+     moved 38's slots onto 127. */
+  38:"https://www.tiktok.com/@brandonbids/video/7335562173516729602?lang=en",
   39:"https://www.youtube.com/watch?v=XJ-gs_BUl40",
   40:"https://www.youtube.com/watch?v=CTAeFLD0Xgc",
   41:"https://www.youtube.com/watch?v=5dJbeSf0_Vk",
@@ -533,6 +549,17 @@ export const VIDEOS = {
   244:{url:"https://cfvideo.athleanx.com/2021/07/Alternating-Bend-Over-Rear-Delt-Pull.mp4"},
   245:{url:"https://cfvideo.athleanx.com/2021/07/banded-high-pull.mp4"},
   246:{url:"https://cfvideo.athleanx.com/2021/07/hip-hugger.mp4"},
+  /* 247 carries a CLIP WINDOW, so it needs the OBJECT form to embed --
+     and is therefore subject to the 2026-10-14 file:// limitation,
+     which VideoModal's amber caption and OPEN AT link already name.
+     248 is the object form with NO window, on the 221 Band V-Up
+     precedent: a bare string returns embedUrl null and only opens a
+     tab, while the object form EMBEDS. That is strictly better than
+     how 1024 behaved as a custom, because registerCustomEx writes a
+     bare string for a custom with no window. With no window the
+     file:// limitation cannot reach 248 at all. */
+  247:{url:"https://www.youtube.com/watch?v=2Z67cx5WG4k", start:70, end:100},
+  248:{url:"https://www.youtube.com/watch?v=BZKjlZQpx38"},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1791,12 +1818,18 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   241: GROUP_META.SHOULDERS, 242: GROUP_META.SHOULDERS,
   243: GROUP_META.SHOULDERS, 244: GROUP_META.SHOULDERS,
   245: GROUP_META.SHOULDERS, 246: GROUP_META.SHOULDERS,
+  /* Promoted from customs 1020 and 1024, 2026-11-03. Past 234 the
+     ID-range table returns MOBILITY, so an addition without BOTH an
+     EX_GROUP_OVERRIDE and an EX_CLASS_OVERRIDE entry is filed as
+     mobility work and is never offered as a substitute. */
+  247: GROUP_META.CORE, 248: GROUP_META.GLUTES,
   // Panel recommendation 20 — classification errors, fixed 2026-07-30.
   // 37/38 are hip hinges: the hamstrings and glutes do the work and the back
   // holds an isometric position. Sitting in the BACK id range credited their
   // entire volume to BACK, inflating BACK and hiding a hamstring gap.
   37: GROUP_META.HAMSTRINGS,   // Band Romanian Deadlift
-  38: GROUP_META.HAMSTRINGS,   // Band Good Morning
+  38: GROUP_META.BACK,         // Standing Back Extension (was Band Good
+                               // Morning / HAMSTRINGS until 2026-11-03)
   172: GROUP_META.TIBIALIS,    // Tibialis Raise
   176: GROUP_META.TIBIALIS };  // Seated Tibialis Raise
 const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
@@ -1815,7 +1848,15 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
      substituteCandidates' first band is same group AND same class, so an iso
      offered for an iso is the swap Greg is actually looking for. */
   237: "comp", 238: "comp", 239: "iso",  240: "iso", 241: "comp",
-  242: "iso",  243: "iso",  244: "iso",  245: "comp", 246: "iso" };
+  242: "iso",  243: "iso",  244: "iso",  245: "comp", 246: "iso",
+  /* 2026-11-03 promotions. THE CLASS WAS ASKED, NOT TAKEN FROM THE
+     CUSTOM RECORDS -- all three read cls:"iso", which is the ADD form's
+     DEFAULT rather than a ruling, and since 2026-10-18 (when Greg
+     authored a custom as comp) "they are all iso anyway" stopped being
+     a reason. Greg confirmed all three are isolation on 2026-11-02.
+     An EXPLICIT entry, even though iso is also what exClass returns by
+     default: past 234 a missing entry means MOBILITY. */
+  247: "iso",  248: "iso" };
 
 export const exGroup = (id) => {
   id = Number(id);
@@ -1846,7 +1887,7 @@ export const ALL_GROUPS = ["All","CHEST","BACK","SHOULDERS","CORE","GLUTES","QUA
 // Panel recommendation 20 — 2026-07-30. ADDED 28/29 (pulldowns): multi-joint,
 // and they occupy PRIMARY COMPOUND slots in 9 programs. REMOVED 139/142 (21s,
 // supinated straight-bar curl): a curl is single-joint elbow flexion.
-const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,36,37,38,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
+const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,36,37,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
 const EX_OTHER_IDS = new Set([112,166,191,192,193,194,198,199,203,204,205,206,207,208,209,210,211,212,213,214,215]);
 export const exClass = (id) => { id = Number(id); return EX_CLASS_OVERRIDE[id] || (EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"); };
 

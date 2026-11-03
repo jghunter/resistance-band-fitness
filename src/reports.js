@@ -4051,7 +4051,24 @@
       lines up. STRUCTURAL, not gear-conditional: no bar, footplate or anchor
       makes a side plank two-sided. It had zero logged sets when this landed,
       so the L/R seeding is not retroactive for anything. */
-   233                     // side plank lateral raise
+   233,                    // side plank lateral raise
+   /* 248 Banded Hip Adduction, promoted 2026-11-03 from custom 1024.
+      Greg, 2026-11-02: "one side at a time."
+
+      STRUCTURAL -- the band goes around ONE leg, and no bar,
+      footplate, handle or anchor distinguishes one leg from two, so
+      EX_UNILATERAL_BY_GEAR would add a switch nothing can ever flip,
+      which is worse than no switch. Same reading as 231 and 232.
+
+      247 Kneeling Alternating Side Crunch, promoted the SAME DAY from
+      custom 1020, is deliberately NOT here: it alternates left and
+      right WITHIN one rep, so it cannot be split into a left set and a
+      right set. Greg: "Alternates back and forth doing left and right
+      count as one rep." That is the 70 Banded Bicycle Crunch reading,
+      and note "alternating" points the OPPOSITE way for 244, where
+      alternating arms IS one arm at a time -- the word alone decides
+      nothing. 247's absence is asserted in test_unilateral_gear.cjs. */
+   248                     // banded hip adduction -- one leg at a time
   ].forEach(function (id) { EX_UNILATERAL[id] = true; });
 
   /* The gear-conditional group, each carrying the answer for when NO gear is
