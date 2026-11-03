@@ -277,7 +277,7 @@ export const VIDEOS = {
   71: {url:"https://www.youtube.com/watch?v=R4cYlVkcp7w", start:123, end:132},
   72: {url:"https://www.youtube.com/watch?v=R4cYlVkcp7w", start:212, end:229},
   73:"https://www.youtube.com/shorts/x2h7QqBYg1U",
-  74:"https://www.youtube.com/watch?v=nmMiarKvP1c",
+  74:{url:"https://www.youtube.com/watch?v=P5TITAsXOKE"},
   75:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
   76:"https://www.youtube.com/watch?v=6ffBlaBBWmA",
   77:"https://www.youtube.com/watch?v=kPugGvTvl1A",
@@ -642,7 +642,7 @@ export const PROGRAMS = [
     sessions:{
       C:{primary:{chestComp:7,chestIso:18},accessories:{back:25,triceps:156,biceps:130,forearms:163,neck:183,calves:173,coreFront:71, glutes: 84}},
       D:{primary:{backComp:27,backIso:39},accessories:{chest:17,triceps:144,biceps:137,calves:174,coreBack:74, hams: 123, quads:113, glutes:93}},
-      E:{primary:{triComp:149,triIso:152},accessories:{chest:9,back:38,biceps:140,forearms:165,neck:177,calves:175,coreSides:63}},
+      E:{primary:{triComp:149,triIso:152},accessories:{chest:9,back:127,biceps:140,forearms:165,neck:177,calves:175,coreSides:63}},
       F:{primary:{biComp:135,biIso:137},accessories:{chest:17,back:22,triceps:148,calves:176,core:77, shoulders: 49, quads:108, hams:117}},
       G:{primary:{coreComp:69,coreIso:62},accessories:{chest:12,back:33,triceps:150,biceps:142,forearms:157,neck:179,calves:167, quads: 103}},
     },
@@ -721,10 +721,10 @@ export const PROGRAMS = [
   { id:12, name:"Peak Intensity",
     sessions:{
       C:{primary:{chestComp:19,chestIso:13},accessories:{back:29,triceps:148,biceps:133,forearms:158,neck:180,calves:168,coreFront:69, glutes: 89}},
-      D:{primary:{backComp:38,backIso:30},accessories:{chest:3,triceps:151,biceps:143,calves:169,coreBack:42, hams: 128, quads:98, glutes:79}},
+      D:{primary:{backComp:127,backIso:30},accessories:{chest:3,triceps:151,biceps:143,calves:169,coreBack:42, hams: 128, quads:98, glutes:79}},
       E:{primary:{triComp:153,triIso:145},accessories:{chest:14,back:40,biceps:139,forearms:160,neck:182,calves:170,coreSides:64}},
       F:{primary:{biComp:135,biIso:130},accessories:{chest:4,back:41,triceps:154,calves:171,core:75, shoulders: 57, quads:113, hams:122}},
-      G:{primary:{coreComp:77,coreIso:71},accessories:{chest:15,back:38,triceps:146,biceps:134,forearms:162,neck:184,calves:172, quads: 108}},
+      G:{primary:{coreComp:77,coreIso:71},accessories:{chest:15,back:127,triceps:146,biceps:134,forearms:162,neck:184,calves:172, quads: 108}},
     },
     techniques:{
       week1:[t("D","backComp","1_quarter_reps"),t("E","triIso","pre_exhaustion")],
