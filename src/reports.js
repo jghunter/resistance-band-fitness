@@ -398,7 +398,69 @@
          span rather than extrapolating a curve nobody measured. */
       if (stretchIn <= pts[0].stretchIn) return pts[0].lb;
       var last = pts[pts.length - 1];
-      if (stretchIn >= last.stretchIn) return last.lb;
+      if (stretchIn >= last.stretchIn) {
+        /* ABOVE THE TOP READING: EXTRAPOLATE AT THE VENDOR'S OWN RATE, never
+           HOLD. Greg's ruling 2026-11-04, option C of four that were measured
+           against his real log and his 32 real readings.
+
+           It HELD until that day, and the honest label said so -- but a held
+           figure is a FLOOR, and on his log 9 priced exercise-uses sat on one.
+           The fold is why it is not an edge case: `d` multiplies the stretch,
+           so a band measured to its own REF_STRAIN brackets every singled set
+           and NO doubled one. Measured: singled MEASURED 16/16, doubled 0/16.
+
+           WHY THE VENDOR'S RATE AND NOT HIS OWN TWO READINGS' SLOPE (option
+           B). All 16 of his measured bands top out at strain 1.0 or BELOW, so
+           every slope he can currently measure comes from the SOFT part of the
+           curve. Latex stiffens as it stretches, so that slope understates
+           what comes next. The vendor's rate is taken across 0.5 -> 1.5 and so
+           already includes the stiff region. Measured against a
+           bias-corrected vendor maximum at strain 1.5, B ran median x1.05 with
+           a x0.54-x1.83 spread and C median x1.11 with a x0.85-x1.67 spread --
+           neither separable on evidence, which is why this was Greg's call and
+           not a derivation.
+
+           KNOWN COST, accepted: the vendor curve reads median x1.32 HIGH at
+           the 32 points he has actually measured, and its rate is median x1.68
+           steeper than his own. So this rate carries the vendor's bias. What
+           it does NOT carry is the vendor's OFFSET -- the climb starts from
+           HIS reading, so the curve is continuous and option D's 80% jump at
+           the crossing point cannot happen.
+
+           THE START POINT IS HIS READING, WHICH IS THE WHOLE DESIGN. Switching
+           to the vendor curve outright was option D and was rejected for
+           exactly that discontinuity: on b133 the vendor says 111 lb where his
+           scale says 61.7 at the same 38in.
+
+           STILL HELD BELOW THE LOWEST READING, deliberately and unchanged.
+           Extrapolating downward at this rate crosses zero, and a slack band
+           making negative force is not a figure; the sub-rated ramp from the
+           origin already exists for a band with no readings at all. A stretch
+           below the lowest reading also means the readings were taken further
+           out than the lift reaches, which is the opposite problem and wants a
+           reading further IN, not a model. See TODO_open_items.md.
+
+           A RATED RANGE THAT CANNOT GIVE A RATE FALLS BACK TO HOLDING -- a
+           vendor-less band, a single-valued range, an unparseable `res`.
+           parseResRange answers {min:0,max:0} rather than throwing, so the
+           guard is max > min, and `rest` is already known non-zero here.
+
+           THE `isFinite` LINE BELOW IS UNREACHABLE and is kept as a second
+           line of defence only. Measured by mutation 2026-11-04: deleting it
+           fails NOTHING, because the ternary already answers 0 for every
+           unusable range and `last.lb + 0 * x` IS the hold. It earns its place
+           if `perIn`'s expression ever grows a term that can go negative or
+           NaN; it is not evidence of anything today. What IS pinned is that
+           the rate comes from the RATED RANGE at all -- swapping in the
+           lifter's own measured slope fails that assertion. */
+        var rx = parseResRange(band.res);
+        var vLo = LOAD_MODEL.STRAIN_AT_RATED_MIN,
+            vHi = LOAD_MODEL.STRAIN_AT_RATED_MAX;
+        var perIn = (rx && rx.max > rx.min && vHi > vLo)
+          ? (rx.max - rx.min) / ((vHi - vLo) * rest) : 0;
+        if (!(isFinite(perIn) && perIn > 0)) return last.lb;
+        return last.lb + perIn * (stretchIn - last.stretchIn);
+      }
       for (var i = 1; i < pts.length; i++) {
         if (stretchIn <= pts[i].stretchIn) {
           var a = pts[i - 1], b2 = pts[i];
@@ -482,6 +544,29 @@
       return p && isFinite(p.stretchIn) && p.stretchIn > 0 &&
                   isFinite(p.lb) && p.lb > 0;
     }).slice().sort(function (a, b) { return a.stretchIn - b.stretchIn; });
+  }
+
+  /* WHERE a stretch sits relative to a band's readings. ONE helper, because
+     all three of effectiveLoad's branches need the same answer and had three
+     copies of it -- and from 2026-11-04 they need a FINER answer than
+     "brackets or not": above the top reading the figure is EXTRAPOLATED and
+     below the bottom one it is still HELD, and a basis that called both
+     "clamped" would be a false label on the new half. Two readers of one fact
+     disagreeing in silence is this model's most repeated defect.
+
+     `enough` is reported separately from `brackets` so a caller can tell "no
+     readings to speak of" from "readings that miss this stretch" -- the
+     distinction `allMeasured` and `anyClamped` already drew between them. */
+  function readingSpanOf(geom, stretchIn) {
+    var pts = sanitizeMeasuredPoints(geom && geom.measured);
+    if (pts.length < LOAD_MODEL.MIN_MEASURED_POINTS) {
+      return { enough: false, brackets: false, below: false, above: false };
+    }
+    var lo = pts[0].stretchIn, hi = pts[pts.length - 1].stretchIn;
+    return { enough: true,
+             brackets: lo <= stretchIn && hi >= stretchIn,
+             below: stretchIn < lo,
+             above: stretchIn > hi };
   }
 
   /* MEASURED/RATED for display, routed through the one MIN_MEASURED_POINTS
@@ -3102,7 +3187,7 @@
       }
       var lbP = 0, refP = 0, anyP = false, allMeasuredP = true,
           minStrainP = Infinity, maxStrainP = 0, firstStretchP = null,
-          anyClampedP = false;
+          anyExtrapP = false, anyHeldP = false;
       ids.forEach(function (id) {
         var b = ctx.bandOf ? ctx.bandOf(id) : null;
         if (!b) return;
@@ -3119,12 +3204,10 @@
         var strainP = restP ? (d * sP / restP) : 0;
         if (strainP < minStrainP) minStrainP = strainP;
         if (strainP > maxStrainP) maxStrainP = strainP;
-        var ptsP = sanitizeMeasuredPoints(geom.measured);
-        var enoughP = ptsP.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
-        var bracketsP = enoughP && ptsP[0].stretchIn <= d * sP &&
-                        ptsP[ptsP.length - 1].stretchIn >= d * sP;
-        if (!bracketsP) allMeasuredP = false;
-        if (enoughP && !bracketsP) anyClampedP = true;
+        var spanP = readingSpanOf(geom, d * sP);
+        if (!spanP.brackets) allMeasuredP = false;
+        if (spanP.above) anyExtrapP = true;
+        if (spanP.below) anyHeldP = true;
         lbP  += d * bandForceAt(b, d * sP, geom);
         refP += d * bandMid(b);
       });
@@ -3184,7 +3267,9 @@
                      : (pSpan.spanIn == null ? "no span consulted" : pSpan.basis));
       out.basis = "press geometry: " + PRESS_SETUP_LABELS[setupK].toLowerCase() +
         ", " + pSpanText +
-        (anyClampedP ? ", CLAMPED to the nearest force reading" : "") +
+        (anyExtrapP ? ", EXTRAPOLATED past your highest force reading at the "
+                    + "vendor's rated rate" : "") +
+        (anyHeldP ? ", HELD at your lowest force reading" : "") +
         (o.doubled ? ". doubled" : "");
       return out;
     }
@@ -3391,7 +3476,7 @@
         return out;
       }
       var lbB = 0, refB = 0, anyB = false, allMeasured = true, minStrain = Infinity,
-          maxStrain = 0, firstStretch = null, anyClamped = false;
+          maxStrain = 0, firstStretch = null, anyExtrap = false, anyHeld = false;
       ids.forEach(function (id) {
         var b = ctx.bandOf ? ctx.bandOf(id) : null;
         if (!b) return;
@@ -3406,19 +3491,18 @@
         var strain = rest ? (d * s / rest) : 0;
         if (strain < minStrain) minStrain = strain;
         if (strain > maxStrain) maxStrain = strain;
-        var pts = sanitizeMeasuredPoints(geom.measured);
-        /* Readings must BRACKET the stretch. Extrapolating past the ends of
-           the measured span is not a measurement. */
-        var enough = pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
-        var brackets = enough && pts[0].stretchIn <= d * s &&
-                       pts[pts.length - 1].stretchIn >= d * s;
-        if (!brackets) allMeasured = false;
-        /* Enough readings to be interpolated, but they do not reach this
-           stretch: bandForceAt CLAMPS to the nearest reading, so the number
-           did not come off the fitted curve either. Recorded so `basis` can
-           say what actually happened instead of naming a curve that was never
-           evaluated. */
-        if (enough && !brackets) anyClamped = true;
+        /* Readings must BRACKET the stretch. A figure from beyond either end
+           of the measured span is not a measurement of this stretch, so it
+           never reaches MEASURED -- unchanged since 2026-08-03.
+
+           WHICH END matters for the basis, since 2026-11-04: above the top
+           reading the figure is extrapolated at the vendor's rate, below the
+           bottom one it is still held at the lowest reading. Naming both
+           "clamped" would be a false label on the first. */
+        var span = readingSpanOf(geom, d * s);
+        if (!span.brackets) allMeasured = false;
+        if (span.above) anyExtrap = true;
+        if (span.below) anyHeld = true;
         lbB  += d * bandForceAt(b, d * s, geom);
         refB += d * bandMid(b);
       });
@@ -3447,10 +3531,18 @@
           ? "MEASURED" : "MODELED";
         if (out.provenance === "MEASURED") {
           out.basis = "interpolated through your force-scale readings at a measured band path";
-        } else if (anyClamped) {
+        /* EXTRAPOLATED is reported ahead of HELD when a mixed stack manages
+           both -- one band below its readings and another above. That pairing
+           is vanishingly rare and the extrapolation is the consequential half;
+           a sentence trying to say both would read worse than either. */
+        } else if (anyExtrap) {
           out.basis = "band path from the footplate and your attachment height, " +
-                      "clamped to your nearest force-scale reading (your readings " +
-                      "do not reach this stretch)";
+                      "extrapolated past your highest force-scale reading at the " +
+                      "vendor's rated rate (your readings do not reach this stretch)";
+        } else if (anyHeld) {
+          out.basis = "band path from the footplate and your attachment height, " +
+                      "held at your lowest force-scale reading (this stretch is " +
+                      "below your readings)";
         /* `gearOK` was part of this condition until 2026-08-27 and should not
            have been. When a plate's own dims stopped claiming to be measured
            (finding 9c corrected the Cyberplate to `verified: false`), the most
@@ -3510,7 +3602,7 @@
        anyClampedP) and the plate branch (allMeasured / anyClamped) -- see the
        comment at the bracket test below for why this path had neither until
        2026-09-24. */
-    var allBracketR = true, anyClampedR = false;
+    var allBracketR = true, anyExtrapR = false, anyHeldR = false;
 
     ids.forEach(function (id) {
       var b = ctx.bandOf ? ctx.bandOf(id) : null;
@@ -3585,13 +3677,10 @@
          project had a force reading at all until that day. The plate and press
          branches were written after readings were already imagined; this one
          predates them. */
-      var ptsR = sanitizeMeasuredPoints(geom.measured);
-      var enoughR = ptsR.length >= LOAD_MODEL.MIN_MEASURED_POINTS;
-      var evalStretchR = d * (refStretch + delta);
-      var bracketsR = enoughR && ptsR[0].stretchIn <= evalStretchR &&
-                      ptsR[ptsR.length - 1].stretchIn >= evalStretchR;
-      if (!bracketsR) allBracketR = false;
-      if (enoughR && !bracketsR) anyClampedR = true;
+      var spanR = readingSpanOf(geom, d * (refStretch + delta));
+      if (!spanR.brackets) allBracketR = false;
+      if (spanR.above) anyExtrapR = true;
+      if (spanR.below) anyHeldR = true;
       refTotal += d * bandForceAt(b, d * refStretch, geom);
       lb += d * bandForceAt(b, d * (refStretch + delta), geom);
     });
@@ -3633,13 +3722,15 @@
     out.provenance = (anyMeasured && allBracketR && gearOK2) ? "MEASURED" : "MODELED";
     if (out.provenance === "MEASURED") {
       out.basis = "interpolated through your force-scale readings";
-    } else if (anyClampedR) {
+    } else if (anyExtrapR) {
       /* Must not say "fitted from the vendor's rated range": the fitted curve
-         was never evaluated for this band. Name the clamp, and name the remedy
-         -- a reading further out -- because "on the fitted curve" tells nobody
-         what to go and measure. */
-      out.basis = "at an assumed strain, adjusted for gear, CLAMPED to your " +
-                  "nearest force-scale reading (your readings do not reach " +
+         was never evaluated for this band -- only its RATE was borrowed, from
+         the lifter's own highest reading upward. Name that, and name the
+         remedy -- a reading further out -- because "on the fitted curve" tells
+         nobody what to go and measure. */
+      out.basis = "at an assumed strain, adjusted for gear, EXTRAPOLATED past " +
+                  "your highest force-scale reading at the vendor's rated rate " +
+                  "(your readings do not reach " +
                   "this stretch" +
                   /* Names the CAUSE, and only when it is the cause. The card
                      already carries a ". doubled" chip of its own, so this says
@@ -4760,6 +4851,83 @@
     return (s && s.drop) ? "drop_set" : "straight";
   }
   function isPlainSet(s) { return setIntens(s) === "straight"; }
+
+  /* THE WORKING SET inside a logged set -- for the PROGRESSION judgment only.
+
+     A SEGMENTED set (drop set, rest-pause, cluster, 30-10-30) opens with a
+     straight set at the top load taken to failure, and THAT PHASE IS A
+     WORKING SET. Same convention `setBands` already uses for the display
+     stack and the one-rep-max path uses for its rep count -- "The first
+     segment IS the working set at the top load".
+
+     BEFORE 2026-11-04 BOTH READERS DROPPED SUCH A SET OUTRIGHT, so a session
+     whose every set carried an intensifier was INVISIBLE to the judgment:
+     `progressionState` got an empty `working` list, so READY could not fire,
+     and `isStalled` scored that session ZERO best reps -- which is never
+     greater than any earlier best, so the lift read STALLED. Measured on
+     Greg's real log that day: 34 Band Pull-Apart, 49 Leaning Lateral Raise
+     and 135 Drag Curl all reported STALLED carrying the advice "apply a
+     high-intensity technique you have not used on it recently", which is
+     exactly what he had just done. 135's first phase was 12 reps against 10
+     the session before -- a real improvement that clears the stall the
+     moment anything reads it.
+
+     THE ORIGINAL EXCLUSION WAS RIGHT ABOUT THE THING IT NAMED: "a correct
+     drop set ends low by design and would fake a stall" is true of the LAST
+     phase. It is the FIRST phase that is comparable, and nothing read it.
+
+     Returns null -- the set still does not gate progression -- for three
+     cases, each a separate fact:
+
+       - a TIME-BASED first phase (30-10-30's eccentric bookend, an iso
+         hold). There is no rep count, and scoring it 0 reps is the defect
+         above in a new coat. No such phase exists in Greg's log yet; the
+         guard is here because `thirty_ten_thirty`'s own note says to log
+         time-based bookend segments.
+       - a first phase with no positive rep count. A seeded blank phase is
+         not a working set.
+       - a PLAIN-SHAPED intensifier, i.e. one carrying `reps`/`bands` and no
+         `segments`. Two unrelated shapes land here and BOTH STAY EXCLUDED:
+         the LEGACY `drop: true` encoding recorded each phase as its own SET
+         ROW (Greg's 2026-06-10 ex23 -- three rows at 3, 2 and 1 bands), so
+         those rows are phases rather than sets and reading them all would
+         judge the drop-downs as working sets; and the rom_tempo family (1/4
+         reps, tempo, m_set) carries real reps at a real stack, but each rep
+         is HARDER than a straight one, so face-value reps understate the set
+         and `sseMultiplier` is what would have to be applied. Four sets in
+         the log. Tracked in TODO_open_items.md, not decided here.
+
+     SEGMENTS ARE CHECKED BEFORE `isPlainSet`, deliberately. `setIntens`
+     answers "straight" for a set carrying segments but no `intensifier`, and
+     for such a set `setReps` SUMS the phases -- the very inflation this
+     helper exists to remove. Shape first, label second.
+
+     The FOLD, the SIDE and the RIR are properties of the WHOLE set, so they
+     carry onto the phase: the fold is whole-set by construction
+     (`migrateFoldEncoding` migrates a segmented set all-or-nothing), and both
+     apps' segment editors say "one RIR for the whole set". `secs` is
+     deliberately NOT carried -- a phase judged on reps is judged on reps. */
+  function workingSetOf(s) {
+    if (!s) return null;
+    var segs = (Array.isArray(s.segments) && s.segments.length) ? s.segments : null;
+    if (!segs) return isPlainSet(s) ? s : null;
+    var g = segs[0] || {};
+    if (typeof g.secs === "number") return null;
+    if (!(isFinite(g.reps) && g.reps > 0)) return null;
+    var out = { reps: g.reps, bands: (g.bands || []).slice() };
+    if (s.rir != null) out.rir = s.rir;
+    if (s.side === "L" || s.side === "R") out.side = s.side;
+    if (s.doubled) out.doubled = true;
+    return out;
+  }
+  function workingSets(sets) {
+    var out = [];
+    (sets || []).forEach(function (s) {
+      var w = workingSetOf(s);
+      if (w) out.push(w);
+    });
+    return out;
+  }
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -5280,7 +5448,7 @@
     var h = exHistory(log, exId, beforeDate, CONST.STALL_N, deloadOf);
     if (h.length < CONST.STALL_N) return false;
     var best = h.map(function (e) {
-      return e.sets.filter(isPlainSet).reduce(function (m, s) {
+      return workingSets(e.sets).reduce(function (m, s) {
         var r = setReps(s); return r > m ? r : m;
       }, 0);
     });
@@ -5296,7 +5464,7 @@
     var deloadOf = ctx.deloadOf;
     /* Two sessions, not one: the readiness rule needs a load reference. */
     var h = exHistory(ctx.log, exId, beforeDate, 2, deloadOf);
-    var working = h.length ? h[0].sets.filter(isPlainSet) : [];
+    var working = h.length ? workingSets(h[0].sets) : [];
 
     /* --- load awareness -------------------------------------------------
        The rep rule alone cannot tell "hit the bar at the same stack" (a genuine
@@ -5316,7 +5484,7 @@
       }, 0);
     }
     var lastTop = topOf(working);
-    var prevTop = h.length > 1 ? topOf(h[1].sets.filter(isPlainSet)) : 0;
+    var prevTop = h.length > 1 ? topOf(workingSets(h[1].sets)) : 0;
     var loadDropped = (prevTop > 0 && lastTop > 0 && lastTop < prevTop);
 
     if (lastTop > 0) {
@@ -6046,7 +6214,8 @@
         (e.exercises[exId] || []).forEach(function (s) {
           var l = setTopLoad(s, ctx.bandOf);
           if (l > top) top = l;
-          if (isPlainSet(s)) { var r = setReps(s); if (r > best) best = r; }
+          var w = workingSetOf(s);
+          if (w) { var r = setReps(w); if (r > best) best = r; }
         });
         if (!per[exId]) per[exId] = [];
         per[exId].push({ date: e.date, top: top, best: best });
@@ -6653,7 +6822,8 @@
         (e.exercises[exId] || []).forEach(function (s) {
           reps += setReps(s);
           vol += setVolume(s, ctx.bandOf);
-          if (isPlainSet(s)) { var r = setReps(s); if (r > best) best = r; }
+          var w = workingSetOf(s);
+          if (w) { var r = setReps(w); if (r > best) best = r; }
         });
         /* `top` IS NULLABLE, and the session stays in the array either way.
            The load figure is the frozen effective-load stamp -- not
@@ -9462,6 +9632,9 @@
     setBands: setBands,
     setIntens: setIntens,
     isPlainSet: isPlainSet,
+    readingSpanOf: readingSpanOf,
+    workingSetOf: workingSetOf,
+    workingSets: workingSets,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
