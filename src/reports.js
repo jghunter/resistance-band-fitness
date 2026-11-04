@@ -197,7 +197,27 @@
     184: "Build the hold gradually. Stop for any radiating symptom.",
     // Loaded hip hinge / axial spine.
     37:  "Hinge from the hips with a neutral spine. The band pulls hardest at the top, which is exactly where form breaks — stop the set when the back rounds, not when the reps run out.",
-    38:  "Good mornings load the spine at the longest lever in the library. Stay conservative on band choice and stop the set at the first loss of a neutral back.",
+    /* THE WORDS BELOW MOVED FROM 38 TO 127 ON 2026-11-03, UNCHANGED, and they
+       had been filed against the wrong exercise since the 2026-11-02 collapse.
+       That collapse moved 38's seven program slots onto 127 and left the
+       caution behind, so the id the library actually PRESCRIBES carried no
+       caution at all, while 38 carried a warning about a movement it had
+       stopped being. 127 IS the Good Morning, so the text needed no edit --
+       only a different key. Greg's call, 2026-11-03.
+
+       WORTH KNOWING: nothing could have caught this. A caution is reached by
+       id, and both ids resolved to a real exercise with real text, so no
+       suite, grep or build step had anything to object to. It was found by
+       printing every EX_CAUTION id beside the name, group and class that id
+       holds TODAY -- which is the check this table had never had. */
+    127: "Good mornings load the spine at the longest lever in the library. Stay conservative on band choice and stop the set at the first loss of a neutral back.",
+    /* 38 is Standing Back Extension since 2026-11-03 (BACK, iso). It earns a
+       place in this group on its own account, because it loads spinal
+       extension -- but it is not a hinge and the lever is short, so it gets
+       its own words rather than inheriting the ones above. A promotion that
+       had carried the old text across would have been the defect this entry
+       exists to undo. */
+    38:  "Loaded spinal extension. Keep the range short and the tempo slow; stop the set at the first pinch in the low back rather than at the rep count.",
     185: "Set your back before the band loads. If you cannot start the pull with a neutral spine, the stack is too heavy.",
     186: "Two movements loaded at once. Finish the hinge before starting the row — do not let the row pull you out of position.",
     217: "Anchor the belt and test the band tension before loading the split position. Losing balance under a stretched band is the failure mode here.",
