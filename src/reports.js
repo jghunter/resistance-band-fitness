@@ -2192,6 +2192,45 @@
       out.basis = "press setup: no measured band run recorded for this bench angle";
       out.consumedIn = null; return out;
     }
+    /* A FLAT BENCH PREFERS THE TAPED SETTING-1 RUN to the vertical sum.
+       Greg's ruling 2026-11-04, and THE FLAT BUTTON ONLY -- `bench_angled` is
+       deliberately untouched above and still requires an explicit run, because
+       naming which setting you used is the whole point of that setup. A
+       setting-1 tape must never satisfy an angled press; that is asserted.
+
+       WHY THE TAPE WINS OVER THE PAD HEIGHT when both exist. The run is a
+       DIRECT measurement of the quantity this function returns, while the pad
+       route SUMS THREE separate measurements to reach the same line. One tape
+       of the finished line beating a figure built out of parts is this model's
+       standing ruling -- the same one that made `consumedIn` the WHOLE
+       footplate path (2026-08-14) and `torsoWidthIn` a PATH rather than a
+       chord (2026-09-24), both settled after building a figure out of parts
+       went wrong. On Greg's own numbers the two agree to the decimal: chest
+       depth 10 + press reach 22.25 + pad 17.25 = 49.5, which IS his setting-1
+       tape. A disagreement therefore means one of those four inputs is wrong,
+       and the single direct reading is the one to trust.
+
+       IT SITS ABOVE THE chestThicknessIn / pressReachIn GUARDS for exactly the
+       reason the override above gives: with a measured run in hand neither
+       field is an input to this setup, so refusing for want of them would
+       blame a measurement that has nothing to do with the result.
+
+       THE SETTING WHOSE `n` IS 1, never the first option RETURNED.
+       benchTravelOptions numbers by ARRAY INDEX and skips blank slots while
+       keeping that numbering, so a bench with slot 1 empty and slot 2 filled
+       returns an option numbered 2 first -- and that one is not flat. Reading
+       [0] would price a flat press off an angled run, silently. */
+    if (setupK === "bench") {
+      var flatRun = null;
+      benchTravelOptions(body).forEach(function (o) {
+        if (o.n === 1) flatRun = o.inches;
+      });
+      if (finitePos(flatRun)) {
+        out.travelIn = flatRun;
+        out.basis = "press geometry, on your taped band run for bench setting 1 (flat)";
+        return out;
+      }
+    }
     if (!finitePos(body.chestThicknessIn)) {
       out.basis = "press setup: " + PRESS_FIELD_LABELS.chestThicknessIn + " not measured";
       out.consumedIn = null; return out;
@@ -2204,7 +2243,8 @@
     if (setupK === "bench") {
       var pad = benchDims ? benchDims.benchPadHeightIn : null;
       if (!finitePos(pad)) {
-        out.basis = "press setup: the bench pad height is not measured";
+        out.basis = "press setup: the bench pad height is not measured, and "
+                  + "no band run is taped for bench setting 1";
         out.consumedIn = null; return out;
       }
       travel += pad;
