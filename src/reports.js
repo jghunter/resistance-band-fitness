@@ -54,7 +54,19 @@
        (last - first)/2 - the middle point carries zero weight, so [100,300,100]
        and [100,100,100] both report FLAT. Below this, report the trend as
        provisional rather than asserting GROWING or DECLINING. */
-    TREND_MIN_N:   4
+    TREND_MIN_N:   4,
+    /* ---- repetition cadence (2026-11-07) ------------------------------
+       Baye's recommended window is at least 5/5 and no more than 15/15.
+       Below 5/5 the movement is too fast for most trainees to keep good
+       form; above 15/15 most cannot move smoothly without segmenting.
+       These are RECOMMENDATIONS: cadenceWarning warns and never refuses.
+       CADENCE_TOL_PCT is how far a MEASURED cadence may fall from the
+       standard before it is flagged. At 20 an 11 s/rep standard brackets
+       as 8.8 to 13.2. CHOSEN rather than confirmed by Greg -- revisit it
+       against real measured data. */
+    CADENCE_MIN_SEC: 5,
+    CADENCE_MAX_SEC: 15,
+    CADENCE_TOL_PCT: 20
   };
 
   /* Weekly working-set landmarks per muscle group. Tunable in one place.
@@ -5002,6 +5014,89 @@
     });
     return out;
   }
+
+  /* ======================================================================
+   * REPETITION CADENCE AND TIME UNDER LOAD  (2026-11-07)
+   * Spec: docs/superpowers/specs/2026-11-07-cadence-and-time-under-load-design.md
+   *
+   * A cadence is { pos, hold, neg, turn } in SECONDS: the positive, the hold
+   * at the hardest point, the negative, and the pause at the turnaround.
+   * Seconds per rep is the sum. It is an OBJECT and not a four-item array
+   * deliberately: `cadence[2]` meaning "negative" has nothing to check it,
+   * and a positional figure has gone wrong twice in this project at real
+   * cost (consumedIn, torsoWidthIn).
+   * ==================================================================== */
+
+  /* finitePos, never isFinite. isFinite(null), isFinite("") and
+     isFinite("5") are all true, so a bare isFinite guard accepts a missing
+     measurement, an empty input box and an imported string. */
+  function finitePosNum(v) {
+    return typeof v === "number" && isFinite(v) && v > 0;
+  }
+  function finiteNonNegNum(v) {
+    return typeof v === "number" && isFinite(v) && v >= 0;
+  }
+  /* pos and neg must be POSITIVE -- a rep with no lifting phase or no
+     lowering phase is not a rep. hold and turn may be 0, because 0 is a
+     real answer there ("no pause") and not an absent one. */
+  function validCadence(c) {
+    if (!c || typeof c !== "object") return false;
+    return finitePosNum(c.pos) && finitePosNum(c.neg) &&
+           finiteNonNegNum(c.hold) && finiteNonNegNum(c.turn);
+  }
+  function cadenceSecPerRep(c) {
+    if (!validCadence(c)) return null;
+    return c.pos + c.hold + c.neg + c.turn;
+  }
+  /* RESOLUTION ORDER: phase, then set, then profile.
+     An INVALID override at one level FALLS THROUGH to the next rather than
+     refusing outright. A half-typed override must not blind the reader to
+     the standard that is sitting right there -- and the TRAINING STYLE
+     panel is where an invalid PROFILE cadence gets reported, which is the
+     only level the user can fix from a settings screen.
+     Returns null when no level resolves. Never a partial object: a caller
+     that got { pos: 5 } with the rest undefined would compute NaN. */
+  function cadenceOf(phase, set, ctx) {
+    var levels = [
+      [phase && phase.cadenceSec, "phase"],
+      [set && set.cadenceSec,     "set"],
+      [ctx && ctx.cadence,        "profile"]
+    ];
+    for (var i = 0; i < levels.length; i++) {
+      var c = levels[i][0];
+      if (validCadence(c)) {
+        return { pos: c.pos, hold: c.hold, neg: c.neg, turn: c.turn,
+                 secPerRep: c.pos + c.hold + c.neg + c.turn,
+                 src: levels[i][1] };
+      }
+    }
+    return null;
+  }
+  /* WARNS, never refuses. Baye's window is a recommendation, and a cadence
+     outside it is a real choice someone may have made on purpose. The
+     bounds are INCLUSIVE: 15/15 is the stated maximum, not the first
+     value past it.
+     An invalid cadence gets "" rather than a window complaint -- it has a
+     different fault, and naming the wrong one sends the reader to fix the
+     wrong field. */
+  function cadenceWarning(c) {
+    if (!validCadence(c)) return "";
+    var lo = CONST.CADENCE_MIN_SEC, hi = CONST.CADENCE_MAX_SEC;
+    var fast = [], slow = [];
+    if (c.pos < lo) fast.push("positive"); else if (c.pos > hi) slow.push("positive");
+    if (c.neg < lo) fast.push("negative"); else if (c.neg > hi) slow.push("negative");
+    var out = [];
+    if (fast.length) {
+      out.push(fast.join(" and ") + " faster than " + lo +
+               "s -- too fast for most to hold good form");
+    }
+    if (slow.length) {
+      out.push(slow.join(" and ") + " slower than " + hi +
+               "s -- most cannot move smoothly for that long without segmenting");
+    }
+    return out.join("; ");
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -9729,6 +9824,10 @@
     readingSpanOf: readingSpanOf,
     workingSetOf: workingSetOf,
     workingSets: workingSets,
+    validCadence: validCadence,
+    cadenceSecPerRep: cadenceSecPerRep,
+    cadenceOf: cadenceOf,
+    cadenceWarning: cadenceWarning,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
