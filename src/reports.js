@@ -5342,6 +5342,71 @@
     return { target: base, half: half, src: "profile" };
   }
 
+  /* ---- THE TIME BAR -----------------------------------------------------
+     READY requires BOTH bars (Greg's ruling, 2026-11-07): the rep bar it
+     always had, and this one.
+
+     THE TIME BAR USES >= hi WHILE THE REP BAR USES progressReps + 1, and
+     that asymmetry is deliberate. The rep bar reads "you OUTGREW the
+     range". Baye's own rule for a timed set is "reached the top of the
+     range, add the increment", and SECONDS ARE CONTINUOUS -- one extra
+     second is noise where one extra repetition is a real additional
+     repetition.
+
+     THREE CASES WHERE THIS BAR DOES NOT GATE AT ALL:
+
+       1. basis "none" -- the bar cannot be evaluated. tulBarState reports
+          ready: true and says why. WITHOUT THIS, a fresh install and every
+          session already in Greg's log could never read READY again, since
+          nothing in his log is measured and no profile carries a cadence
+          until someone sets one.
+       2. a HOLD id -- its reps field already holds SECONDS and threshOf
+          already judges it against PROG_SECS. That IS its time bar; a
+          second, different seconds bar would be incoherent.
+       3. no tulTargetSec on the profile -- same as case 1.
+
+     EVERY SET MUST CLEAR, exactly as sideReady requires of the rep bar. */
+  function tulTargetHi(ctx) {
+    var t = ctx && ctx.tulTargetSec;
+    return (t && finitePosNum(t.hi)) ? t.hi : null;
+  }
+  function tulBarApplies(ctx, exId) {
+    if (isTimeBased(exId)) return false;
+    return tulTargetHi(ctx) != null;
+  }
+  function tulBarState(ctx, exId, sets) {
+    if (!tulBarApplies(ctx, exId)) return null;
+    var hi = tulTargetHi(ctx);
+    var list = sets || [];
+    if (!list.length) {
+      return { applies: true, hi: hi, ready: false, basis: "none", sec: null,
+               why: "no sets to judge" };
+    }
+    var worst = null, anyNone = false, whys = [], bases = {};
+    list.forEach(function (s) {
+      var t = setTul(s, ctx);
+      bases[t.basis] = 1;
+      if (t.basis === "none") { anyNone = true; if (t.why) whys.push(t.why); return; }
+      if (worst === null || t.sec < worst) worst = t.sec;
+    });
+    /* A SET WE CANNOT PRICE DOES NOT WITHHOLD READY. Case 1 above: the bar
+       is unevaluable for that set, not failed by it. Reporting ready: true
+       with basis "none" is the degrade-and-say-so posture effectiveLoad
+       takes, and it is what keeps every pre-2026-11-07 session judgeable. */
+    if (worst === null) {
+      return { applies: true, hi: hi, ready: true, basis: "none", sec: null,
+               why: whys.length ? whys.join("; ") : "no time could be resolved" };
+    }
+    var basisKeys = Object.keys(bases).filter(function (k) { return k !== "none"; });
+    return {
+      applies: true, hi: hi,
+      ready: worst >= hi,
+      basis: (basisKeys.length > 1) ? "mixed" : basisKeys[0],
+      sec: worst,
+      why: anyNone ? ("some sets carry no time: " + whys.join("; ")) : null
+    };
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -5914,8 +5979,12 @@
        him), so the bar is one above it. Time-based exercises keep PROG_SECS
        exactly as before; threshOf already branches on isTimeBased. */
     var timeBased = isTimeBased(exId);
-    var thresh = timeBased ? threshOf(exId, ctx.progressReps)
-                           : threshOf(exId, ctx.progressReps) + 1;
+    /* repTargetFor, not threshOf directly: it applies ctx.progressRepsLower
+       for a lower-body lift and falls back to ctx.progressReps otherwise
+       (2026-11-07). For a HOLD it defers to threshOf and answers PROG_SECS,
+       so the timeBased branch below is unchanged. */
+    var repTgt = repTargetFor(ctx, exId);
+    var thresh = timeBased ? repTgt.target : repTgt.target + 1;
     /* THE REPS RULE AND THE RIR RULE USED TO BE TWO INDEPENDENT LOOPS, and a
        set at RIR 1 against a cap of 0 could never qualify however many reps it
        carried. Reps in reserve are reps you did not do, so they RAISE the bar
@@ -5966,7 +6035,12 @@
           L: sideReady(bySide.L), R: sideReady(bySide.R) }
       : null;
     var repsReady = sides ? (sides.L || sides.R) : sideReady(bySide.B);
-    var ready = repsReady && !loadDropped;
+    /* THE SECOND BAR (2026-11-07). READY requires the reps AND the time.
+       `working` is the judged set list -- the same one sideReady saw -- so
+       the two bars are decided on the same sets. tulBar is null when the
+       bar does not apply, and a null bar does not withhold READY. */
+    var tulBar = tulBarState(ctx, exId, working);
+    var ready = repsReady && !loadDropped && (tulBar ? tulBar.ready : true);
     return {
       ready: ready,
       sides: sides,
@@ -5981,6 +6055,10 @@
          can explain the withheld READY instead of just not showing it. */
       loadDropped: loadDropped,
       repsReady: repsReady,
+      /* null when the time bar does not apply: a hold id, or no
+         tulTargetSec on the profile. A caller must treat null as "this
+         lift has no time bar", never as "the time bar failed". */
+      tulBar: tulBar,
       lastTop: lastTop,
       prevTop: prevTop,
     };
@@ -7123,6 +7201,25 @@
       return { code: "READY", text: "Hit the " + phrase +
         " - progress the load: " + (how || "add the lightest band you own") + "." };
     }
+    /* ENOUGH REPS, NOT ENOUGH TIME (2026-11-07). The rep bar cleared and
+       the time bar did not, which on a MEASURED set means the reps moved
+       faster than the cadence the lifter set for themselves. Telling them
+       to add load would reward the shortcut; telling them they STALLED
+       would be false, because the reps really did improve.
+
+       This branch can only be reached by a MEASURED or MIXED set: a derived
+       time is reps times the standard, and at any cadence inside Baye's
+       window the rep bar implies the time bar. So reaching here is itself
+       evidence that someone timed the set. */
+    if (row.repsReady && row.tulBar && row.tulBar.applies && !row.tulBar.ready) {
+      var spr = (row.tulBar.sec != null && row.bestReps > 0)
+        ? (row.tulBar.sec / row.bestReps) : null;
+      return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
+        ", but the set ran " + Math.round(row.tulBar.sec) + "s against a " +
+        row.tulBar.hi + "s time-under-load target" +
+        (spr ? " -- " + (Math.round(spr * 10) / 10) + "s per rep" : "") +
+        ". Hold the cadence before you add a band." };
+    }
     /* isStalled measures REPS only (the app's inherited rule for the in-workout
        badge). Under double progression, flat reps with RISING top load is load
        progression, not a stall - so do not prescribe a stall remedy for a lift
@@ -7419,6 +7516,21 @@
         allTimeBest: allBest[exId] == null ? null : allBest[exId],
         isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
         ready: ps.ready,
+        /* NEEDED BY exerciseVerdict's READY_BUT_FAST BRANCH BELOW, which
+           reads row.repsReady to tell "the reps cleared but the time did
+           not" apart from "the reps themselves fell short". Not asked for
+           by name in the brief's Step 6, but Step 7's example consumes it,
+           and without it READY_BUT_FAST could never fire -- no test in
+           this task would have caught that, since none exercises
+           exerciseVerdict directly (2026-11-08). */
+        repsReady: ps.repsReady,
+        /* ON analyzeExercises' ROWS AND DELIBERATELY NOT ON
+           exerciseProgressionRows'. Same rule foldSpan follows (2026-10-07):
+           handing the dashboard a field nobody renders is how the two row
+           builders come to drift, which is the reason they are separate
+           functions at all. ANALYZE's verdict needs it; the STRENGTH
+           progression table does not draw it. Asserted by absence. */
+        tulBar: ps.tulBar,
         stalled: ps.stalled,
         lastDate: last.date,
         daysSince: daysBetween(last.date, win.asOf),
@@ -10081,6 +10193,9 @@
     BODY_HALF: BODY_HALF,
     bodyHalfOf: bodyHalfOf,
     repTargetFor: repTargetFor,
+    tulTargetHi: tulTargetHi,
+    tulBarApplies: tulBarApplies,
+    tulBarState: tulBarState,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
