@@ -4979,11 +4979,12 @@
      Returns null -- the set still does not gate progression -- for three
      cases, each a separate fact:
 
-       - a TIME-BASED first phase (30-10-30's eccentric bookend, an iso
-         hold). There is no rep count, and scoring it 0 reps is the defect
-         above in a new coat. No such phase exists in Greg's log yet; the
-         guard is here because `thirty_ten_thirty`'s own note says to log
-         time-based bookend segments.
+       - a first phase carrying seconds AND NO positive rep count (30-10-30's
+         eccentric bookend, logged as a pure iso hold). There is no rep count,
+         and scoring it 0 reps is the defect above in a new coat. A phase
+         carrying both seconds and a real rep count is NOT excluded by this
+         rule (tightened 2026-11-07) -- it is a working set, judged on its
+         reps like any other.
        - a first phase with no positive rep count. A seeded blank phase is
          not a working set.
        - a PLAIN-SHAPED intensifier, i.e. one carrying `reps`/`bands` and no
@@ -5005,19 +5006,41 @@
      The FOLD, the SIDE and the RIR are properties of the WHOLE set, so they
      carry onto the phase: the fold is whole-set by construction
      (`migrateFoldEncoding` migrates a segmented set all-or-nothing), and both
-     apps' segment editors say "one RIR for the whole set". `secs` is
-     deliberately NOT carried -- a phase judged on reps is judged on reps. */
+     apps' segment editors say "one RIR for the whole set". `tulSec` and
+     `cadenceSec` carry too, for the OPPOSITE reason -- they belong to THIS
+     phase and no other, which is exactly why the time bar can reach an
+     intensifier set at all (added 2026-11-07). `gapSec` is NOT carried --
+     phase 0 has no gap before it by construction. `secs` is NOT carried --
+     a phase judged on reps is judged on reps. */
   function workingSetOf(s) {
     if (!s) return null;
     var segs = (Array.isArray(s.segments) && s.segments.length) ? s.segments : null;
     if (!segs) return isPlainSet(s) ? s : null;
     var g = segs[0] || {};
-    if (typeof g.secs === "number") return null;
+    /* THE secs GUARD IS "SECONDS WITH NO REP COUNT", not "seconds at all"
+       (tightened 2026-11-07). The original refusal was right about the
+       thing it named: a phase logged purely as a hold has no rep count,
+       and scoring it 0 reps is the 2026-11-04 defect in a new coat. But a
+       phase carrying BOTH a duration and a real rep count IS a working set
+       and always was -- the rep-count guard on the next line is what
+       actually protects the judgment. */
+    if (typeof g.secs === "number" && !(isFinite(g.reps) && g.reps > 0)) return null;
     if (!(isFinite(g.reps) && g.reps > 0)) return null;
     var out = { reps: g.reps, bands: (g.bands || []).slice() };
     if (s.rir != null) out.rir = s.rir;
     if (s.side === "L" || s.side === "R") out.side = s.side;
     if (s.doubled) out.doubled = true;
+    /* tulSec AND cadenceSec RIDE ACROSS, and for the OPPOSITE reason the
+       fold, the side and the RIR do. Those three are WHOLE-SET properties,
+       so they apply to the phase. These two BELONG TO THIS PHASE and to no
+       other -- which is exactly why the time bar can reach an intensifier
+       set at all. Were the time stored on the SET, a first phase's share of
+       it would be unknown and the bar would have to be withheld.
+
+       gapSec is NOT carried: phase 0 has no gap before it by construction.
+       secs is NOT carried: a phase judged on reps is judged on reps. */
+    if (typeof g.tulSec === "number") out.tulSec = g.tulSec;
+    if (g.cadenceSec) out.cadenceSec = g.cadenceSec;
     return out;
   }
   function workingSets(sets) {
