@@ -4924,7 +4924,21 @@
      drop sets. Every reader goes through setSegments so both shapes work. */
   function setSegments(s) {
     if (s && Array.isArray(s.segments) && s.segments.length) return s.segments;
-    return [{ reps: (s && s.reps) || 0, bands: (s && s.bands) || [] }];
+    /* THE SYNTHESIZED PHASE MUST CARRY THE PHASE-LEVEL FIELDS (2026-11-07).
+       A simple set IS one phase, so a `tulSec` or `cadenceSec` written on
+       the set is that phase's own figure. This branch REBUILDS the phase
+       field by field, so anything not named here is silently dropped -- and
+       dropping tulSec would make setTul report DERIVED for a set somebody
+       timed, which is a confident wrong answer rather than a missing one.
+
+       Only the PHASE-level fields are carried. gapSec is not: there is
+       nothing before a single phase. The fold, the side and the RIR are not:
+       they are WHOLE-SET properties and every reader takes them off the set
+       itself. */
+    var g = { reps: (s && s.reps) || 0, bands: (s && s.bands) || [] };
+    if (s && typeof s.tulSec === "number") g.tulSec = s.tulSec;
+    if (s && s.cadenceSec) g.cadenceSec = s.cadenceSec;
+    return [g];
   }
   function setReps(s) {
     return setSegments(s).reduce(function (a, g) { return a + (g.reps || 0); }, 0);
@@ -5095,6 +5109,96 @@
                "s -- most cannot move smoothly for that long without segmenting");
     }
     return out.join("; ");
+  }
+
+  /* ---- TIME UNDER LOAD, per PHASE ---------------------------------------
+     THE TIME IS ON THE PHASE AND NOT ON THE SET, and that is the whole
+     reason this function exists. Greg, 2026-11-07: a drop set's turnaround
+     is when you change bands, and that is never zero seconds -- different
+     bar, handle, footplate and anchor combinations each take a different
+     amount of it. A single whole-set stopwatch reading therefore INFLATES
+     every intensifier set by its own equipment-change time.
+
+     THE FIELD IS `tulSec` AND NOT `secs`, deliberately. workingSetOf
+     refuses any phase carrying a `secs` number, because a timed phase has
+     no rep count and scoring it zero reps is the 2026-11-04 defect where
+     three lifts read STALLED while advising the technique just applied.
+     Reusing that name would bring the defect back on every intensifier set.
+
+     `why` MUST NAME THE INPUT THAT IS ACTUALLY MISSING. This is
+     effectiveLoad's standing rule: blaming the wrong one sends someone to
+     re-measure a figure that was fine. The CADENCE is named first when both
+     are missing, because it is the one a settings screen can fix. */
+  function phaseTul(phase, set, ctx) {
+    var cad = cadenceOf(phase, set, ctx);
+    var spr = cad ? cad.secPerRep : null;
+    if (finitePosNum(phase && phase.tulSec)) {
+      return { sec: phase.tulSec, basis: "measured", secPerRep: spr, why: null };
+    }
+    if (!cad) {
+      return { sec: null, basis: "none", secPerRep: null,
+               why: "no repetition cadence is set on the profile, so a time " +
+                    "cannot be derived from the reps logged" };
+    }
+    var reps = (phase && phase.reps) || 0;
+    if (!finitePosNum(reps)) {
+      return { sec: null, basis: "none", secPerRep: spr,
+               why: "this phase has no rep count, so a time cannot be " +
+                    "derived from seconds per rep" };
+    }
+    return { sec: reps * spr, basis: "derived", secPerRep: spr, why: null };
+  }
+
+  /* ---- TIME UNDER LOAD, per SET -----------------------------------------
+     The set's time is the SUM of its phases' times. A simple set is one
+     phase, which setSegments already presents, so there is one rule here
+     and not two.
+
+     MIXED is the fourth basis, and it means the same thing provenanceMix
+     means: THE SET DISAGREES WITH ITSELF. Two measured phases is one
+     basis. One measured and one derived is two, and a reader comparing it
+     to a fully derived session is partly comparing instruments.
+
+     GAPS ARE NEVER ADDED INTO `sec`. A gap is unloaded time -- the band
+     change on a drop set, the prescribed interval on a rest-pause. It is
+     reported on its own.
+
+     THE AGGREGATE IS `gapTotalSec` AND THE PER-PHASE FIELD IS `gapSec`,
+     and the two names differ on purpose. One word meaning two things on
+     one screen is the defect the 2026-10-07 SETS / SESSIONS rename closed.
+
+     A `gapTotalSec` OF 0 IS AMBIGUOUS ON ITS OWN and must be read with
+     `gapsRecorded`: 0 recorded out of 1 expected means NOT RECORDED, never
+     "the band change took no time" -- which is precisely the claim Greg
+     objected to. Callers that print a gap must print both. */
+  function setTul(set, ctx) {
+    var segs = setSegments(set);
+    var sec = 0, m = 0, d = 0, z = 0, whys = [];
+    var gapTotal = 0, gapsRec = 0;
+    segs.forEach(function (g, i) {
+      var t = phaseTul(g, set, ctx);
+      if (t.basis === "measured") { m++; sec += t.sec; }
+      else if (t.basis === "derived") { d++; sec += t.sec; }
+      else { z++; whys.push("phase " + (i + 1) + ": " + t.why); }
+      /* i > 0 ONLY. There is nothing before the first phase, so a gapSec
+         written there is meaningless and is ignored rather than summed. */
+      if (i > 0 && finitePosNum(g && g.gapSec)) { gapsRec++; gapTotal += g.gapSec; }
+    });
+    var basis;
+    if (m + d === 0) basis = "none";
+    else if (z > 0) basis = "mixed";
+    else if (m > 0 && d > 0) basis = "mixed";
+    else if (m > 0) basis = "measured";
+    else basis = "derived";
+    return {
+      sec: (basis === "none") ? null : sec,
+      basis: basis,
+      phases: { measured: m, derived: d, unresolved: z },
+      gapTotalSec: gapTotal,
+      gapsRecorded: gapsRec,
+      gapsExpected: Math.max(0, segs.length - 1),
+      why: whys.length ? whys.join("; ") : null
+    };
   }
 
   function setSide(s) {
@@ -9828,6 +9932,8 @@
     cadenceSecPerRep: cadenceSecPerRep,
     cadenceOf: cadenceOf,
     cadenceWarning: cadenceWarning,
+    phaseTul: phaseTul,
+    setTul: setTul,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
