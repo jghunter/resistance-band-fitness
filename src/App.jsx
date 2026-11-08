@@ -2191,13 +2191,16 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
        doubled band that arrives marked SINGLED stamps a fraction of the real
        load, silently. */
     if (last && last.doubled) n.doubled = true
-    /* A SEED SITE: this set has not been performed yet. cadenceSec is an
-       INTENTION and rides along the same way doubled does; tulSec and
-       gapSec are MEASUREMENTS and must never appear on an unperformed set. */
-    if (last) {
-      const lastCad = Array.isArray(last.segments) ? (last.segments[0]||{}).cadenceSec : last.cadenceSec
-      if (lastCad) n.cadenceSec = lastCad
-    }
+    /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
+         "the cadence is on the set so a new set would start it's own
+         cadence". A set with no cadenceSec of its own is not a set with no
+         cadence -- cadenceOf resolves phase, then set, then PROFILE, so an
+         unset one takes the profile standard, which IS its own cadence
+         rather than the previous set's override. Copying the override
+         forward would make a one-off slow set silently become the new
+         default for everything seeded after it.
+         tulSec and gapSec were never carried here and must not be: they are
+         MEASUREMENTS of something that happened, and this set has not. */
     // Auto-alternate sides: after a Left set the next defaults to Right.
     const ls = last ? setSide(last) : null
     if (ls === 'L') n.side = 'R'; else if (ls === 'R') n.side = 'L'
@@ -2249,11 +2252,17 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       if (idx!==i) return ss
       const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
       const last=segs[segs.length-1]||{bands:[],reps:0}
-      /* A SEED SITE: a new phase has not been performed yet. cadenceSec is
-         an INTENTION and carries forward the way bands does; tulSec and
-         gapSec are MEASUREMENTS and must never appear on an unperformed phase. */
+      /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
+         "the cadence is on the set so a new set would start it's own
+         cadence". A set with no cadenceSec of its own is not a set with no
+         cadence -- cadenceOf resolves phase, then set, then PROFILE, so an
+         unset one takes the profile standard, which IS its own cadence
+         rather than the previous set's override. Copying the override
+         forward would make a one-off slow set silently become the new
+         default for everything seeded after it.
+         tulSec and gapSec were never carried here and must not be: they are
+         MEASUREMENTS of something that happened, and this set has not. */
       const ns={bands:(last.bands||[]).slice(), reps:0}
-      if (last.cadenceSec) ns.cadenceSec = last.cadenceSec
       segs.push(ns); n.segments=segs; delete n.bands; delete n.reps; return n
     }))
   }
@@ -5610,13 +5619,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     const ns = { reps: lr, bands: lb.slice() }
     // The fold belongs to the stack being copied — see LoggedExCard.addSet.
     if (last && last.doubled) ns.doubled = true
-    /* A SEED SITE: this set has not been performed yet. cadenceSec is an
-       INTENTION and rides along the same way doubled does; tulSec and
-       gapSec are MEASUREMENTS and must never appear on an unperformed set. */
-    if (last) {
-      const lastCad = Array.isArray(last.segments) ? (last.segments[0]||{}).cadenceSec : last.cadenceSec
-      if (lastCad) ns.cadenceSec = lastCad
-    }
+    /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
+         "the cadence is on the set so a new set would start it's own
+         cadence". A set with no cadenceSec of its own is not a set with no
+         cadence -- cadenceOf resolves phase, then set, then PROFILE, so an
+         unset one takes the profile standard, which IS its own cadence
+         rather than the previous set's override. Copying the override
+         forward would make a one-off slow set silently become the new
+         default for everything seeded after it.
+         tulSec and gapSec were never carried here and must not be: they are
+         MEASUREMENTS of something that happened, and this set has not. */
     const lside = last ? setSide(last) : null
     if (lside === 'L') ns.side = 'R'; else if (lside === 'R') ns.side = 'L'
     arr.push(ns); n[id] = arr; return n
@@ -5693,11 +5705,17 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   })
   const addSeg = (id, i) => mapSet(id, i, n => {
     const segs=(n.segments||segsOf(n)).map(g=>({...g})); const last=segs[segs.length-1]||{bands:[],reps:0}
-    /* A SEED SITE: a new phase has not been performed yet. cadenceSec is an
-       INTENTION and carries forward the way bands does; tulSec and gapSec
-       are MEASUREMENTS and must never appear on an unperformed phase. */
+    /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
+         "the cadence is on the set so a new set would start it's own
+         cadence". A set with no cadenceSec of its own is not a set with no
+         cadence -- cadenceOf resolves phase, then set, then PROFILE, so an
+         unset one takes the profile standard, which IS its own cadence
+         rather than the previous set's override. Copying the override
+         forward would make a one-off slow set silently become the new
+         default for everything seeded after it.
+         tulSec and gapSec were never carried here and must not be: they are
+         MEASUREMENTS of something that happened, and this set has not. */
     const ns={bands:(last.bands||[]).slice(), reps:0}
-    if (last.cadenceSec) ns.cadenceSec = last.cadenceSec
     segs.push(ns); n.segments=segs; delete n.bands; delete n.reps; return n
   })
   const removeSeg = (id, i, segIdx) => mapSet(id, i, n => {
