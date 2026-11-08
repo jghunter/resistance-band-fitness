@@ -7201,19 +7201,34 @@
       return { code: "READY", text: "Hit the " + phrase +
         " - progress the load: " + (how || "add the lightest band you own") + "." };
     }
-    /* ENOUGH REPS, NOT ENOUGH TIME (2026-11-07). The rep bar cleared and
-       the time bar did not, which on a MEASURED set means the reps moved
-       faster than the cadence the lifter set for themselves. Telling them
-       to add load would reward the shortcut; telling them they STALLED
-       would be false, because the reps really did improve.
+    /* ENOUGH REPS, NOT ENOUGH TIME (2026-11-07, re-worded 2026-11-08). The
+       rep bar cleared and the time bar did not. On a MEASURED or MIXED set
+       that is real evidence the reps moved faster than the cadence the
+       lifter set for themselves: telling them to add load would reward the
+       shortcut, and telling them they STALLED would be false, because the
+       reps really did improve.
 
-       This branch can only be reached by a MEASURED or MIXED set: a derived
-       time is reps times the standard, and at any cadence inside Baye's
-       window the rep bar implies the time bar. So reaching here is itself
-       evidence that someone timed the set. */
+       THE COMMENT THIS REPLACED CLAIMED THIS BRANCH COULD ONLY BE REACHED
+       BY A MEASURED OR MIXED SET -- FALSE. That held only for a ceiling
+       sitting below (progressReps + 1) x secPerRep. Past that point the
+       rep bar clears while the DERIVED time (reps x the standard, never
+       measured) still falls short of tulTargetSec.hi -- exactly the state
+       tulBarReachable (Task 8) exists to warn a profile into. On a derived
+       set nothing was timed, so the wording must say that plainly rather
+       than report a duration that never happened, and it must not tell the
+       lifter to "hold" a cadence they were already holding -- the standard
+       IS the seconds-per-rep figure here, not a deviation from it. */
     if (row.repsReady && row.tulBar && row.tulBar.applies && !row.tulBar.ready) {
       var spr = (row.tulBar.sec != null && row.bestReps > 0)
         ? (row.tulBar.sec / row.bestReps) : null;
+      if (row.tulBar.basis === "derived") {
+        return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
+          ", but " + row.bestReps + row.unit + " at your " +
+          (spr != null ? (Math.round(spr * 10) / 10) : "?") +
+          "s standard only comes to " + Math.round(row.tulBar.sec) +
+          "s against your " + row.tulBar.hi + "s target. Nothing was " +
+          "timed here. Add reps or slow the cadence to reach it." };
+      }
       return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
         ", but the set ran " + Math.round(row.tulBar.sec) + "s against a " +
         row.tulBar.hi + "s time-under-load target" +
