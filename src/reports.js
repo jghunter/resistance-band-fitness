@@ -5201,6 +5201,66 @@
     };
   }
 
+  /* ---- THE ACTUAL CADENCE -----------------------------------------------
+     THIS IS THE ONE FIGURE THE WORKBOOK CANNOT PRODUCE. Baye's chart
+     multiplies reps by an ASSUMED cadence to get work time; it has no way
+     to notice that the assumption was wrong. Because a set here carries
+     both the rep count and the measured time, dividing one by the other
+     says how fast the reps actually moved.
+
+     MEASURED PHASES ONLY, and that is not a limitation -- a derived time
+     IS reps times the standard, so dividing it by the reps returns the
+     standard and would report perfect adherence for a set nobody timed.
+     That would be a confident wrong answer, which this module does not
+     ship. Returns null instead. */
+  function actualCadence(phase, set, ctx) {
+    var t = phaseTul(phase, set, ctx);
+    if (t.basis !== "measured") return null;
+    var reps = (phase && phase.reps) || 0;
+    if (!finitePosNum(reps)) return null;
+    return t.sec / reps;
+  }
+  /* "fast", "slow" or "ok" against CONST.CADENCE_TOL_PCT. null when either
+     figure is absent, and null for a zero standard rather than dividing by
+     it. The bounds are INCLUSIVE, so a cadence exactly on the tolerance
+     edge is ok -- a tolerance that excludes its own boundary is a tighter
+     tolerance than the number says. */
+  function cadenceFlag(actualSecPerRep, standardSecPerRep) {
+    if (!finitePosNum(actualSecPerRep) || !finitePosNum(standardSecPerRep)) {
+      return null;
+    }
+    var tol = standardSecPerRep * (CONST.CADENCE_TOL_PCT / 100);
+    if (actualSecPerRep < standardSecPerRep - tol) return "fast";
+    if (actualSecPerRep > standardSecPerRep + tol) return "slow";
+    return "ok";
+  }
+  /* ---- THE BASIS OF A TIME SPAN -----------------------------------------
+     The same statement provenanceMix makes about load, on the time axis. A
+     work-time trend built from two measured sessions and six derived ones
+     is partly reporting a change of INSTRUMENT, not a change in the lifter.
+
+     TWO RULES COPIED DELIBERATELY FROM provenanceMix, because two wordings
+     of one claim is how two surfaces come to disagree about one session:
+
+       1. MIXED MEANS THE SPAN DISAGREES WITH ITSELF, not merely that it is
+          old. Derived throughout is one basis and is NOT flagged.
+       2. TWO POINTS MINIMUM. One reading cannot disagree with itself.
+
+     A point whose basis is "none" carries no figure, so it is not counted
+     and cannot make a span mixed. "mixed" is itself a basis value here: a
+     span of two set-level MIXED sets agrees with itself about being
+     mixed, and flagging it twice would say the same thing twice. */
+  function tulMix(points) {
+    var seen = {}, n = 0;
+    (points || []).forEach(function (p) {
+      if (!p || !p.basis || p.basis === "none") return;
+      n++;
+      seen[p.basis] = 1;
+    });
+    var bases = Object.keys(seen).sort();
+    return { n: n, bases: bases, mixed: n >= 2 && bases.length > 1 };
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -9934,6 +9994,9 @@
     cadenceWarning: cadenceWarning,
     phaseTul: phaseTul,
     setTul: setTul,
+    actualCadence: actualCadence,
+    cadenceFlag: cadenceFlag,
+    tulMix: tulMix,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
