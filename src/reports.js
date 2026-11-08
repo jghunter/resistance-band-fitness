@@ -87,6 +87,38 @@
   var BALANCE_EXEMPT = { MOBILITY: true, "FULL BODY": true };
   function isExempt(label) { return !!BALANCE_EXEMPT[label]; }
 
+  /* Which half of the body a muscle group belongs to, for the SEPARATE rep
+     targets Baye's chart carries: 6-12 upper, 5-10 lower (2026-11-07).
+
+     ALL FIFTEEN GROUPS IN GROUP_META ARE NAMED EXPLICITLY. bodyHalfOf falls
+     an unlisted label to "upper", which keeps a group added later working
+     rather than throwing -- but the right fix for a new group is an entry
+     here, not the fallback.
+
+     CORE SITS ON UPPER, AND IT IS THE ONE COMPROMISE IN THE TABLE. Baye's
+     own sample chart marks Ab Flexion "U" and Trunk Extension "L", so CORE
+     really splits PER EXERCISE and not per group. Splitting it would need a
+     FIFTH table keyed by exercise id, and a table keyed by id cannot tell
+     that an id changed meaning underneath it -- no suite, grep or build step
+     can catch that going stale, which is why check_caution_ids.cjs had to be
+     written by hand. Greg accepted the mismatch on 2026-11-07: Trunk
+     Extension carries the upper target. Reversible on request.
+
+     FULL BODY and MOBILITY fall to upper. They are exempt from the balance
+     and neglect flags (isExempt) but they are not exempt from progression,
+     so they need some target, and the upper one is the app's existing
+     single target -- which keeps their behaviour exactly as it is today. */
+  var BODY_HALF = {
+    CHEST: "upper", BACK: "upper", SHOULDERS: "upper", BICEPS: "upper",
+    TRICEPS: "upper", FOREARMS: "upper", NECK: "upper", CORE: "upper",
+    GLUTES: "lower", QUADS: "lower", HAMSTRINGS: "lower",
+    CALVES: "lower", TIBIALIS: "lower",
+    "FULL BODY": "upper", MOBILITY: "upper"
+  };
+  function bodyHalfOf(label) {
+    return (BODY_HALF[label] === "lower") ? "lower" : "upper";
+  }
+
   /* ---- time-based exercises (logged in seconds, not reps) --------------- */
   /* Time-based movements progress on SECONDS (CONST.PROG_SECS), never on the
      rep threshold, and never earn a "add a heavier band" suggestion from the
@@ -5284,6 +5316,32 @@
     return { n: n, bases: bases, mixed: n >= 2 && bases.length > 1 };
   }
 
+  /* ---- THE REP TARGET FOR ONE LIFT --------------------------------------
+     Baye's chart carries two: 6-12 upper, 5-10 lower. This app has carried
+     one (ctx.progressReps) since it was written, and that stays the DEFAULT
+     for both halves -- ctx.progressRepsLower is an OPTIONAL second target,
+     absent on every profile until someone sets it, so no existing profile's
+     judgment moves.
+
+     A HOLD ID IS LEFT ALONE. threshOf already answers CONST.PROG_SECS for
+     the six ids in TIME_BASED, and those are seconds, not reps. Handing a
+     hold a lower-body REP target would be a category error, so this reports
+     src "hold" and defers to threshOf. */
+  function repTargetFor(ctx, exId) {
+    if (isTimeBased(exId)) {
+      return { target: threshOf(exId, ctx && ctx.progressReps),
+               half: null, src: "hold" };
+    }
+    var base = (ctx && typeof ctx.progressReps === "number")
+      ? ctx.progressReps : CONST.PROG_REPS;
+    var label = (ctx && ctx.groupOf) ? ((ctx.groupOf(exId) || {}).label || null) : null;
+    var half = bodyHalfOf(label);
+    if (half === "lower" && finitePosNum(ctx && ctx.progressRepsLower)) {
+      return { target: ctx.progressRepsLower, half: half, src: "lower" };
+    }
+    return { target: base, half: half, src: "profile" };
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -10020,6 +10078,9 @@
     actualCadence: actualCadence,
     cadenceFlag: cadenceFlag,
     tulMix: tulMix,
+    BODY_HALF: BODY_HALF,
+    bodyHalfOf: bodyHalfOf,
+    repTargetFor: repTargetFor,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
