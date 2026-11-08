@@ -5407,6 +5407,50 @@
     };
   }
 
+  /* ---- CAN THE TIME BAR EVER BE CLEARED? --------------------------------
+     A BAR THAT CAN NEVER BE CLEARED IS NOT A BAR. This is the
+     volumeModel: "hit" landmark failure in a new form -- a yardstick that
+     reports the same verdict forever, which is worse than no yardstick
+     because it looks like a measurement.
+
+     THE CASE THIS EXISTS FOR, measured on Greg's own numbers (2026-11-07):
+
+       upper  progressReps 12 -> bar 13 reps x 11 s/rep = 143 s vs 120  OK
+       lower  progressRepsLower 10 -> bar 11 reps x 11 s/rep = 121 s vs 120
+                                                        OK BY ONE SECOND
+
+     A cadence of 5/0/5/0, a ceiling of 130, or a lower target of 9 each push
+     the lower case under, and READY would then silently stop firing on legs.
+     The TRAINING STYLE panel calls this when any of the three figures is
+     saved and says so in amber.
+
+     IT ASKS ABOUT THE DERIVED CASE ONLY, which is the whole point: a
+     MEASURED set can always be slowed down to clear the bar, and that is
+     the behaviour the bar exists to encourage. A derived set cannot be
+     slowed down -- its time IS reps times the standard -- so if the rep bar
+     does not imply the time bar, an untimed session can never read READY.
+
+     NULL WHERE THE QUESTION IS MOOT: a hold id has no rep bar in reps at
+     all; no time target means no bar; and NO CADENCE means nothing derives,
+     so the bar never gates and there is nothing to warn about. */
+  function tulBarReachable(ctx, exId) {
+    if (isTimeBased(exId)) return null;
+    var hi = tulTargetHi(ctx);
+    if (hi == null) return null;
+    var cad = cadenceOf(null, null, ctx);
+    if (!cad) return null;
+    var tgt = repTargetFor(ctx, exId);
+    var repsAtBar = tgt.target + 1;
+    var derivedSec = repsAtBar * cad.secPerRep;
+    return {
+      reachable: derivedSec >= hi,
+      repsAtBar: repsAtBar,
+      derivedSec: derivedSec,
+      hi: hi,
+      half: tgt.half
+    };
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -10211,6 +10255,7 @@
     tulTargetHi: tulTargetHi,
     tulBarApplies: tulBarApplies,
     tulBarState: tulBarState,
+    tulBarReachable: tulBarReachable,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
