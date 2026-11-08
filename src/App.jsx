@@ -621,8 +621,21 @@ function cleanExercises(ex) {
          why neither showed up there. */
       if (s.doubled) o.doubled = true
       if (s.side === 'L' || s.side === 'R') o.side = s.side
+      /* CADENCE AND TIME UNDER LOAD (2026-11-07). Named here for exactly the
+         reason the comment above gives: this function rebuilds field by
+         field, and the two fields that comment is about were lost that way.
+         The two new per-phase timing figures are PHASE-level, so on a
+         simple set they ride the set itself. */
+      if (typeof s.tulSec === 'number' && isFinite(s.tulSec) && s.tulSec > 0) o.tulSec = s.tulSec
+      if (s.cadenceSec) o.cadenceSec = s.cadenceSec
       if (Array.isArray(s.segments) && s.segments.length)
-        o.segments = s.segments.map(g => ({ bands:(g.bands||[]).slice(), reps:g.reps||0, secs:g.secs }))
+        o.segments = s.segments.map(g => {
+          const q = { bands:(g.bands||[]).slice(), reps:g.reps||0, secs:g.secs }
+          if (typeof g.tulSec === 'number' && isFinite(g.tulSec) && g.tulSec > 0) q.tulSec = g.tulSec
+          if (typeof g.gapSec === 'number' && isFinite(g.gapSec) && g.gapSec > 0) q.gapSec = g.gapSec
+          if (g.cadenceSec) q.cadenceSec = g.cadenceSec
+          return q
+        })
       return o
     })
   })
@@ -2178,6 +2191,13 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
        doubled band that arrives marked SINGLED stamps a fraction of the real
        load, silently. */
     if (last && last.doubled) n.doubled = true
+    /* A SEED SITE: this set has not been performed yet. cadenceSec is an
+       INTENTION and rides along the same way doubled does; tulSec and
+       gapSec are MEASUREMENTS and must never appear on an unperformed set. */
+    if (last) {
+      const lastCad = Array.isArray(last.segments) ? (last.segments[0]||{}).cadenceSec : last.cadenceSec
+      if (lastCad) n.cadenceSec = lastCad
+    }
     // Auto-alternate sides: after a Left set the next defaults to Right.
     const ls = last ? setSide(last) : null
     if (ls === 'L') n.side = 'R'; else if (ls === 'R') n.side = 'L'
@@ -2189,7 +2209,9 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
   }
   // ── Phase 2: intensifier + segmented-set editing ──
   const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
-  const segsOf  = (s) => Array.isArray(s.segments) ? s.segments : [{bands:(s.bands||[]).slice(), reps:s.reps||0}]
+  /* The synthesized phase carries the PHASE-level fields -- a simple set IS
+     one phase. Mirrors RBTS_REPORTS.setSegments. */
+  const segsOf  = (s) => { if (Array.isArray(s.segments)) return s.segments; const g = {bands:(s.bands||[]).slice(), reps:s.reps||0}; if (typeof s.tulSec === 'number') g.tulSec = s.tulSec; if (s.cadenceSec) g.cadenceSec = s.cadenceSec; return [g] }
   function changeIntens(i, k) {
     onSetsChange(sets.map((ss,idx) => {
       if (idx!==i) return ss
@@ -2201,7 +2223,13 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       } else {
         n.intensifier=k; delete n.drop
         if (wantSeg && !Array.isArray(n.segments)) {
-          n.segments=[{bands:(n.bands||[]).slice(), reps:n.reps||0}]; delete n.bands; delete n.reps
+          /* A simple set IS one phase, so tulSec/cadenceSec on the set are
+             that phase's own figure. gapSec is not carried: nothing precedes
+             a single phase. Mirrors RBTS_REPORTS.setSegments. */
+          const g0 = {bands:(n.bands||[]).slice(), reps:n.reps||0}
+          if (typeof n.tulSec === 'number') g0.tulSec = n.tulSec
+          if (n.cadenceSec) g0.cadenceSec = n.cadenceSec
+          n.segments=[g0]; delete n.bands; delete n.reps
         } else if (!wantSeg && Array.isArray(n.segments)) {
           n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments
         }
@@ -2221,7 +2249,12 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       if (idx!==i) return ss
       const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
       const last=segs[segs.length-1]||{bands:[],reps:0}
-      segs.push({bands:(last.bands||[]).slice(), reps:0}); n.segments=segs; delete n.bands; delete n.reps; return n
+      /* A SEED SITE: a new phase has not been performed yet. cadenceSec is
+         an INTENTION and carries forward the way bands does; tulSec and
+         gapSec are MEASUREMENTS and must never appear on an unperformed phase. */
+      const ns={bands:(last.bands||[]).slice(), reps:0}
+      if (last.cadenceSec) ns.cadenceSec = last.cadenceSec
+      segs.push(ns); n.segments=segs; delete n.bands; delete n.reps; return n
     }))
   }
   function removeSeg(i, segIdx) {
@@ -5577,6 +5610,13 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     const ns = { reps: lr, bands: lb.slice() }
     // The fold belongs to the stack being copied — see LoggedExCard.addSet.
     if (last && last.doubled) ns.doubled = true
+    /* A SEED SITE: this set has not been performed yet. cadenceSec is an
+       INTENTION and rides along the same way doubled does; tulSec and
+       gapSec are MEASUREMENTS and must never appear on an unperformed set. */
+    if (last) {
+      const lastCad = Array.isArray(last.segments) ? (last.segments[0]||{}).cadenceSec : last.cadenceSec
+      if (lastCad) ns.cadenceSec = lastCad
+    }
     const lside = last ? setSide(last) : null
     if (lside === 'L') ns.side = 'R'; else if (lside === 'R') ns.side = 'L'
     arr.push(ns); n[id] = arr; return n
@@ -5625,7 +5665,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   }
   // ── Phase-aware editing (mirrors LoggedExCard so ✎ EDIT handles segmented/intensifier/RIR sets) ──
   const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
-  const segsOf  = (s) => Array.isArray(s.segments) ? s.segments : [{bands:(s.bands||[]).slice(), reps:s.reps||0}]
+  /* The synthesized phase carries the PHASE-level fields -- a simple set IS
+     one phase. Mirrors RBTS_REPORTS.setSegments. */
+  const segsOf  = (s) => { if (Array.isArray(s.segments)) return s.segments; const g = {bands:(s.bands||[]).slice(), reps:s.reps||0}; if (typeof s.tulSec === 'number') g.tulSec = s.tulSec; if (s.cadenceSec) g.cadenceSec = s.cadenceSec; return [g] }
   const changeIntens = (id, i, k) => mapSet(id, i, n => {
     const wantSeg = !!(INTENS[k] && INTENS[k].usesSegments)
     if (k==='straight') {
@@ -5633,7 +5675,15 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       delete n.segments; delete n.intensifier; delete n.drop
     } else {
       n.intensifier=k; delete n.drop
-      if (wantSeg && !Array.isArray(n.segments)) { n.segments=[{bands:(n.bands||[]).slice(), reps:n.reps||0}]; delete n.bands; delete n.reps }
+      if (wantSeg && !Array.isArray(n.segments)) {
+        /* A simple set IS one phase, so tulSec/cadenceSec on the set are
+           that phase's own figure. gapSec is not carried: nothing precedes
+           a single phase. Mirrors RBTS_REPORTS.setSegments. */
+        const g0 = {bands:(n.bands||[]).slice(), reps:n.reps||0}
+        if (typeof n.tulSec === 'number') g0.tulSec = n.tulSec
+        if (n.cadenceSec) g0.cadenceSec = n.cadenceSec
+        n.segments=[g0]; delete n.bands; delete n.reps
+      }
       else if (!wantSeg && Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments }
     }
     return n
@@ -5642,7 +5692,13 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     const segs=(n.segments||segsOf(n)).map(g=>({...g})); segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
   })
   const addSeg = (id, i) => mapSet(id, i, n => {
-    const segs=(n.segments||segsOf(n)).map(g=>({...g})); const last=segs[segs.length-1]||{bands:[],reps:0}; segs.push({bands:(last.bands||[]).slice(), reps:0}); n.segments=segs; delete n.bands; delete n.reps; return n
+    const segs=(n.segments||segsOf(n)).map(g=>({...g})); const last=segs[segs.length-1]||{bands:[],reps:0}
+    /* A SEED SITE: a new phase has not been performed yet. cadenceSec is an
+       INTENTION and carries forward the way bands does; tulSec and gapSec
+       are MEASUREMENTS and must never appear on an unperformed phase. */
+    const ns={bands:(last.bands||[]).slice(), reps:0}
+    if (last.cadenceSec) ns.cadenceSec = last.cadenceSec
+    segs.push(ns); n.segments=segs; delete n.bands; delete n.reps; return n
   })
   const removeSeg = (id, i, segIdx) => mapSet(id, i, n => {
     const segs=(n.segments||segsOf(n)).filter((_,gi)=>gi!==segIdx); n.segments=segs; delete n.bands; delete n.reps; return n

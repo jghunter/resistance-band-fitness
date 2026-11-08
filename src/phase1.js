@@ -560,11 +560,25 @@
     var segments;
     if (Array.isArray(set.segments) && set.segments.length) {
       segments = set.segments.map(function (s) {
-        return { bands: (s.bands || []).slice(), reps: numOr0(s.reps), secs: s.secs };
+        /* THIS REBUILDS EACH PHASE FIELD BY FIELD, so anything not named is
+           discarded for every reader that goes through normalizeSet. The
+           three cadence fields were added 2026-11-07; `secs` predates them
+           and must stay. */
+        var g = { bands: (s.bands || []).slice(), reps: numOr0(s.reps), secs: s.secs };
+        if (typeof s.tulSec === "number") g.tulSec = s.tulSec;
+        if (typeof s.gapSec === "number") g.gapSec = s.gapSec;
+        if (s.cadenceSec) g.cadenceSec = s.cadenceSec;
+        return g;
       });
     } else {
       // simple set (today's shape) ⇒ a single segment
-      segments = [{ bands: (set.bands || []).slice(), reps: numOr0(set.reps), secs: set.secs }];
+      /* A SIMPLE SET IS ONE PHASE, so a tulSec or cadenceSec on the SET is
+         that phase's own figure. gapSec is not carried: nothing precedes a
+         single phase. Mirrors rbts_reports.js's setSegments exactly. */
+      var g0 = { bands: (set.bands || []).slice(), reps: numOr0(set.reps), secs: set.secs };
+      if (typeof set.tulSec === "number") g0.tulSec = set.tulSec;
+      if (set.cadenceSec) g0.cadenceSec = set.cadenceSec;
+      segments = [g0];
     }
 
     return {
