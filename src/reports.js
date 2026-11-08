@@ -79,16 +79,50 @@
   /* Time-based movements progress on SECONDS (CONST.PROG_SECS), never on the
      rep threshold, and never earn a "add a heavier band" suggestion from the
      rep rule.
-     177-179 (dynamic cervical flexion / extension / lateral flexion) were added
-     2026-07-30. They are programmed ~70 times and were progressing on the same
-     12-rep rule as a chest press, so the app proposed a heavier band for
-     dynamic neck loading every time the rule fired. At 66 cervical
-     degenerative change is near-universal even when asymptomatic; sub-maximal
-     and time-based is the correct mode and it already existed here for the
-     isometric holds (181/182/184). Sets still store their number in `reps` -
-     only the unit label and the threshold change - so no stored data moves. */
-  var TIME_BASED = [71, 72, 166, 177, 178, 179, 181, 182, 184];
+
+     177-179 (Neck Flexion / Extension / Lateral Flexion) WERE ON THIS LIST
+     from 2026-07-30 to 2026-11-07, and they do not belong on it. They are
+     MOVING exercises; this list means "the number in `reps` is SECONDS".
+     Greg confirmed 2026-11-07 that his logged 12 on Neck Flexion is twelve
+     REPETITIONS, so the app had been displaying and judging 14 of his sets
+     in the wrong unit for three months.
+
+     THE 2026-07-30 REASON WAS REAL AND IS NOT DISCARDED. They were moved
+     here to stop the rep rule proposing a heavier band for dynamic cervical
+     loading, which at 66 is the wrong advice whether or not there are
+     symptoms. A unit is not a safety mechanism -- lying about the unit to
+     suppress a suggestion made every other reading of those sets wrong too.
+     That concern now lives in NO_LOAD_SUGGEST below, which the engine
+     actually reads. (This comment first said it lived in EX_CAUTION; that
+     was wrong -- EX_CAUTION is display text only and gates nothing. See
+     NO_LOAD_SUGGEST's comment.)
+
+     DO NOT PUT THEM BACK. What remains here is six genuine HOLDS. */
+  var TIME_BASED = [71, 72, 166, 181, 182, 184];
   function isTimeBased(id) { return TIME_BASED.indexOf(Number(id)) >= 0; }
+
+  /* ---- EXERCISES THAT MUST NEVER BE TOLD TO ADD LOAD -------------------
+     Panel finding 5, July 2026, PRESERVED THROUGH THE 2026-11-07 UNIT FIX.
+
+     THIS LIST EXISTS BECAUSE TIME_BASED WAS DOING TWO JOBS. For 177-179 it
+     named the unit (wrongly -- those are reps) AND suppressed the load
+     suggestion (rightly). Taking them off that list fixed the unit and
+     silently reverted the safety rule, because EX_CAUTION -- which the spec
+     claimed would carry it -- is DISPLAY TEXT ONLY and gates nothing.
+
+     Dynamic cervical loading progresses by REPS or by TIME, never by a
+     heavier band. At 66 cervical degenerative change is near-universal even
+     when asymptomatic, and these three are programmed ~70 times.
+
+     SEPARATE FROM TIME_BASED ON PURPOSE. One list, one job. A later id that
+     needs the unit but not the suppression -- or the reverse -- must not
+     have to pick the wrong list. */
+  var NO_LOAD_SUGGEST = [177, 178, 179];
+  function noLoadSuggest(id) { return NO_LOAD_SUGGEST.indexOf(Number(id)) >= 0; }
+  /* ONE WORDING, used by every surface that would otherwise say "add a band",
+     so the four of them cannot drift. */
+  var NO_LOAD_ADVICE = "add a rep or hold it longer -- do not add load to " +
+    "dynamic neck work";
   /* progressReps is the PROFILE's target (ctx.progressReps). Omit it and the
      CONST fallback applies. Time-based exercises always use PROG_SECS. */
   function threshOf(id, progressReps) {
@@ -6049,9 +6083,17 @@
       }
       var flags = [];
       if (ps.ready) {
-        var sug = ctx.suggestOf ? ctx.suggestOf(bandIds) : null;
-        var how = sug ? (sug.add || sug.swap) : null;
-        flags.push("READY TO PROGRESS" + (how ? " - " + how : " - add a band"));
+        /* Panel finding 5, same gate as exerciseVerdict. This flag is built
+           INDEPENDENTLY of the verdict, so it needs its own test -- gating
+           only the verdict would leave the printed sheet still saying
+           "add a band" for dynamic neck work. */
+        if (noLoadSuggest(id)) {
+          flags.push("READY TO PROGRESS - " + NO_LOAD_ADVICE);
+        } else {
+          var sug = ctx.suggestOf ? ctx.suggestOf(bandIds) : null;
+          var how = sug ? (sug.add || sug.swap) : null;
+          flags.push("READY TO PROGRESS" + (how ? " - " + how : " - add a band"));
+        }
       } else if (ps.stalled) {
         flags.push("STALLED " + CONST.STALL_N +
           " sessions - apply a technique, or drop back 10% and rebuild");
@@ -6727,6 +6769,15 @@
         row.bestReps + row.unit + " against a " + phrase + "." };
     }
     if (row.ready) {
+      /* PANEL FINDING 5. A lift on NO_LOAD_SUGGEST earns the same READY
+         verdict and the same severity -- it has genuinely outgrown its
+         range -- but the ADVICE is reps or time, never a heavier band.
+         Gated here rather than in buildRecommendations because the READY
+         recommendation reuses this very text. */
+      if (noLoadSuggest(row.id)) {
+        return { code: "READY", text: "Hit the " + phrase + " - " +
+          NO_LOAD_ADVICE + "." };
+      }
       var sug = ctx.suggestOf ? ctx.suggestOf(row.lastBands || []) : null;
       var how = sug ? (sug.add || sug.swap) : null;
       return { code: "READY", text: "Hit the " + phrase +
@@ -9659,6 +9710,9 @@
     CONST: CONST,
     SET_LANDMARKS: SET_LANDMARKS,
     TIME_BASED: TIME_BASED,
+    NO_LOAD_SUGGEST: NO_LOAD_SUGGEST,
+    noLoadSuggest: noLoadSuggest,
+    NO_LOAD_ADVICE: NO_LOAD_ADVICE,
     isExempt: isExempt,
     isTimeBased: isTimeBased,
     threshOf: threshOf,

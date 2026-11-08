@@ -2388,7 +2388,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               from different places. The ctx below was corrected first and this
               line stayed stale, which is how the second consumer was found --
               a proxy for a badge is not the badge. */}
-          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{progTargetRepsNow() + 1} REPS, +1 PER RIR → MOVE UP A BAND
+          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{progTargetRepsNow() + 1} REPS, +1 PER RIR → {RBTS_REPORTS.noLoadSuggest(id) ? 'ADD A REP OR HOLD IT LONGER' : 'MOVE UP A BAND'}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
