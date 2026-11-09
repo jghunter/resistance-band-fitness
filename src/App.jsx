@@ -529,6 +529,146 @@ function progTargetRepsNow() {
     return (r && typeof r.progressReps === 'number') ? r.progressReps : PROG_TARGET_REPS
   } catch { return PROG_TARGET_REPS }
 }
+
+/* ── CADENCE AND TIME-UNDER-LOAD TARGET, RE-RESOLVED LIVE ────────────────────
+   Spec: docs/superpowers/specs/2026-11-07-cadence-and-time-under-load-design.md
+
+   THE SAME TREATMENT progTargetRepsNow GOT, AND FOR THE SAME REASON. A cloud
+   adopt rewrites rbts_profiles mid-session and refreshProfileHolders exists
+   precisely so the running session follows it. fitness_app.html keeps a
+   load-time snapshot and there that is correct -- it has no Firestore, so
+   nothing can change the value mid-session. THAT ASYMMETRY IS DELIBERATE and
+   the parity suite asserts it; do not "fix" it by snapshotting here or by
+   re-resolving there.
+
+   ALL THREE RETURN null ON A FRESH INSTALL. A fresh install is neutral: the
+   app goes to Daniel, Jaclyn and Mike and none of Greg's numbers are seeded. */
+function activeRawProfile() {
+  try {
+    const ps = JSON.parse(localStorage.getItem('rbts_profiles') || '[]')
+    const ap = localStorage.getItem('rbts_activeProfile') || 'greg'
+    const raw = ps.find(x => x.id === ap) || null
+    if (!raw) return null
+    return (RBTS_PHASE1 && RBTS_PHASE1.resolveProfile)
+      ? RBTS_PHASE1.resolveProfile(raw) : raw
+  } catch { return null }
+}
+/* THE LOADER'S OWN VALIDATOR, factored out so the TRAINING STYLE settings
+   panel can run a typed candidate through the EXACT SAME check cadenceNow
+   applies to a stored one -- never a second copy of the rule. A candidate
+   the panel would accept but a reload would refuse is exactly the "screen
+   says it worked" defect fixed in fitness_app.html by commit 149571f. */
+function cadenceFromCandidate(c) {
+  return RBTS_REPORTS.validCadence(c)
+    ? { pos: c.pos, hold: c.hold, neg: c.neg, turn: c.turn } : null
+}
+function cadenceNow() {
+  const p = activeRawProfile()
+  return cadenceFromCandidate(p && p.cadenceSec)
+}
+function tulTargetFromCandidate(t) {
+  const pos = v => typeof v === 'number' && isFinite(v) && v > 0
+  return (t && pos(t.lo) && pos(t.hi) && t.hi >= t.lo) ? { lo: t.lo, hi: t.hi } : null
+}
+function tulTargetNow() {
+  const p = activeRawProfile()
+  return tulTargetFromCandidate(p && p.tulTargetSec)
+}
+function progRepsLowerNow() {
+  const p = activeRawProfile()
+  return (p && typeof p.progressRepsLower === 'number' && p.progressRepsLower > 0)
+    ? p.progressRepsLower : null
+}
+function secPerRepNow() {
+  const c = cadenceNow()
+  return c ? RBTS_REPORTS.cadenceSecPerRep(c) : null
+}
+/* A MINIMAL ctx, not makeReportCtx(). phaseTul and actualCadence read
+   ctx.cadence and nothing else, while makeReportCtx takes the whole log. */
+function cadCtx() { return { cadence: cadenceNow() } }
+
+/* --- ONE MERGE RULE FOR THE SETTINGS BOXES ----------------------------------
+   Mirrors fitness_app.html (commit 149571f). THE DISPLAY AND THE WRITER MUST
+   READ THE SAME VALUES, and for one day in that app they did not. Each box
+   displayed `buffer[key] else holder[key]`, but the save handler built its
+   candidate object from the HOLDER ALONE and merged in only the single field
+   being typed. The holder is null on every real profile and nothing persists
+   until all four fields are valid AT ONCE, so there was no order of typing
+   that could ever store a cadence: the four boxes read 5 | 1 | 5 | 0 on
+   screen while storage held null and the readout still said "- s/rep".
+
+   THAT IS THE WORST SHAPE A DEFECT CAN TAKE HERE: the screen says it worked.
+   So the merge lives in ONE place now, and both the box and the handler call
+   it. This app has no CADENCE / TUL_TARGET snapshot holder -- cadenceNow() /
+   tulTargetNow() re-read storage live -- so cadRaw / tulRaw call those
+   directly rather than a module variable, and that is the only difference
+   from the HTML app's copy.
+
+   A BLANK PAUSE BOX MEANS ZERO, not missing: 5/0/5/0 is Baye's floor and "no
+   pause" is a real answer. A blank LIFT or LOWER box means there is no
+   cadence at all, because a rep with no lifting phase is not a rep. */
+const CAD_KEYS = ['pos', 'hold', 'neg', 'turn']
+const TUL_KEYS = ['lo', 'hi']
+/* What the box for `key` currently SHOWS: the raw text being typed if there
+   is any, else the stored figure, else empty. */
+function cadRaw(buf, key) {
+  if (buf && buf[key] != null) return buf[key]
+  const c = cadenceNow()
+  return c ? String(c[key]) : ''
+}
+function tulRaw(buf, key) {
+  if (buf && buf[key] != null) return buf[key]
+  const t = tulTargetNow()
+  return t ? String(t[key]) : ''
+}
+function cadFromBuf(buf) {
+  const out = {}
+  CAD_KEYS.forEach(k => {
+    const t = String(cadRaw(buf, k)).trim()
+    if (t === '') { out[k] = (k === 'hold' || k === 'turn') ? 0 : null; return }
+    const n = Number(t)
+    out[k] = isFinite(n) ? n : null
+  })
+  return out
+}
+function tulFromBuf(buf) {
+  const out = {}
+  TUL_KEYS.forEach(k => {
+    const t = String(tulRaw(buf, k)).trim()
+    if (t === '') { out[k] = null; return }
+    const n = Number(t)
+    out[k] = isFinite(n) ? n : null
+  })
+  return out
+}
+/* Seed every untyped box from the stored figure BEFORE that figure is
+   cleared, so blanking the LIFT box does not also blank the three numbers
+   beside it. Without this, one clear costs the user all four values. */
+function cadSeed(buf) {
+  const out = { ...buf }
+  const c = cadenceNow()
+  if (c) CAD_KEYS.forEach(k => { if (out[k] == null) out[k] = String(c[k]) })
+  return out
+}
+function tulSeed(buf) {
+  const out = { ...buf }
+  const t = tulTargetNow()
+  if (t) TUL_KEYS.forEach(k => { if (out[k] == null) out[k] = String(t[k]) })
+  return out
+}
+/* A MINIMAL ctx FOR tulBarReachable, and deliberately NOT makeReportCtx().
+   That one calls getLog() and getGear(), so building it inside the settings
+   panel read the WHOLE LOG on every keystroke to answer a question about
+   five numbers. These five fields are everything tulBarReachable reads. */
+function reachCtx() {
+  return {
+    progressReps: progTargetRepsNow(),
+    progressRepsLower: progRepsLowerNow(),
+    tulTargetSec: tulTargetNow(),
+    cadence: cadenceNow(),
+    groupOf: (id) => exGroup(Number(id))
+  }
+}
 const REP_RANGE = (_ACTIVE_PROFILE && Array.isArray(_ACTIVE_PROFILE.repTarget) && _ACTIVE_PROFILE.repTarget.length === 2) ? _ACTIVE_PROFILE.repTarget : [8, PROG_TARGET_REPS]
 const setRepsOf  = (s) => (s && Array.isArray(s.segments)) ? s.segments.reduce((a,g)=>a+(g.reps||0),0) : ((s && s.reps) || 0)
 const setBandsOf = (s) => (s && Array.isArray(s.segments)) ? (((s.segments[0]||{}).bands) || []) : ((s && s.bands) || [])
@@ -1044,6 +1184,9 @@ function saveTrainingStyle(patch, uid) {
     const ps = getLocalProfiles()
     const next = RBTS_PHASE1.applyProfilePatch(ps, ap, patch)
     saveLocalProfiles(next, uid)
+    /* cadenceSec / tulTargetSec / progressRepsLower need no refresh here --
+       cadenceNow / tulTargetNow / progRepsLowerNow re-read storage live. See
+       the comment beside refreshProfileHolders in data.js. */
     refreshProfileHolders()
     return true
   } catch (e) { console.error('Could not save the training style:', e); return false }
@@ -2158,6 +2301,134 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
   )
 }
 
+/* PHASE TIME — the measured time under load for ONE phase, plus its gap.
+   Spec: docs/superpowers/specs/2026-11-07-cadence-and-time-under-load-design.md
+   Mirrors fitness_app.html's PhaseTime (commit 9da970b).
+
+   ONE TIMER PER PHASE, NOT A LAP BUTTON. You stop phase one's timer, change
+   bands, then start phase two's. The unloaded gap between them falls out by
+   construction, and there is no lap-to-phase mapping to get wrong.
+
+   `gapSec` is offered only for a phase AFTER the first: there is nothing
+   before phase one, so a gap there is meaningless. Greg's point, 2026-11-07:
+   a band change is never zero seconds and the time it takes varies with the
+   rig, so it is worth recording -- but it is UNLOADED time and must never be
+   counted as time under load.
+
+   WRITES ONLY WHOLE SECONDS GREATER THAN ZERO. A stopwatch reads whole
+   seconds, and phaseTul's guard is finitePos, so a 0 would be stored and
+   then ignored -- which reads on screen as saved and is not. */
+function PhaseTime({ phase, set, onChange, showGap, exId }) {
+  const [elapsed, setElapsed] = useState(0)
+  const [run, setRun] = useState(false)
+  /* Raw-text buffers, v3 input pattern: type="text" so `.value` is exactly
+     what was typed, and the buffer so a half-typed value is DISPLAYED as
+     typed rather than re-parsed. */
+  const [tBuf, setTBuf] = useState(null)
+  const [gBuf, setGBuf] = useState(null)
+
+  useEffect(() => {
+    if (!run) return
+    const iv = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(iv)
+  }, [run])
+
+  /* A HOLD HAS NO SEPARATE TIME UNDER LOAD. Its reps field already holds
+     seconds -- threshOf judges it against PROG_SECS and tulBarState
+     refuses to gate it, both for this reason. A timer here would offer a
+     second seconds figure that can only agree with the first or
+     contradict it. Checked AFTER every hook above so the hook order never
+     changes between renders of this component. */
+  if (RBTS_REPORTS.isTimeBased(exId)) return null
+
+  const ctx  = cadCtx()
+  const t    = RBTS_REPORTS.phaseTul(phase || {}, set || {}, ctx)
+  const act  = RBTS_REPORTS.actualCadence(phase || {}, set || {}, ctx)
+  const std  = secPerRepNow()
+  const flag = RBTS_REPORTS.cadenceFlag(act, std)
+  const basisCol = t.basis === 'measured' ? C.green
+                 : t.basis === 'derived'  ? C.dimGray : C.amber
+  const mmss = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
+  /* TWO parameters, matching the HTML app's copy exactly. An unused
+     `field` argument on one side and not the other is how two copies of one
+     helper start to drift. */
+  const writeNum = (raw, apply) => {
+    const v = raw.trim() === '' ? null : Number(raw)
+    /* A HALF-TYPED VALUE IS NOT A CLEARED ONE. Only a blank field clears;
+       anything unparseable stays in the buffer and is not stored yet. */
+    if (v !== null && (!isFinite(v) || v <= 0)) return
+    apply(v === null ? undefined : Math.round(v))
+  }
+
+  return (
+    <div onClick={e => e.stopPropagation()}
+      style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',
+              marginTop:3,paddingLeft:36}}>
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>TUL</span>
+      <input type="text" inputMode="numeric" placeholder="—"
+        title="Measured seconds the muscle was loaded for this phase"
+        value={tBuf != null ? tBuf
+               : (typeof phase.tulSec === 'number' ? String(phase.tulSec) : '')}
+        onChange={e => { const raw = e.target.value; setTBuf(raw)
+                         writeNum(raw, v => onChange('tulSec', v)) }}
+        onBlur={() => setTBuf(null)}
+        style={{...inputStyle,width:44,textAlign:'center',fontSize:11,padding:'4px 3px'}}/>
+      <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>s</span>
+
+      <span style={{fontFamily:'monospace',fontSize:13,color:C.readout,minWidth:42}}>
+        {mmss(elapsed)}
+      </span>
+      <button style={{...btn(run,C.green),fontSize:9,padding:'4px 8px'}}
+        onClick={() => setRun(!run)}>{run ? 'STOP' : 'START'}</button>
+      {elapsed > 0 && (
+        <button style={{...btn(false,C.amber),fontSize:9,padding:'4px 8px'}}
+          title="Write the stopwatch reading into this phase's time under load"
+          onClick={() => { setRun(false); onChange('tulSec', elapsed); setTBuf(null) }}>
+          USE
+        </button>
+      )}
+      {elapsed > 0 && (
+        <button style={{...btn(false),fontSize:9,padding:'4px 8px'}}
+          onClick={() => { setRun(false); setElapsed(0) }}>RESET</button>
+      )}
+
+      {showGap && (
+        <>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginLeft:4}}
+            title="Unloaded seconds BEFORE this phase - the band change, or a rest-pause interval. Never counted as time under load.">
+            GAP
+          </span>
+          <input type="text" inputMode="numeric" placeholder="—"
+            value={gBuf != null ? gBuf
+                   : (typeof phase.gapSec === 'number' ? String(phase.gapSec) : '')}
+            onChange={e => { const raw = e.target.value; setGBuf(raw)
+                             writeNum(raw, v => onChange('gapSec', v)) }}
+            onBlur={() => setGBuf(null)}
+            style={{...inputStyle,width:40,textAlign:'center',fontSize:11,padding:'4px 3px'}}/>
+          <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>s</span>
+        </>
+      )}
+
+      <span style={{fontFamily:'monospace',fontSize:9,color:basisCol,letterSpacing:'0.06em'}}>
+        {t.sec == null ? 'NO TIME' : Math.round(t.sec) + 's ' + t.basis.toUpperCase()}
+      </span>
+      {act != null && std != null && (
+        <span style={{fontFamily:'monospace',fontSize:9,
+          color: flag === 'ok' ? C.green : C.amber}}
+          title={`Measured ${Math.round(act*10)/10}s per rep against your ${std}s standard`}>
+          {Math.round(act*10)/10}s/rep vs {std}s
+          {flag === 'fast' ? ' FAST' : flag === 'slow' ? ' SLOW' : ''}
+        </span>
+      )}
+      {t.sec == null && t.why && (
+        <span style={{fontFamily:'monospace',fontSize:9,color:C.amber}} title={t.why}>
+          ({t.why})
+        </span>
+      )}
+    </div>
+  )
+}
+
 function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
   scheduledId = scheduledId || null
   substituteCtx = substituteCtx || null
@@ -2499,7 +2770,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               {seg ? (
                 <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:6}}>
                   {segs.map((g,gi) => (
-                    <div key={gi} style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+                    <div key={gi} style={{display:'flex',flexDirection:'column',gap:0}}>
+                     <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                       <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}}
                         title="Resistance phase / drop">▼{gi+1}</span>
                       <div style={{flex:1,minWidth:150}}>
@@ -2519,6 +2791,9 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                         <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}}
                           onClick={()=>removeSeg(i,gi)}>✕</button>
                       )}
+                     </div>
+                     <PhaseTime phase={g} set={s} showGap={gi > 0} exId={id}
+                       onChange={(f,v) => updateSeg(i,gi,f,v)}/>
                     </div>
                   ))}
                   <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -2535,7 +2810,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                   </div>
                 </div>
               ) : (
-                <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
+                <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:6}}>
+                 <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:160}}>
                     <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(i,'bands',v)}/>
                   </div>
@@ -2554,6 +2830,9 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                       onChange={e=>{const v=e.target.value; updateSet(i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                       style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                   </div>
+                 </div>
+                 <PhaseTime phase={s} set={s} showGap={false} exId={id}
+                   onChange={(f,v) => updateSet(i,f,v)}/>
                 </div>
               )}
             </div>
@@ -3030,6 +3309,12 @@ function makeReportCtx({ log, gear, myBands }) {
        it never guesses a hip height. Mirrors fitness_app.html; set there,
        read here. */
     body: BODY_MEASURE,
+    /* LIVE, not snapshotted -- see cadenceNow. Both null on a fresh install,
+       which is what makes setTul degrade to basis "none" and the time bar not
+       gate, i.e. the pre-feature behaviour. */
+    cadence: cadenceNow(),
+    tulTargetSec: tulTargetNow(),
+    progressRepsLower: progRepsLowerNow(),
     nameOf: (id) => EXERCISE_NAMES[id] || ('#' + id),
     groupOf: (id) => exGroup(Number(id)),
     classOf: (id) => exClass(Number(id)),
@@ -5029,6 +5314,11 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
      NEITHER `npm run build` NOR check_jsx.cjs can see an out-of-scope
      identifier; only loading the page can. */
   const [travelBuf, setTravelBuf] = useState({})
+  /* RAW TEXT per cadence / time-under-load box, same reason and same
+     hazard as travelBuf immediately above -- it MUST live here, beside
+     this tsTick, for the same reason travelBuf does. */
+  const [cadBuf, setCadBuf] = useState({})
+  const [tulBuf, setTulBuf] = useState({})
 
   const info       = useMemo(() => calcToday(startDate, sched, Number(pi)), [startDate, sched, pi, splitSel])
   const todayISO   = localISO()
@@ -5353,6 +5643,196 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                 </button>
               ))}
             </div>
+          </div>
+          {/* ── REPETITION CADENCE AND TIME UNDER LOAD, added 2026-11-08 ────
+              Spec: docs/superpowers/specs/2026-11-07-cadence-and-time-under-load-design.md
+              Mirrors fitness_app.html (commit 149571f) -- see cadRaw / tulRaw
+              / cadFromBuf / tulFromBuf / cadSeed / tulSeed above, and the
+              "ONE MERGE RULE" comment beside them for the defect this fixes. */}
+          <div>
+            <span style={lbl}>REPETITION CADENCE (SECONDS)</span>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+              margin:'2px 0 4px 0',maxWidth:340,lineHeight:1.6}}>
+              Lifting, hold at the hardest point, lowering, pause at the
+              turnaround. Baye recommends at least 5/5 and no more than 15/15.
+              Leave these blank and no time under load is derived — the time
+              bar then does not gate progression at all.
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+              {[['pos','LIFT'],['hold','HOLD'],['neg','LOWER'],['turn','TURN']].map(f => {
+                const key = f[0]
+                /* v3 INPUT PATTERN. type="text" so `.value` is exactly what
+                   was typed, plus a per-key buffer so a half-typed "2." is
+                   DISPLAYED as typed rather than re-parsed to 2. A
+                   type="number" box reports .value === "" for "2." and a
+                   parseFloat rebuild turns 2.5 into 25. */
+                return (
+                  <div key={key} style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
+                    <input type="text" inputMode="decimal" placeholder="—"
+                      value={cadRaw(cadBuf, key)}
+                      onChange={e => {
+                        const raw = e.target.value
+                        const nb = { ...cadBuf, [key]: raw }
+                        setCadBuf(nb)
+                        const v = raw.trim() === '' ? null : Number(raw)
+                        /* A HALF-TYPED VALUE IS NOT A CLEARED ONE. Only a
+                           blank field clears; anything unparseable is simply
+                           not stored yet and lives in the buffer meanwhile.
+
+                           OUT OF DOMAIN COUNTS AS STILL TYPING TOO: a stray
+                           "-5" must leave a stored cadence alone exactly like
+                           an unparseable string does, rather than nulling it.
+
+                           ZERO IS PER-KEY. A pause of 0 is a real answer, so
+                           HOLD and TURN accept it; a lifting or lowering
+                           phase of 0 is not a rep, so for those it is out of
+                           domain and leaves the stored cadence untouched. */
+                        const zeroOk = (key === 'hold' || key === 'turn')
+                        if (v !== null && (!isFinite(v) || v < 0 ||
+                            (v === 0 && !zeroOk))) return
+                        /* EVERY BOX, not just this one. cadFromBuf reads the
+                           same merge the boxes display, which is the whole
+                           fix: building the candidate from the holder alone
+                           made this panel impossible to use. */
+                        const next = cadFromBuf(nb)
+                        /* ONE VALIDITY RULE for load, save and screen.
+                           cadenceFromCandidate is the SAME function cadenceNow
+                           applies to a stored profile, so the panel cannot
+                           accept anything a reload would later refuse. */
+                        const ok = cadenceFromCandidate(next)
+                        if (ok) {
+                          saveTrainingStyle({ cadenceSec: ok }, user?.uid); setTsTick(tsTick+1)
+                        } else if (cadenceNow()) {
+                          /* This edit broke a cadence that WAS stored. Keep
+                             the other three numbers on screen, then clear. */
+                          setCadBuf(cadSeed(nb))
+                          saveTrainingStyle({ cadenceSec: null }, user?.uid); setTsTick(tsTick+1)
+                        }
+                      }}
+                      onBlur={() => {
+                        /* KEEP THE TYPED TEXT while there is nothing stored
+                           to fall back on. Once a cadence IS stored the
+                           holder shows the same figure, so the buffer can go
+                           -- and should, so a blanked HOLD box settles to
+                           "0" rather than staying empty. */
+                        if (!cadenceNow()) return
+                        const nb = { ...cadBuf }; delete nb[key]
+                        setCadBuf(nb)
+                      }}
+                      style={{...inputStyle,width:42,textAlign:'center',fontSize:12,padding:'4px 4px'}}/>
+                    <span style={{fontFamily:'monospace',fontSize:8,color:C.dimGray,marginTop:2}}>
+                      {f[1]}
+                    </span>
+                  </div>
+                )
+              })}
+              <span style={{fontFamily:'monospace',fontSize:11,color:C.readout,marginLeft:6}}>
+                {secPerRepNow() == null ? '— s/rep' : secPerRepNow()+' s/rep'}
+              </span>
+            </div>
+            {/* A STORED CADENCE THAT DID NOT VALIDATE MUST NOT VANISH
+                SILENTLY. An imported or hand-edited profile can carry an
+                unusable cadenceSec -- a string, a missing field, a zero
+                positive. cadenceNow answers null for it, and the four boxes
+                would render EMPTY with nothing on screen to say why. Mirrors
+                fitness_app.html. */}
+            {!cadenceNow() && _ACTIVE_PROFILE && _ACTIVE_PROFILE.cadenceSec != null && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                marginTop:4,maxWidth:340,lineHeight:1.6}}>
+                YOUR PROFILE CARRIES A CADENCE THIS APP CANNOT READ, so no time
+                under load is being derived. Type the four figures again to
+                replace it.
+              </div>
+            )}
+            {cadenceNow() && RBTS_REPORTS.cadenceWarning(cadenceNow()) !== '' && (
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                marginTop:4,maxWidth:340,lineHeight:1.6}}>
+                {RBTS_REPORTS.cadenceWarning(cadenceNow())}. This is a
+                recommendation, not a refusal — the figure is saved.
+              </div>
+            )}
+          </div>
+          <div>
+            <span style={lbl}>TIME UNDER LOAD TARGET (SECONDS)</span>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+              margin:'2px 0 4px 0',maxWidth:340,lineHeight:1.6}}>
+              The window a set should land in. Reaching the HIGH figure is the
+              second bar READY has to clear, alongside the rep bar. Leave blank
+              and only the rep bar applies.
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+              {[['lo','LOW'],['hi','HIGH']].map(f => {
+                const key = f[0]
+                return (
+                  <div key={key} style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
+                    <input type="text" inputMode="decimal" placeholder="—"
+                      value={tulRaw(tulBuf, key)}
+                      onChange={e => {
+                        const raw = e.target.value
+                        const nb = { ...tulBuf, [key]: raw }
+                        setTulBuf(nb)
+                        const v = raw.trim() === '' ? null : Number(raw)
+                        if (v !== null && (!isFinite(v) || v <= 0)) return
+                        /* BOTH ends, read the way the boxes display them. The
+                           old version merged the one field being typed into a
+                           holder that is null on every real profile, so no
+                           order of typing could ever store a window. */
+                        const next = tulFromBuf(nb)
+                        /* The same function the loader uses, so the panel
+                           cannot accept a window the loader would refuse:
+                           both ends present, both positive, HIGH not below
+                           LOW. */
+                        const ok = tulTargetFromCandidate(next)
+                        if (ok) {
+                          saveTrainingStyle({ tulTargetSec: ok }, user?.uid); setTsTick(tsTick+1)
+                        } else if (tulTargetNow()) {
+                          setTulBuf(tulSeed(nb))
+                          saveTrainingStyle({ tulTargetSec: null }, user?.uid); setTsTick(tsTick+1)
+                        }
+                      }}
+                      onBlur={() => {
+                        /* As with the cadence boxes: keep what was typed
+                           while there is no stored window behind it. */
+                        if (!tulTargetNow()) return
+                        const nb = { ...tulBuf }; delete nb[key]
+                        setTulBuf(nb)
+                      }}
+                      style={{...inputStyle,width:50,textAlign:'center',fontSize:12,padding:'4px 4px'}}/>
+                    <span style={{fontFamily:'monospace',fontSize:8,color:C.dimGray,marginTop:2}}>
+                      {f[1]}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            {(() => {
+              /* THE BAR THAT CAN NEVER BE CLEARED. Greg's lower-body derived
+                 case clears 120s by ONE second (11 reps x 11 s/rep = 121), so
+                 a faster cadence, a higher ceiling or a lower rep target each
+                 silently stop READY firing on legs. Checked for BOTH halves,
+                 using one representative id each, because the two halves can
+                 carry different rep targets. Mirrors fitness_app.html. */
+              const ctx = reachCtx()
+              const bad = []
+              ;[[9,'upper'],[217,'lower']].forEach(pair => {
+                const r = RBTS_REPORTS.tulBarReachable(ctx, pair[0])
+                if (r && !r.reachable) {
+                  bad.push(pair[1].toUpperCase()+': '+r.repsAtBar+' reps at '+
+                    secPerRepNow()+' s/rep derives '+r.derivedSec+'s, under the '+
+                    r.hi+'s target')
+                }
+              })
+              if (!bad.length) return null
+              return (
+                <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                  marginTop:4,maxWidth:340,lineHeight:1.6}}>
+                  A SET YOU DO NOT TIME CAN NEVER CLEAR THIS TARGET —
+                  {' '}{bad.join('; ')}. READY will stop firing on those lifts
+                  unless you time the set. Lower the target, slow the cadence,
+                  or raise the rep target.
+                </div>
+              )
+            })()}
           </div>
         </div>
         <div style={{marginTop:12}}>
@@ -5888,7 +6368,8 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                 {seg ? (
                   <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:6}}>
                     {segs.map((g,gi) => (
-                      <div key={gi} style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+                      <div key={gi} style={{display:'flex',flexDirection:'column',gap:0}}>
+                       <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                         <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}} title="Resistance phase / drop">▼{gi+1}</span>
                         <div style={{flex:1,minWidth:150}}>
                           <BandPicker selected={g.bands||[]} doubled={!!s.doubled} onChange={v=>updateSeg(id,i,gi,'bands',v)}/>
@@ -5904,6 +6385,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                         {segs.length>1 && (
                           <button style={{...btn(false,C.red),fontSize:11,padding:'6px 10px',flexShrink:0}} onClick={()=>removeSeg(id,i,gi)}>✕</button>
                         )}
+                       </div>
+                       <PhaseTime phase={g} set={s} showGap={gi > 0} exId={id}
+                         onChange={(f,v) => updateSeg(id,i,gi,f,v)}/>
                       </div>
                     ))}
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -5917,7 +6401,8 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                     </div>
                   </div>
                 ) : (
-                  <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap',marginTop:6}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:6}}>
+                   <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                     <div style={{flex:1,minWidth:160}}>
                       <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(id,i,'bands',v)}/>
                     </div>
@@ -5934,6 +6419,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                         onChange={e=>{const v=e.target.value; updateSet(id,i,'partials', v===''?undefined:Math.max(0,parseInt(v)||0))}}
                         style={{...inputStyle,width:34,textAlign:'center',padding:'6px 3px',fontSize:12}}/>
                     </div>
+                   </div>
+                   <PhaseTime phase={s} set={s} showGap={false} exId={id}
+                     onChange={(f,v) => updateSet(id,i,f,v)}/>
                   </div>
                 )}
               </div>

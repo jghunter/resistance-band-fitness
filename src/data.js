@@ -2987,6 +2987,9 @@ export function refreshProfileHolders() {
   Object.assign(BODY_MEASURE, readBodyMeasure())
   return { TRAINING_STYLE, BODY_MEASURE }
 }
+/* cadenceNow / tulTargetNow / progRepsLowerNow are deliberately NOT
+   refreshed here: they re-read storage on every call, like
+   progTargetRepsNow. Nothing to invalidate. */
 
 /* The two the model cannot run without: the highest landmark and the width a
    singled loop has to span. Mirrors fitness_app.html's bodyMeasureComplete. */
