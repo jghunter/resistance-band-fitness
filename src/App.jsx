@@ -583,6 +583,29 @@ function secPerRepNow() {
   const c = cadenceNow()
   return c ? RBTS_REPORTS.cadenceSecPerRep(c) : null
 }
+
+/* THE RAW STORED VALUE, UNVALIDATED, READ LIVE. Exists for exactly one
+   reader: the "cannot read" banner, which must know the difference between
+   "no cadence is stored" and "something is stored and this build cannot use
+   it". cadenceNow() answers null for both, so it cannot tell them apart.
+
+   WHY IT IS LIVE AND NOT A SNAPSHOT (Task 12's reviewer, 2026-11-09): the
+   banner used _ACTIVE_PROFILE.cadenceSec, which is resolved once at page
+   load. Every box beside it reads live through cadenceNow, because a cloud
+   adopt rewrites rbts_profiles mid-session -- that asymmetry is the whole
+   reason progTargetRepsNow exists. So if an adopt pushed an UNREADABLE
+   cadence onto a profile that had NONE at load, the snapshot was null, the
+   banner stayed silent, and the four boxes simply went empty with nothing on
+   screen to say why. That is browser check 31's scenario exactly.
+
+   A SNAPSHOT BESIDE A LIVE READ IS THE 2026-10-21 ctx.progressReps DEFECT in
+   miniature: the justification for snapshotting travelled from the HTML app,
+   which has no Firestore and therefore cannot change the value mid-session,
+   to the PWA, where it can. */
+function rawCadenceNow() {
+  const p = activeRawProfile()
+  return (p && p.cadenceSec != null) ? p.cadenceSec : null
+}
 /* A MINIMAL ctx, not makeReportCtx(). phaseTul and actualCadence read
    ctx.cadence and nothing else, while makeReportCtx takes the whole log. */
 function cadCtx() { return { cadence: cadenceNow() } }
@@ -5734,9 +5757,16 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                 SILENTLY. An imported or hand-edited profile can carry an
                 unusable cadenceSec -- a string, a missing field, a zero
                 positive. cadenceNow answers null for it, and the four boxes
-                would render EMPTY with nothing on screen to say why. Mirrors
-                fitness_app.html. */}
-            {!cadenceNow() && _ACTIVE_PROFILE && _ACTIVE_PROFILE.cadenceSec != null && (
+                would render EMPTY with nothing on screen to say why.
+
+                THE TEST IS rawCadenceNow(), A LIVE READ, NOT
+                _ACTIVE_PROFILE.cadenceSec. It no longer mirrors
+                fitness_app.html here and must not be "corrected" back: that
+                app resolves its profile once and nothing can change it
+                mid-session, while a cloud adopt rewrites this one's. With the
+                snapshot, an adopt that pushed an unreadable cadence onto a
+                profile which had none at load left this banner silent. */}
+            {!cadenceNow() && rawCadenceNow() != null && (
               <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
                 marginTop:4,maxWidth:340,lineHeight:1.6}}>
                 YOUR PROFILE CARRIES A CADENCE THIS APP CANNOT READ, so no time
