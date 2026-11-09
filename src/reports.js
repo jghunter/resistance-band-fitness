@@ -5456,6 +5456,69 @@
     };
   }
 
+  /* ---- CADENCE AND TIME SUMMARY FOR ONE LIFT OVER A WINDOW --------------
+     EVERY MEAN NAMES HOW MANY READINGS IT IS OVER, because a mean over two
+     phases and a mean over forty must not look alike on a table -- the
+     `nLoaded` lesson from 2026-10-07, where 46 of 80 rows carried unpriced
+     sessions inside their own span and a partial row looked as solid as a
+     complete one.
+
+     meanActual IS OVER MEASURED PHASES ONLY and is null when there are
+     none. Averaging in the derived phases would mix the standard into the
+     measurement and report perfect adherence for a set nobody timed.
+
+     meanTul IS OVER EVERY PRICED SET, measured and derived alike, because
+     that is the work-time figure -- and `mix` is what discloses that the
+     span crossed instruments. Same split provenanceMix and the load series
+     already use.
+
+     GAPS ARE NEVER IN meanTul. meanGap is null when nothing recorded one,
+     not 0: 0 would claim the band changes took no time, which is exactly
+     the claim Greg objected to on 2026-11-07. */
+  function cadenceSummary(ctx, exId, fromDate, toDate) {
+    var key = String(exId);
+    var n = 0, m = 0, d = 0, z = 0;
+    var actSum = 0, actN = 0, tulSum = 0, tulN = 0;
+    var gapSum = 0, gapN = 0;
+    var points = [];
+    sortedLog((ctx && ctx.log) || []).forEach(function (e) {
+      if (!e || !e.date) return;
+      if (fromDate && e.date < fromDate) return;
+      if (toDate && e.date > toDate) return;
+      var sets = (e.exercises || {})[key];
+      if (!sets || !sets.length) return;
+      sets.forEach(function (s) {
+        n++;
+        var t = setTul(s, ctx);
+        points.push({ basis: t.basis });
+        if (t.basis === "none") { z++; return; }
+        if (t.basis === "measured") m++;
+        else if (t.basis === "derived") d++;
+        else { m++; d++; }               // a MIXED set counts in both columns
+        tulSum += t.sec; tulN++;
+        if (t.gapsRecorded > 0) { gapSum += t.gapTotalSec; gapN += t.gapsRecorded; }
+        setSegments(s).forEach(function (g) {
+          var a = actualCadence(g, s, ctx);
+          if (a != null) { actSum += a; actN++; }
+        });
+      });
+    });
+    var cad = cadenceOf(null, null, ctx);
+    var std = cad ? cad.secPerRep : null;
+    var meanActual = actN ? (Math.round((actSum / actN) * 100) / 100) : null;
+    return {
+      n: n, measured: m, derived: d, unresolved: z,
+      measuredPhases: actN,
+      meanActual: meanActual,
+      std: std,
+      flag: cadenceFlag(meanActual, std),
+      meanTul: tulN ? (Math.round((tulSum / tulN) * 100) / 100) : null,
+      meanGap: gapN ? (Math.round((gapSum / gapN) * 100) / 100) : null,
+      gapsRecorded: gapN,
+      mix: tulMix(points)
+    };
+  }
+
   function setSide(s) {
     return (s && (s.side === "L" || s.side === "R")) ? s.side : null;
   }
@@ -7614,6 +7677,10 @@
            functions at all. ANALYZE's verdict needs it; the STRENGTH
            progression table does not draw it. Asserted by absence. */
         tulBar: ps.tulBar,
+        /* The window's own cadence and time figures. On analyzeExercises'
+           rows only, like tulBar and foldSpan -- exerciseProgressionRows
+           draws neither. */
+        cadence: cadenceSummary(ctx, exId, win.from, win.to),
         stalled: ps.stalled,
         lastDate: last.date,
         daysSince: daysBetween(last.date, win.asOf),
@@ -8270,6 +8337,74 @@
         recs.push({ severity: 4, code: "EX_DORMANT", scope: "exercise",
           subject: r.name, text: r.name + ": " + r.verdict.text });
       }
+      /* ---- CADENCE AND TIME UNDER LOAD (2026-11-07) --------------------
+         ALL OF THESE REQUIRE A MEASURED READING. A derived time is reps
+         times the standard, so a TUL complaint on a derived span would be
+         a rep complaint wearing a seconds label, and a cadence complaint
+         would be a complaint about the standard the user themselves set.
+         Both would be confident and wrong.
+
+         TUL_SHORT AND TUL_LONG ARE GATED BY noLoadSuggest. PANEL FINDING
+         5, A SIXTH AND SEVENTH TIME: both codes name a load change --
+         "drop to a lighter stack" / "Add a band" -- and ids 177-179 (the
+         three moving neck exercises) are not time-based, so the time bar
+         applies to them and both codes can reach them. The observation
+         stays (the figure is real); only the load clause is swapped. */
+      var cd = r.cadence;
+      if (cd && cd.measured > 0 && cd.meanTul != null) {
+        /* A NUMERIC GUARD, NOT `|| null`. A truthiness test on a number
+           would turn a stored 0 into null and silently disable the floor
+           check -- tulTargetFromProfile refuses 0 today, so this is
+           latent rather than live, but the next writer of this field may
+           not refuse it. */
+        var lo = (ctx && ctx.tulTargetSec && finiteNonNegNum(ctx.tulTargetSec.lo))
+          ? ctx.tulTargetSec.lo : null;
+        var hi = (ctx && ctx.tulTargetSec && finiteNonNegNum(ctx.tulTargetSec.hi))
+          ? ctx.tulTargetSec.hi : null;
+        var gated = noLoadSuggest(r.id);
+        if (lo != null && cd.meanTul < lo) {
+          recs.push({ severity: 5, code: "TUL_SHORT", scope: "exercise",
+            subject: r.name,
+            detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + lo + "s floor)",
+            text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
+              "across " + cd.measured + " timed set" + (cd.measured === 1 ? "" : "s") +
+              ", under your " + lo + "s floor. " +
+              (gated ? NO_LOAD_ADVICE + "."
+                     : "The band is heavy for your cadence -- " +
+                       "drop to a lighter stack and hold the tempo.") });
+        } else if (hi != null && cd.meanTul > hi) {
+          recs.push({ severity: 5, code: "TUL_LONG", scope: "exercise",
+            subject: r.name,
+            detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + hi + "s ceiling)",
+            text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
+              "across " + cd.measured + " timed set" + (cd.measured === 1 ? "" : "s") +
+              ", over your " + hi + "s ceiling. " +
+              (gated ? "Do not add load to dynamic neck work -- " +
+                       "shorten the set instead."
+                     : "Add a band.") });
+        }
+      }
+      if (cd && cd.meanActual != null && cd.std != null && cd.flag &&
+          cd.flag !== "ok") {
+        var fast = cd.flag === "fast";
+        recs.push({ severity: 5,
+          code: fast ? "CADENCE_FAST" : "CADENCE_SLOW", scope: "exercise",
+          subject: r.name,
+          detail: r.name + " (" + cd.meanActual + "s/rep vs " + cd.std + "s)",
+          text: r.name + " ran " + cd.meanActual + "s per rep across " +
+            cd.measuredPhases + " timed phase" + (cd.measuredPhases === 1 ? "" : "s") +
+            " against your " + cd.std + "s standard -- " +
+            (fast ? "faster than you set, so the rep counts are not comparable " +
+                    "to sessions you held the tempo on."
+                  : "slower than you set. If that is deliberate, change the " +
+                    "standard so the comparison means something.") });
+      }
+      if (r.verdict && r.verdict.code === "READY_BUT_FAST") {
+        recs.push({ severity: 5, code: "READY_BUT_FAST", scope: "exercise",
+          subject: r.name,
+          detail: r.name + " (cleared the reps, not the time)",
+          text: r.verdict.text });
+      }
     });
     (unlogged || []).forEach(function (u) {
       recs.push({ severity: 6, code: "UNLOGGED", scope: "exercise", subject: u.name,
@@ -8582,6 +8717,47 @@
     });
     if (gFlags.length) {
       sections.push({ heading: "GROUP FLAGS", type: "notes", rows: gFlags });
+    }
+
+    /* CADENCE AND TIME UNDER LOAD. Omitted entirely when no row carries a
+       summary with any reading -- a table of em dashes is not information,
+       and this section is absent on every window logged before 2026-11-07. */
+    var cadRows = (res.exercises || []).filter(function (r) {
+      return r.cadence && r.cadence.n > 0 && r.cadence.meanTul != null;
+    });
+    if (cadRows.length) {
+      sections.push({ heading: "CADENCE AND TIME UNDER LOAD", type: "table",
+        cols: ["EXERCISE", "SETS", "TIMED", "DERIVED", "MEAN TUL",
+               "ACTUAL CADENCE", "VS STANDARD", "MEAN GAP", "BASIS"],
+        rows: cadRows.map(function (r) {
+          var c = r.cadence;
+          return [
+            r.name,
+            String(c.n),
+            String(c.measured),
+            String(c.derived),
+            fmtNum(c.meanTul) + "s",
+            /* AN EM DASH, NEVER A ZERO. An absent figure is not a small one,
+               the rule the % OF BEST column already follows. */
+            c.meanActual == null ? "-"
+              : (c.meanActual + "s/rep over " + c.measuredPhases),
+            (c.meanActual == null || c.std == null) ? "-"
+              : (c.std + "s " + String(c.flag || "").toUpperCase()),
+            c.meanGap == null ? "-" : (fmtNum(c.meanGap) + "s x " + c.gapsRecorded),
+            c.mix.mixed ? ("MIXED " + c.mix.bases.join("+")) : (c.mix.bases[0] || "-")
+          ];
+        }) });
+      sections.push({ heading: "HOW TO READ THAT TABLE", type: "notes", rows: [
+        "ACTUAL CADENCE is the measured time divided by the reps, over TIMED " +
+        "phases only. A derived time is the rep count times your standard, so " +
+        "averaging it in would report perfect adherence for a set nobody timed.",
+        "MEAN GAP is unloaded time between the phases of a set -- the band " +
+        "change on a drop set, the interval on a rest-pause. It is never " +
+        "counted as time under load. An em dash means no gap was recorded, " +
+        "which is not the same as a gap of zero.",
+        "BASIS MIXED means the span disagrees with itself: part of any change " +
+        "may be a change of instrument rather than a change in the lift."
+      ] });
     }
 
     /* BY EXERCISE, grouped under its muscle group */
@@ -10281,6 +10457,7 @@
     tulBarApplies: tulBarApplies,
     tulBarState: tulBarState,
     tulBarReachable: tulBarReachable,
+    cadenceSummary: cadenceSummary,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
