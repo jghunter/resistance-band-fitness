@@ -2564,13 +2564,52 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
   /* The synthesized phase carries the PHASE-level fields -- a simple set IS
      one phase. Mirrors RBTS_REPORTS.setSegments. */
   const segsOf  = (s) => { if (Array.isArray(s.segments)) return s.segments; const g = {bands:(s.bands||[]).slice(), reps:s.reps||0}; if (typeof s.tulSec === 'number') g.tulSec = s.tulSec; if (s.cadenceSec) g.cadenceSec = s.cadenceSec; return [g] }
+  /* COLLAPSING A SEGMENTED SET IS ONE RULE AND IT LIVES IN THE ENGINE.
+     RBTS_REPORTS.collapseSegments holds it, and all FOUR editors -- the
+     TODAY card and the HISTORY editor in each app -- call it. Written out
+     four times it was wrong in all four: the reps were summed and the bands
+     taken from phase 0 while `tulSec` and `cadenceSec` were dropped on the
+     floor, so a drop set timed at 42s and 26s lost a real 68s measurement
+     the moment it went back to "none". See the engine's own comment for the
+     three rules and for the stale-value half of the same defect.
+     Mirrors fitness_app.html. */
+  const applyCollapse = (n) => {
+    const cl = RBTS_REPORTS.collapseSegments(n)
+    n.bands = cl.bands; n.reps = cl.reps
+    if (cl.tulSec != null) n.tulSec = cl.tulSec; else delete n.tulSec
+    /* PHASE 0'S CADENCE ONLY WHERE THE SET HAS NONE. A set-level override is
+       the lifter's own and a phase must not overwrite it. */
+    if (cl.cadenceSec && !n.cadenceSec) n.cadenceSec = cl.cadenceSec
+    delete n.segments
+    return n
+  }
+  /* A DELETED MEASUREMENT IS A REAL LOSS OF DATA, so the collapse asks
+     first -- the same window.confirm this app already puts in front of
+     deleting a logged session and of a destructive import. It asks ONLY
+     for a PARTIAL measurement: an all-timed set keeps the sum and an
+     untimed one never had anything to lose. */
+  const collapseOk = (s) => {
+    if (!s || !Array.isArray(s.segments)) return true
+    const cl = RBTS_REPORTS.collapseSegments(s)
+    if (!cl.dropped) return true
+    const BR = String.fromCharCode(10) + String.fromCharCode(10)
+    return window.confirm(
+      'This set has a time on some of its phases and not on others.' + BR +
+      'A straight set carries ONE time for the whole set, so a part ' +
+      'measurement cannot be kept: the ' + cl.droppedSec + 's already ' +
+      'recorded on ' + cl.timedPhases + ' of ' + cl.phases + ' phases ' +
+      'will be DELETED.' + BR +
+      'Time the remaining phases first if you want to keep it.')
+  }
   function changeIntens(i, k) {
+    const wantSegK = !!(INTENS[k] && INTENS[k].usesSegments)
+    if (!wantSegK && !collapseOk(sets[i])) return
     onSetsChange(sets.map((ss,idx) => {
       if (idx!==i) return ss
       const n = {...ss}
       const wantSeg = !!(INTENS[k] && INTENS[k].usesSegments)
       if (k==='straight') {
-        if (Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0) }
+        if (Array.isArray(n.segments)) applyCollapse(n)
         delete n.segments; delete n.intensifier; delete n.drop
       } else {
         n.intensifier=k; delete n.drop
@@ -2582,8 +2621,16 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           if (typeof n.tulSec === 'number') g0.tulSec = n.tulSec
           if (n.cadenceSec) g0.cadenceSec = n.cadenceSec
           n.segments=[g0]; delete n.bands; delete n.reps
+        /* THE TIME MOVES, IT IS NOT COPIED. Leaving n.tulSec in place gave
+           the figure TWO homes: the phase was then edited while the set
+           kept the old value, and collapsing the set later restored it --
+           a figure three edits stale, wearing a MEASURED badge. One home
+           for one measurement. cadenceSec goes with it for the same
+           reason: it is a PHASE-level field, and setSegments reads it off
+           the set only when there are no phases to read it from. */
+          delete n.tulSec; delete n.cadenceSec
         } else if (!wantSeg && Array.isArray(n.segments)) {
-          n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments
+          applyCollapse(n)
         }
       }
       return n
@@ -3845,7 +3892,10 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               derived phases, which is why TIMED and DERIVED are counted
               beside it. MEAN GAP is unloaded time between the phases of a
               set and is never counted as time under load; an em dash means
-              none was recorded, which is not a gap of zero.
+              none was recorded, which is not a gap of zero. BASIS reads
+              &ne; when the SPAN disagrees with itself; a bare "mixed" there
+              is ONE SET that disagrees with itself, some of its phases timed
+              and the rest derived from your standard.
             </div>
             <div style={{overflowX:'auto'}}>
               <table style={{borderCollapse:'collapse',fontFamily:'monospace',fontSize:10}}>
@@ -3889,8 +3939,17 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                           {c.meanGap == null ? '—'
                             : RBTS_REPORTS.fmtNum(c.meanGap)+'s × '+c.gapsRecorded}
                         </td>
+                        {/* AMBER FOR A PER-SET MIXTURE TOO. mix.mixed is
+                            FALSE for a span of one set whose own basis is
+                            "mixed" -- one reading cannot disagree with
+                            itself -- so that row used to render the bare
+                            word in dim grey with nothing to explain it. The
+                            set still disagrees with itself, which is the
+                            thing the colour is for. Mirrors
+                            fitness_app.html. */}
                         <td style={{padding:'3px 8px',
-                          color:c.mix.mixed?C.amber:C.dimGray}}>
+                          color:(c.mix.mixed||c.mix.bases.indexOf('mixed')>=0)
+                                ?C.amber:C.dimGray}}>
                           {c.mix.mixed ? '≠ '+c.mix.bases.join('+')
                                        : (c.mix.bases[0]||'—')}
                         </td>
@@ -5998,6 +6057,45 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               )
             })()}
           </div>
+          {/* ── LOWER-BODY REP TARGET ─────────────────────────────────────
+              THE THIRD TRAINING STYLE CONTROL, added 2026-11-08. Task 12
+              was meant to ship three and shipped two: this app carried
+              THREE READERS of progressRepsLower -- progRepsLowerNow,
+              reachCtx and makeReportCtx -- and no writer at all, so the
+              engine read a field the user could not set. THIS IS THE
+              DEPLOYED APP, so that was not "unreachable UI" for Greg alone;
+              it was three other people with no lower-body rep target.
+              Mirrors fitness_app.html's control: PROFILE / 6 / 8 / 10 / 12.
+
+              THE SELECTED STATE IS A LIVE READ, progRepsLowerNow(), not
+              TRAINING_STYLE.progressRepsLower. Every reader of this field in
+              this app re-resolves from storage because a cloud adopt
+              rewrites rbts_profiles mid-session -- saveTrainingStyle's own
+              comment says the three cadence-era fields need no holder
+              refresh for exactly that reason. A snapshot here would show the
+              pre-adopt choice while the engine used the adopted one. */}
+          <div>
+            <span style={lbl}>LOWER-BODY REP TARGET</span>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+              margin:'2px 0 4px 0',maxWidth:340,lineHeight:1.6}}>
+              Baye's chart targets fewer reps on lower-body lifts than on upper.
+              PROFILE means use the same target for everything, which is what
+              this app has always done.
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              <button style={{...btn(progRepsLowerNow()==null),fontSize:10,padding:'3px 7px'}}
+                onClick={()=>{ saveTrainingStyle({progressRepsLower:null}, user?.uid); setTsTick(tsTick+1) }}>
+                PROFILE
+              </button>
+              {[6,8,10,12].map(n => (
+                <button key={n}
+                  style={{...btn(progRepsLowerNow()===n),fontSize:10,padding:'3px 7px'}}
+                  onClick={()=>{ saveTrainingStyle({progressRepsLower:n}, user?.uid); setTsTick(tsTick+1) }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div style={{marginTop:12}}>
           <div style={lbl}>BODY MEASUREMENTS</div>
@@ -6324,10 +6422,50 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   /* The synthesized phase carries the PHASE-level fields -- a simple set IS
      one phase. Mirrors RBTS_REPORTS.setSegments. */
   const segsOf  = (s) => { if (Array.isArray(s.segments)) return s.segments; const g = {bands:(s.bands||[]).slice(), reps:s.reps||0}; if (typeof s.tulSec === 'number') g.tulSec = s.tulSec; if (s.cadenceSec) g.cadenceSec = s.cadenceSec; return [g] }
-  const changeIntens = (id, i, k) => mapSet(id, i, n => {
+  /* COLLAPSING A SEGMENTED SET IS ONE RULE AND IT LIVES IN THE ENGINE.
+     RBTS_REPORTS.collapseSegments holds it, and all FOUR editors -- the
+     TODAY card and the HISTORY editor in each app -- call it. Written out
+     four times it was wrong in all four: the reps were summed and the bands
+     taken from phase 0 while `tulSec` and `cadenceSec` were dropped on the
+     floor, so a drop set timed at 42s and 26s lost a real 68s measurement
+     the moment it went back to "none". See the engine's own comment for the
+     three rules and for the stale-value half of the same defect.
+     Mirrors fitness_app.html. */
+  const applyCollapse = (n) => {
+    const cl = RBTS_REPORTS.collapseSegments(n)
+    n.bands = cl.bands; n.reps = cl.reps
+    if (cl.tulSec != null) n.tulSec = cl.tulSec; else delete n.tulSec
+    /* PHASE 0'S CADENCE ONLY WHERE THE SET HAS NONE. A set-level override is
+       the lifter's own and a phase must not overwrite it. */
+    if (cl.cadenceSec && !n.cadenceSec) n.cadenceSec = cl.cadenceSec
+    delete n.segments
+    return n
+  }
+  /* A DELETED MEASUREMENT IS A REAL LOSS OF DATA, so the collapse asks
+     first -- the same window.confirm this app already puts in front of
+     deleting a logged session and of a destructive import. It asks ONLY
+     for a PARTIAL measurement: an all-timed set keeps the sum and an
+     untimed one never had anything to lose. */
+  const collapseOk = (s) => {
+    if (!s || !Array.isArray(s.segments)) return true
+    const cl = RBTS_REPORTS.collapseSegments(s)
+    if (!cl.dropped) return true
+    const BR = String.fromCharCode(10) + String.fromCharCode(10)
+    return window.confirm(
+      'This set has a time on some of its phases and not on others.' + BR +
+      'A straight set carries ONE time for the whole set, so a part ' +
+      'measurement cannot be kept: the ' + cl.droppedSec + 's already ' +
+      'recorded on ' + cl.timedPhases + ' of ' + cl.phases + ' phases ' +
+      'will be DELETED.' + BR +
+      'Time the remaining phases first if you want to keep it.')
+  }
+  const changeIntens = (id, i, k) => {
+    const wantSegK = !!(INTENS[k] && INTENS[k].usesSegments)
+    if (!wantSegK && !collapseOk((ex[id]||[])[i])) return
+    return mapSet(id, i, n => {
     const wantSeg = !!(INTENS[k] && INTENS[k].usesSegments)
     if (k==='straight') {
-      if (Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0) }
+      if (Array.isArray(n.segments)) applyCollapse(n)
       delete n.segments; delete n.intensifier; delete n.drop
     } else {
       n.intensifier=k; delete n.drop
@@ -6339,11 +6477,20 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
         if (typeof n.tulSec === 'number') g0.tulSec = n.tulSec
         if (n.cadenceSec) g0.cadenceSec = n.cadenceSec
         n.segments=[g0]; delete n.bands; delete n.reps
+        /* THE TIME MOVES, IT IS NOT COPIED. Leaving n.tulSec in place gave
+           the figure TWO homes: the phase was then edited while the set
+           kept the old value, and collapsing the set later restored it --
+           a figure three edits stale, wearing a MEASURED badge. One home
+           for one measurement. cadenceSec goes with it for the same
+           reason: it is a PHASE-level field, and setSegments reads it off
+           the set only when there are no phases to read it from. */
+        delete n.tulSec; delete n.cadenceSec
       }
-      else if (!wantSeg && Array.isArray(n.segments)) { n.bands=(((n.segments[0]||{}).bands)||[]).slice(); n.reps=n.segments.reduce((a,g)=>a+(g.reps||0),0); delete n.segments }
+      else if (!wantSeg && Array.isArray(n.segments)) { applyCollapse(n) }
     }
     return n
-  })
+    })
+  }
   const updateSeg = (id, i, segIdx, field, val) => mapSet(id, i, n => {
     const segs=(n.segments||segsOf(n)).map(g=>({...g})); segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
   })

@@ -4995,6 +4995,61 @@
   function setReps(s) {
     return setSegments(s).reduce(function (a, g) { return a + (g.reps || 0); }, 0);
   }
+
+  /* ---- COLLAPSING A SEGMENTED SET BACK TO A STRAIGHT ONE ----------------
+     setSegments' inverse, and it lives here for the reason setSegments
+     does: FOUR editors perform this collapse -- the TODAY card and the
+     HISTORY editor in each app -- and a rule written four times is this
+     project's recurring "four editor" trap. All four call this.
+
+     THE THREE RULES, Greg's, 2026-11-08:
+
+       1. REPS SUM and BANDS COME FROM PHASE 0. Unchanged; that is what the
+          four editors already did.
+       2. tulSec IS THE SUM ONLY WHEN EVERY PHASE CARRIES ONE. Then it
+          genuinely is the set's measured time, and it is the SAME figure
+          the HISTORY suffix already prints for the uncollapsed set, so the
+          two surfaces agree about one set. If only SOME phases carry one,
+          tulSec IS DROPPED: a plain set has no way to express a partial
+          measurement, and keeping the sum would claim the whole set was
+          timed. `dropped` says that happened so the caller can warn.
+       3. cadenceSec COMES FROM PHASE 0, and the caller applies it only
+          where the set does not already carry one -- a set-level override
+          is the lifter's own and must not be overwritten by a phase's.
+
+     WHAT WENT WRONG WITHOUT IT (reviewed and reproduced 2026-11-08): the
+     collapse summed the reps and took the bands and dropped tulSec and
+     cadenceSec on the floor. A drop set timed at 42s and 26s switched back
+     to "-- none --" lost a real 68s measurement with nothing on screen to
+     say so, and the opposite conversion left a stale set-level tulSec in
+     place beside the phase copy, so a figure three edits old came back
+     wearing a MEASURED badge.
+
+     IT RETURNS A DESCRIPTION AND MUTATES NOTHING. The editors hold their
+     set objects in React state and each one deletes and assigns in its own
+     idiom; handing them a plain answer is what lets all four agree. */
+  function collapseSegments(set) {
+    var segs = (set && Array.isArray(set.segments)) ? set.segments : [];
+    var timed = 0, sum = 0;
+    segs.forEach(function (g) {
+      if (finitePosNum(g && g.tulSec)) { timed++; sum += g.tulSec; }
+    });
+    var all = segs.length > 0 && timed === segs.length;
+    return {
+      bands: (((segs[0] || {}).bands) || []).slice(),
+      reps: segs.reduce(function (a, g) { return a + ((g && g.reps) || 0); }, 0),
+      /* null means "the collapsed set carries no measured time", which the
+         caller must apply by DELETING any tulSec already on the set. */
+      tulSec: all ? sum : null,
+      cadenceSec: (segs[0] && segs[0].cadenceSec) || null,
+      phases: segs.length,
+      timedPhases: timed,
+      /* A MEASUREMENT IS ABOUT TO BE LOST. True only for a PARTIAL
+         measurement: all-timed keeps the sum, none-timed had nothing. */
+      dropped: timed > 0 && !all,
+      droppedSec: (timed > 0 && !all) ? sum : null
+    };
+  }
   /* Display band stack = the FIRST segment's bands (the working stack you set
      up with); later segments are the drop-downs. */
   function setBands(s) { return setSegments(s)[0].bands || []; }
@@ -5093,6 +5148,18 @@
        secs is NOT carried: a phase judged on reps is judged on reps. */
     if (typeof g.tulSec === "number") out.tulSec = g.tulSec;
     if (g.cadenceSec) out.cadenceSec = g.cadenceSec;
+    /* HOW MANY PHASES THE SET THIS PHASE CAME OUT OF ACTUALLY HAD (added
+       2026-11-08, read by tulBarState and by nothing else). The phase is
+       the right thing to JUDGE -- that is this helper's whole point -- but a
+       sentence that quotes the figure must be able to say it is the FIRST
+       PHASE'S and not the set's. Without this the verdict said "the set ran
+       42s" for a drop set that ran 68s.
+
+       ABSENT ON A PLAIN SET, deliberately: a plain set is returned BY
+       IDENTITY above (asserted in test_intensifier_progression.cjs) and
+       must stay that same object, and one phase is what an absent count
+       means. Readers default it to 1. */
+    out.ofPhases = segs.length;
     return out;
   }
   function workingSets(sets) {
@@ -5259,10 +5326,21 @@
          written there is meaningless and is ignored rather than summed. */
       if (i > 0 && finitePosNum(g && g.gapSec)) { gapsRec++; gapTotal += g.gapSec; }
     });
+    /* MIXED MEANS "AT LEAST ONE MEASUREMENT AND AT LEAST ONE
+       NON-MEASUREMENT". A set that is wholly derived with some phases
+       unpriceable is "derived" -- NOTHING IN IT WAS MEASURED, and `why`
+       already names the phases that could not be priced.
+
+       THE OLD LADDER TESTED `z > 0` BEFORE IT EVER LOOKED AT `m`, so a set
+       with zero measured phases and one unresolved phase answered "mixed".
+       That is how a DERIVED figure came to be reported as a TIMED one:
+       cadenceSummary credited any "mixed" set to its measured column, and
+       TUL_SHORT then printed "across 1 timed set" beside a mean nobody had
+       measured. Reviewed and reproduced 2026-11-08. The word must not be
+       reachable without a measurement in the set. */
     var basis;
     if (m + d === 0) basis = "none";
-    else if (z > 0) basis = "mixed";
-    else if (m > 0 && d > 0) basis = "mixed";
+    else if (m > 0 && (d > 0 || z > 0)) basis = "mixed";
     else if (m > 0) basis = "measured";
     else basis = "derived";
     return {
@@ -5414,12 +5492,21 @@
       return { applies: true, hi: hi, ready: false, basis: "none", sec: null,
                why: "no sets to judge" };
     }
-    var worst = null, anyNone = false, whys = [], bases = {};
+    var worst = null, worstOf = null, nJudged = 0;
+    var anyNone = false, whys = [], bases = {};
     list.forEach(function (s) {
       var t = setTul(s, ctx);
       bases[t.basis] = 1;
       if (t.basis === "none") { anyNone = true; if (t.why) whys.push(t.why); return; }
-      if (worst === null || t.sec < worst) worst = t.sec;
+      nJudged++;
+      /* THE SET THAT PRODUCED `sec` IS REMEMBERED, not just its number.
+         `sec` is the MINIMUM over the judged sets, so every sentence built
+         from it has to be able to say which set that was and what the set
+         was like -- whether it was timed, how many reps it held, and what
+         standard it derived from. Without this, exerciseVerdict reached for
+         row.bestReps (the MAXIMUM reps over the WHOLE analysis window) and
+         divided two different sets from two different sessions. */
+      if (worst === null || t.sec < worst) { worst = t.sec; worstOf = { set: s, tul: t }; }
     });
     /* A SET WE CANNOT PRICE DOES NOT WITHHOLD READY. Case 1 above: the bar
        is unevaluable for that set, not failed by it. Reporting ready: true
@@ -5430,12 +5517,39 @@
                why: whys.length ? whys.join("; ") : "no time could be resolved" };
     }
     var basisKeys = Object.keys(bases).filter(function (k) { return k !== "none"; });
+    var wSet = worstOf.set, wTul = worstOf.tul;
+    var wCad = cadenceOf(wSet, wSet, ctx);
     return {
       applies: true, hi: hi,
       ready: worst >= hi,
       basis: (basisKeys.length > 1) ? "mixed" : basisKeys[0],
       sec: worst,
-      why: anyNone ? ("some sets carry no time: " + whys.join("; ")) : null
+      why: anyNone ? ("some sets carry no time: " + whys.join("; ")) : null,
+      /* ADDITIVE, 2026-11-08. `applies`, `hi`, `ready`, `basis`, `sec` and
+         `why` are byte-for-byte what they were; several suites assert them.
+
+         HOW MANY SETS WERE JUDGED, so a sentence quoting the minimum can say
+         "your slowest set" when there were several and "the set" when there
+         was one. Priced sets only -- a set we cannot price does not withhold
+         READY and is not one of the sets the figure came from. */
+      nJudged: nJudged,
+      /* EVERYTHING ABOUT THE ONE SET THAT PRODUCED `sec`, so no caller has
+         to guess. basis is that SET'S basis and not the span's, which is the
+         distinction Critical 2 turned on: a span of one timed set beside one
+         untimed set reports basis "mixed", and its `sec` is routinely the
+         untimed one's. secPerRep is null unless that set was MEASURED --
+         actualCadence refuses a derived time on purpose, because dividing
+         reps times the standard by the reps returns the standard and would
+         report perfect adherence for a set nobody timed. */
+      worst: {
+        basis: wTul.basis,
+        sec: wTul.sec,
+        measuredSec: wTul.measuredSec,
+        reps: finitePosNum(wSet && wSet.reps) ? wSet.reps : null,
+        secPerRep: actualCadence(wSet, wSet, ctx),
+        stdSecPerRep: wCad ? wCad.secPerRep : null,
+        ofPhases: finitePosNum(wSet && wSet.ofPhases) ? wSet.ofPhases : 1
+      }
     };
   }
 
@@ -5519,9 +5633,21 @@
         var t = setTul(s, ctx);
         points.push({ basis: t.basis });
         if (t.basis === "none") { z++; return; }
-        if (t.basis === "measured") m++;
-        else if (t.basis === "derived") d++;
-        else { m++; d++; }               // a MIXED set counts in both columns
+        /* THE TIMED COLUMN COUNTS MEASURED PHASES, NEVER THE BASIS STRING.
+           It used to read `else { m++; d++; }` for a "mixed" set -- and that
+           one line is what credited a timed set that did not exist, because
+           the old basis ladder could answer "mixed" for a set with no
+           measured phase at all. Counting the phases cannot do that: a set
+           lands in TIMED only when something in it was timed.
+
+           A SET CAN LEGITIMATELY INCREMENT BOTH, and that is why the two
+           tests are independent rather than an if/else chain. One phase
+           timed beside one derived is one set that belongs in both columns,
+           which is exactly what the ANALYZE table's BASIS column discloses.
+           It follows that measured + derived may EXCEED the number of sets;
+           nPriced below is the figure a mean is over. */
+        if (t.phases.measured > 0) m++;
+        if (t.phases.derived > 0) d++;
         tulSum += t.sec; tulN++;
         if (t.gapsRecorded > 0) { gapSum += t.gapTotalSec; gapN += t.gapsRecorded; }
         setSegments(s).forEach(function (g) {
@@ -5540,10 +5666,40 @@
       std: std,
       flag: cadenceFlag(meanActual, std),
       meanTul: tulN ? (Math.round((tulSum / tulN) * 100) / 100) : null,
+      /* THE NUMBER OF SETS meanTul IS OVER (added 2026-11-08). `measured` is
+         a count of sets CONTAINING a measurement and `derived` of sets
+         containing a derived phase, so neither one is the denominator and
+         the two can sum past the set count. A caller that prints meanTul
+         must name THIS figure: "37s across 1 timed set" was false for a mean
+         over one timed set and one untimed one, which is the second half of
+         the 2026-11-08 Critical. */
+      nPriced: tulN,
       meanGap: gapN ? (Math.round((gapSum / gapN) * 100) / 100) : null,
       gapsRecorded: gapN,
       mix: tulMix(points)
     };
+  }
+
+  /* ---- NAMING WHAT A TIME MEAN IS OVER ---------------------------------
+     "3 timed sets" or "4 sets, 2 of them timed" -- NEVER "4 timed sets"
+     for a mean that crossed an untimed set. meanTul is over EVERY priced
+     set, measured and derived alike, so the only honest sentence names the
+     denominator and then says how much of it was measured.
+
+     This exists because TUL_SHORT printed "averages 37s under load across 1
+     timed set" for a span of one 30s timed set and one untimed set derived
+     to 44s. 37 is the mean of the two; the reader had no way to know the
+     number was not the timed set's. Reproduced 2026-11-08.
+
+     A SUMMARY WITH NO nPriced is a hand-built one from a caller older than
+     that field. It degrades to the measured count and the old wording
+     rather than printing "null sets". */
+  function tulSpanPhrase(cd) {
+    var nP = finitePosNum(cd && cd.nPriced) ? cd.nPriced : null;
+    var mN = (cd && finiteNonNegNum(cd.measured)) ? cd.measured : 0;
+    if (nP == null) nP = mN;
+    if (mN >= nP) return nP + " timed set" + (nP === 1 ? "" : "s");
+    return nP + " set" + (nP === 1 ? "" : "s") + ", " + mN + " of them timed";
   }
 
   function setSide(s) {
@@ -7358,15 +7514,95 @@
        lifter to "hold" a cadence they were already holding -- the standard
        IS the seconds-per-rep figure here, not a deviation from it. */
     if (row.repsReady && row.tulBar && row.tulBar.applies && !row.tulBar.ready) {
-      var spr = (row.tulBar.sec != null && row.bestReps > 0)
-        ? (row.tulBar.sec / row.bestReps) : null;
-      if (row.tulBar.basis === "derived") {
+      /* NO SENTENCE HERE MAY ATTRIBUTE A FIGURE TO SOMETHING THAT DID NOT
+         PRODUCE IT. Greg's ruling, 2026-11-08, after a review found three
+         separate breaches of it in these few lines:
+
+           1. the MEASURED wording ("the set ran Xs ... Hold the cadence")
+              was reached whenever the basis was not exactly "derived", so a
+              "mixed" span -- whose `sec` is the MINIMUM across the judged
+              sets and is routinely the UNTIMED one -- claimed a tempo
+              nobody observed and told the lifter to hold it;
+           2. the per-repetition figure was row.tulBar.sec / row.bestReps,
+              dividing the WORST set of the LATEST session by the MAXIMUM
+              reps over the WHOLE window -- routinely two different sets in
+              two different sessions;
+           3. "your Xs standard" was that same quotient rather than the
+              standard the lifter actually set, so it printed a number they
+              never chose.
+
+         ALL THREE FIGURES NOW COME OFF row.tulBar.worst, which describes the
+         ONE set that produced `sec` and nothing else. A bar with no `worst`
+         is one a caller hand-built; every clause that needs a field it does
+         not carry is OMITTED rather than guessed at. */
+      var tb = row.tulBar;
+      var w = tb.worst || null;
+      var wBasis = w ? w.basis : tb.basis;
+      var secTxt = Math.round(tb.sec);
+      var wReps = (w && finitePosNum(w.reps)) ? w.reps : null;
+      /* THE MEASURED TEMPO OF THAT SET, from actualCadence, which answers
+         null for anything not measured. Never a quotient of two sets. */
+      var spr = (w && finitePosNum(w.secPerRep))
+        ? (Math.round(w.secPerRep * 10) / 10) : null;
+      /* THE STANDARD THE LIFTER SET, read off the cadence that set derived
+         from -- its own override where it has one, the profile otherwise. */
+      var std = (w && finitePosNum(w.stdSecPerRep))
+        ? (Math.round(w.stdSecPerRep * 10) / 10) : null;
+      var nJ = (w && finitePosNum(tb.nJudged)) ? tb.nJudged : 1;
+      var ofP = (w && finitePosNum(w.ofPhases)) ? w.ofPhases : 1;
+      /* THE FIGURE IS ONE PHASE'S WHENEVER THE SET HAD MORE THAN ONE, and
+         the sentence must say so. workingSetOf hands the time bar each set's
+         FIRST PHASE, which is correct and is the same set of sets the rep
+         bar judged -- an intensifier set gates on its first phase and that
+         invariant stays. Only the WORDING was wrong: a drop set measured at
+         42s and 26s ran 68s, and the verdict said "the set ran 42s".
+         "your slowest set" when several were judged, because `sec` is the
+         minimum of them and "the set" does not say which. */
+      var subjNoun = (nJ > 1 ? "your slowest set" : "the set") +
+                     (ofP > 1 ? "'s first phase" : "");
+      var repsPfx = (ofP > 1) ? "the first phase's " : "";
+      var sprFrag = (spr != null) ? (" -- " + spr + "s per rep") : "";
+      var holdTail = noLoadSuggest(row.id)
+        ? "Hold the cadence -- " + NO_LOAD_TAIL + "."
+        : "Hold the cadence before you add a band.";
+      /* NOTHING IN THE SPAN WAS TIMED. Not merely "this set was not": the
+         span basis is "derived" only when no judged set carried a
+         measurement, so "Nothing was timed here" is true of the exercise.
+         DELIBERATELY UNGATED -- it names no load change, so a gate would
+         add a prohibition nobody needs and read as though the advice had
+         been wrong. Asserted, so nobody adds one and calls it symmetry. */
+      if (tb.basis === "derived") {
         return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
-          ", but " + row.bestReps + row.unit + " at your " +
-          (spr != null ? (Math.round(spr * 10) / 10) : "?") +
-          "s standard only comes to " + Math.round(row.tulBar.sec) +
-          "s against your " + row.tulBar.hi + "s target. Nothing was " +
+          ", but " +
+          ((wReps != null && std != null)
+            ? (repsPfx + wReps + row.unit + " at your " + std +
+               "s standard only comes to " + secTxt + "s")
+            : ("the derived time only comes to " + secTxt + "s")) +
+          " against your " + tb.hi + "s target. Nothing was " +
           "timed here. Add reps or slow the cadence to reach it." };
+      }
+      /* THE SPAN IS PART TIMED, so it may neither claim a measured tempo
+         for the whole exercise nor say nothing was timed. It has a real
+         measurement AND a real gap in it, and the sentence names which.
+         Two forms, because the quoted set is either the timed one or the
+         untimed one and those say different true things. */
+      if (tb.basis === "mixed") {
+        if (wBasis === "measured") {
+          return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
+            ", but " + subjNoun + " ran " + secTxt + "s against a " +
+            tb.hi + "s time-under-load target" + sprFrag +
+            ". Not every set here was timed, so the rest are derived from " +
+            "your standard rather than measured. " + holdTail };
+        }
+        return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
+          ", but " + subjNoun + " was not timed" +
+          ((wReps != null && std != null)
+            ? (" -- " + wReps + row.unit + " at your " + std +
+               "s standard comes to " + secTxt + "s")
+            : (" -- its derived time is " + secTxt + "s")) +
+          " against your " + tb.hi + "s target. Other sets here were timed " +
+          "and this one was not, so this figure is your standard and not a " +
+          "measurement. Time every set before judging the cadence." };
       }
       /* THE TAIL IS GATED, AND THE GATE ABOVE DOES NOT COVER THIS PATH.
          noLoadSuggest is tested inside `if (row.ready)`, and this branch is
@@ -7385,13 +7621,11 @@
          THE DERIVED BRANCH NEEDS NO GATE and deliberately has none: it ends
          "Add reps or slow the cadence to reach it", which names no load
          change. Asserted, so nobody adds a gate there and calls it symmetry. */
+      /* ENTIRELY MEASURED -- the quoted figure and every other judged set.
+         This is the only state in which a measured tempo may be asserted. */
       return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
-        ", but the set ran " + Math.round(row.tulBar.sec) + "s against a " +
-        row.tulBar.hi + "s time-under-load target" +
-        (spr ? " -- " + (Math.round(spr * 10) / 10) + "s per rep" : "") +
-        (noLoadSuggest(row.id)
-          ? ". Hold the cadence -- " + NO_LOAD_TAIL + "."
-          : ". Hold the cadence before you add a band.") };
+        ", but " + subjNoun + " ran " + secTxt + "s against a " +
+        tb.hi + "s time-under-load target" + sprFrag + ". " + holdTail };
     }
     /* isStalled measures REPS only (the app's inherited rule for the in-workout
        badge). Under double progression, flat reps with RISING top load is load
@@ -8378,6 +8612,11 @@
          applies to them and both codes can reach them. The observation
          stays (the figure is real); only the load clause is swapped. */
       var cd = r.cadence;
+      /* `cd.measured` IS A COUNT OF SETS CONTAINING A MEASUREMENT since
+         2026-11-08 -- it is counted off t.phases.measured, not off the basis
+         string -- so this gate now means what it has always claimed to mean.
+         Before that fix it could be satisfied by a set with no measured
+         phase at all, and both codes below then said "timed". */
       if (cd && cd.measured > 0 && cd.meanTul != null) {
         /* A NUMERIC GUARD, NOT `|| null`. A truthiness test on a number
            would turn a stored 0 into null and silently disable the floor
@@ -8394,7 +8633,7 @@
             subject: r.name,
             detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + lo + "s floor)",
             text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
-              "across " + cd.measured + " timed set" + (cd.measured === 1 ? "" : "s") +
+              "across " + tulSpanPhrase(cd) +
               ", under your " + lo + "s floor. " +
               (gated ? capFirst(NO_LOAD_ADVICE) + "."
                      : "The band is heavy for your cadence -- " +
@@ -8404,7 +8643,7 @@
             subject: r.name,
             detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + hi + "s ceiling)",
             text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
-              "across " + cd.measured + " timed set" + (cd.measured === 1 ? "" : "s") +
+              "across " + tulSpanPhrase(cd) +
               ", over your " + hi + "s ceiling. " +
               (gated ? "Do not add load to dynamic neck work -- " +
                        "shorten the set instead."
@@ -8791,7 +9030,12 @@
         "counted as time under load. An em dash means no gap was recorded, " +
         "which is not the same as a gap of zero.",
         "BASIS MIXED means the span disagrees with itself: part of any change " +
-        "may be a change of instrument rather than a change in the lift."
+        "may be a change of instrument rather than a change in the lift.",
+        "BASIS of a plain `mixed`, with no MIXED prefix in front of it, is " +
+        "ONE SET that disagrees with itself: some of its phases were timed " +
+        "and the rest were derived from your standard. The row is not a " +
+        "comparison across sessions in that case -- the mixture is inside a " +
+        "single set."
       ] });
     }
 
@@ -10469,6 +10713,7 @@
     sumRes: sumRes,
     bandMid: bandMid,
     setSegments: setSegments,
+    collapseSegments: collapseSegments,
     setReps: setReps,
     setBands: setBands,
     setIntens: setIntens,
@@ -10493,6 +10738,7 @@
     tulBarState: tulBarState,
     tulBarReachable: tulBarReachable,
     cadenceSummary: cadenceSummary,
+    tulSpanPhrase: tulSpanPhrase,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
