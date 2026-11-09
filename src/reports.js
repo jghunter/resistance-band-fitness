@@ -5233,11 +5233,11 @@
      objected to. Callers that print a gap must print both. */
   function setTul(set, ctx) {
     var segs = setSegments(set);
-    var sec = 0, m = 0, d = 0, z = 0, whys = [];
+    var sec = 0, mSec = 0, m = 0, d = 0, z = 0, whys = [];
     var gapTotal = 0, gapsRec = 0;
     segs.forEach(function (g, i) {
       var t = phaseTul(g, set, ctx);
-      if (t.basis === "measured") { m++; sec += t.sec; }
+      if (t.basis === "measured") { m++; sec += t.sec; mSec += t.sec; }
       else if (t.basis === "derived") { d++; sec += t.sec; }
       else { z++; whys.push("phase " + (i + 1) + ": " + t.why); }
       /* i > 0 ONLY. There is nothing before the first phase, so a gapSec
@@ -5252,6 +5252,18 @@
     else basis = "derived";
     return {
       sec: (basis === "none") ? null : sec,
+      /* THE MEASURED SECONDS ALONE, or null when nothing was timed.
+         `sec` is the WHOLE set and mixes bases on purpose: the ANALYZE table
+         prints it beside explicit TIMED and DERIVED counts and a BASIS
+         column, so a reader there can see what the figure is made of.
+         THE HISTORY LINE HAS NO SUCH ROOM. A two-phase set with one phase
+         timed at 47s returns sec 113 -- 47 measured plus 66 assumed from the
+         cadence standard -- and printing 113 on a one-line summary claims a
+         set was timed when more than half of it was not. So the suffix reads
+         this field and the tilde says the rest is missing.
+         ADDITIVE ONLY: no existing consumer reads this name, and `sec`,
+         `basis` and `phases` are byte-for-byte what they were. */
+      measuredSec: m ? mSec : null,
       basis: basis,
       phases: { measured: m, derived: d, unresolved: z },
       gapTotalSec: gapTotal,

@@ -714,6 +714,61 @@ const nextSide = (cur) => cur == null ? 'L' : (cur === 'L' ? 'R' : null)
 // reps done after the full reps. Display-only — never counted in progression,
 // sseReps, or volume-load.
 const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
+/* The time-under-load suffix for a LOGGED set, in HISTORY and in the TODAY
+   card's LAST preview. One helper so those sites cannot drift -- the reason
+   partialsSfx sits beside it.
+
+   SILENT WHEN NOTHING TIMED THE SET, like BodyweightWidget: every set logged
+   before 2026-11-07 has no time, and a "0s" on each of them would be a claim
+   rather than a blank. The test is `phases.measured`, not the basis string,
+   because an untimed set does NOT come back with basis "none" -- measured
+   2026-11-08, it comes back DERIVED with a full `sec`, since the cadence
+   standard can price any rep count. A basis test of "not none" would print a
+   number for three months of history nobody timed.
+
+   IT PRINTS `measuredSec`, NEVER `sec`. A two-phase set with one phase timed
+   at 47s returns sec 113: 47 measured plus 66 assumed. The tilde says a phase
+   is missing; it does not license putting the assumed seconds inside the
+   figure.
+
+   A HOLD IS REFUSED OUTRIGHT. For ids 71, 72, 166, 181, 182 and 184 the reps
+   field IS seconds and renders as "30s", so a second seconds figure beside it
+   reads "30s 47s" -- two times for one set, meaning different things. Task 11
+   withholds the timer from a hold, so the app itself cannot produce this, but
+   a hand-edited or imported entry can, and this is the display that would
+   show it. */
+function tulSfx(s, exId) {
+  if (!s) return ''
+  if (RBTS_REPORTS.isTimeBased(exId)) return ''
+  const t = RBTS_REPORTS.setTul(s, cadCtx())
+  if (!t.phases.measured) return ''
+  let out = ' ' + Math.round(t.measuredSec) + 's'
+  if (t.phases.derived || t.phases.unresolved) out += '~'
+  if (t.gapsRecorded > 0) out += ' (+' + Math.round(t.gapTotalSec) + 's gap)'
+  return out
+}
+/* The per-rep cadence for a LOGGED set, or "". Measured phases only --
+   actualCadence returns null for a derived phase on purpose, because a
+   derived time IS reps times the standard, so dividing it by the reps
+   returns the standard and would report perfect adherence for a set nobody
+   timed.
+
+   PHASE 0 AND ONLY PHASE 0, AND THAT IS DELIBERATE. `workingSetOf` judges an
+   intensifier set on its FIRST PHASE, so the cadence reported for the set is
+   the cadence of the phase the progression judgment is made on. Do not
+   average the phases here: the suffix would then disagree with the READY
+   badge rendered beside it. */
+function cadSfx(s, exId) {
+  if (!s) return ''
+  if (RBTS_REPORTS.isTimeBased(exId)) return ''
+  const segs = RBTS_REPORTS.setSegments(s)
+  const a = RBTS_REPORTS.actualCadence(segs[0] || {}, s, cadCtx())
+  if (a == null) return ''
+  const std = secPerRepNow()
+  const flag = RBTS_REPORTS.cadenceFlag(a, std)
+  return ' ' + (Math.round(a * 10) / 10) + 's/rep' +
+    (flag === 'fast' ? ' FAST' : flag === 'slow' ? ' SLOW' : '')
+}
 // ── Per-side (L/R) seeding ──
 // The rule lives in RBTS_REPORTS so both apps share ONE copy and node can test
 // it — see rbts_reports.js and test_unilateral_gear.cjs. EX_UNILATERAL is
@@ -2712,7 +2767,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               const b = BANDS.find(x=>x.id===bid)
               return b ? `${b.brand.split(' ')[0]} ${b.color} ${b.model} (${b.res}lbs)` : '?'
             }).join(' + ')
-            return <span key={i}>{setRepsOf(s)}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
+            return <span key={i}>{setRepsOf(s)}r{partialsSfx(s)}{tulSfx(s,id)}{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
           })}
         </div>
       )}
@@ -3769,6 +3824,75 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
           </div>
         ))}
       </div>
+
+      {/* ── CADENCE AND TIME UNDER LOAD ──────────────────── */}
+      {(() => {
+        /* SILENT WHEN NOTHING IS TIMED AND NOTHING DERIVES. Every window
+           logged before 2026-11-07 is in that state, and a table of em
+           dashes is not information -- BodyweightWidget's rule. */
+        const rows = (res.exercises||[]).filter(r =>
+          r.cadence && r.cadence.n > 0 && r.cadence.meanTul != null)
+        if (!rows.length) return null
+        return (
+          <div style={{...widget, marginBottom:12}}>
+            <div style={lbl}>CADENCE AND TIME UNDER LOAD</div>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+              margin:'2px 0 8px 0',lineHeight:1.6,maxWidth:520}}>
+              ACTUAL CADENCE is the measured time divided by the reps, over
+              TIMED phases only — a derived time is the rep count times your
+              standard, so averaging it in would report perfect adherence for
+              a set nobody timed. MEAN TUL is the whole set and DOES include
+              derived phases, which is why TIMED and DERIVED are counted
+              beside it. MEAN GAP is unloaded time between the phases of a
+              set and is never counted as time under load; an em dash means
+              none was recorded, which is not a gap of zero.
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <table style={{borderCollapse:'collapse',fontFamily:'monospace',fontSize:10}}>
+                <thead><tr>
+                  {['EXERCISE','SETS','TIMED','DERIVED','MEAN TUL',
+                    'ACTUAL CADENCE','VS STANDARD','MEAN GAP','BASIS'].map(h => (
+                    <th key={h} style={{textAlign:'left',padding:'3px 8px',
+                      color:C.dimGray,borderBottom:'1px solid '+C.dimGray}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {rows.map(r => {
+                    const c = r.cadence
+                    const fc = c.flag === 'ok' ? C.green
+                             : c.flag ? C.amber : C.dimGray
+                    return (
+                      <tr key={r.id}>
+                        <td style={{padding:'3px 8px',color:C.text}}>{r.name}</td>
+                        <td style={{padding:'3px 8px',color:C.textSec}}>{c.n}</td>
+                        <td style={{padding:'3px 8px',color:c.measured?C.green:C.dimGray}}>{c.measured}</td>
+                        <td style={{padding:'3px 8px',color:C.dimGray}}>{c.derived}</td>
+                        <td style={{padding:'3px 8px',color:C.readout}}>{c.meanTul}s</td>
+                        <td style={{padding:'3px 8px',color:fc}}>
+                          {c.meanActual == null ? '—'
+                            : c.meanActual+'s/rep over '+c.measuredPhases}
+                        </td>
+                        <td style={{padding:'3px 8px',color:fc}}>
+                          {(c.meanActual == null || c.std == null) ? '—'
+                            : c.std+'s '+String(c.flag||'').toUpperCase()}
+                        </td>
+                        <td style={{padding:'3px 8px',color:C.textSec}}>
+                          {c.meanGap == null ? '—' : c.meanGap+'s × '+c.gapsRecorded}
+                        </td>
+                        <td style={{padding:'3px 8px',
+                          color:c.mix.mixed?C.amber:C.dimGray}}>
+                          {c.mix.mixed ? '≠ '+c.mix.bases.join('+')
+                                       : (c.mix.bases[0]||'—')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
 
       {(() => {
         /* ── BY EXERCISE ──────────────────────────────────────────────────
@@ -6952,6 +7076,19 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                         <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
                           <span style={{color:C.dimGray}}>S{i+1} </span>
                           <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}</span>
+                          {tulSfx(s,exId) && (
+                            <span style={{fontFamily:'monospace',fontSize:10,color:C.readout}}
+                              title="Measured time under load. A tilde means a phase of this set was not timed and its seconds are NOT included. A gap is unloaded time between phases and is never counted as time under load.">
+                              {tulSfx(s,exId)}
+                            </span>
+                          )}
+                          {cadSfx(s,exId) && (
+                            <span style={{fontFamily:'monospace',fontSize:10,
+                              color:/FAST|SLOW/.test(cadSfx(s,exId))?C.amber:C.green}}
+                              title="Measured seconds divided by reps, for the first phase of the set -- the phase the progression judgment is made on.">
+                              {cadSfx(s,exId)}
+                            </span>
+                          )}
                           {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                           {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
                           {/* The fold, 2026-09-21. Matches fitness_app.html's
