@@ -164,9 +164,14 @@
   var NO_LOAD_SUGGEST = [177, 178, 179];
   function noLoadSuggest(id) { return NO_LOAD_SUGGEST.indexOf(Number(id)) >= 0; }
   /* ONE WORDING, used by every surface that would otherwise say "add a band",
-     so the four of them cannot drift. */
-  var NO_LOAD_ADVICE = "add a rep or hold it longer -- do not add load to " +
-    "dynamic neck work";
+     so they cannot drift. NO_LOAD_TAIL is the half that is a PROHIBITION
+     rather than a suggestion, split out 2026-11-09 because a FIFTH surface
+     needed the prohibition without the "add a rep" half: READY_BUT_FAST is
+     about a set that ran too FAST, where "add a rep" is not the remedy.
+     Two spellings of one rule is the defect this project keeps paying for,
+     so the two constants are built from one string and not typed twice. */
+  var NO_LOAD_TAIL = "do not add load to dynamic neck work";
+  var NO_LOAD_ADVICE = "add a rep or hold it longer -- " + NO_LOAD_TAIL;
   /* progressReps is the PROFILE's target (ctx.progressReps). Omit it and the
      CONST fallback applies. Time-based exercises always use PROG_SECS. */
   function threshOf(id, progressReps) {
@@ -7273,11 +7278,30 @@
           "s against your " + row.tulBar.hi + "s target. Nothing was " +
           "timed here. Add reps or slow the cadence to reach it." };
       }
+      /* THE TAIL IS GATED, AND THE GATE ABOVE DOES NOT COVER THIS PATH.
+         noLoadSuggest is tested inside `if (row.ready)`, and this branch is
+         reached only when row.ready is FALSE -- so that gate sits above a
+         path it cannot see. Measured 2026-11-09: ids 177, 178 and 179 all
+         reached here and were told "Hold the cadence before you add a band",
+         which is load advice on dynamic neck work and is exactly what
+         NO_LOAD_SUGGEST exists to prevent.
+
+         A GATE PLACED INSIDE ONE BRANCH DOES NOT PROTECT A BRANCH ADDED
+         LATER BESIDE IT. The gate above says in its own comment that it
+         lives there because the READY recommendation reuses its text -- true
+         when written, and then this verdict was added beside it reusing
+         nothing. Four surfaces had been gated; this was the fifth.
+
+         THE DERIVED BRANCH NEEDS NO GATE and deliberately has none: it ends
+         "Add reps or slow the cadence to reach it", which names no load
+         change. Asserted, so nobody adds a gate there and calls it symmetry. */
       return { code: "READY_BUT_FAST", text: "Hit the " + phrase +
         ", but the set ran " + Math.round(row.tulBar.sec) + "s against a " +
         row.tulBar.hi + "s time-under-load target" +
         (spr ? " -- " + (Math.round(spr * 10) / 10) + "s per rep" : "") +
-        ". Hold the cadence before you add a band." };
+        (noLoadSuggest(row.id)
+          ? ". Hold the cadence -- " + NO_LOAD_TAIL + "."
+          : ". Hold the cadence before you add a band.") };
     }
     /* isStalled measures REPS only (the app's inherited rule for the in-workout
        badge). Under double progression, flat reps with RISING top load is load
@@ -10224,6 +10248,7 @@
     NO_LOAD_SUGGEST: NO_LOAD_SUGGEST,
     noLoadSuggest: noLoadSuggest,
     NO_LOAD_ADVICE: NO_LOAD_ADVICE,
+    NO_LOAD_TAIL: NO_LOAD_TAIL,
     isExempt: isExempt,
     isTimeBased: isTimeBased,
     threshOf: threshOf,
