@@ -8595,7 +8595,46 @@
         recs.push({ severity: 5, code: "READY", scope: "exercise",
           subject: r.name, text: r.name + ": " + r.verdict.text });
       } else if (r.verdict.code === "EX_DORMANT") {
-        recs.push({ severity: 4, code: "EX_DORMANT", scope: "exercise",
+        /* SEVERITY 6, NOT 4 -- GREG'S DECISION, 2026-11-08, AND THE NUMBERS
+           THAT DROVE IT. Measured on his own 94-entry log with
+           `node measure_rec_mix.mjs <export>`:
+
+             window    recs   EX_DORMANT   READY   first READY at rank
+             30 days     59      27          21            35
+             90 days     81      49          21            64 (ALL TIME)
+             all time    87      55          21            64
+
+           At severity 4 this code outranked READY at 5, so ALL TWENTY-ONE of
+           his ready-to-progress lifts lost their slot on EVERY window. "Hit
+           the target, progress the load" is the most directly actionable
+           thing this module produces and none of it was visible. The spec had
+           assumed 35 recommendations on a 90-day window; the real figure is
+           81.
+
+           WHY ONE VALUE MOVED AND NOT TWO. The obvious reading of "swap them"
+           is READY -> 4 and EX_DORMANT -> 5, and that is WORSE in two ways.
+           It would tie EX_DORMANT with all five cadence codes, which are also
+           at 5 -- so the moment he starts timing sets, 55 dormancy notices
+           would bury TUL_SHORT and CADENCE_SLOW exactly as they buried READY,
+           the same defect one level down. And it would tie READY with UNDER
+           and UNDER_PROGRAM at group level, changing a relationship nobody
+           asked to change. Moving THIS code alone achieves what was asked,
+           protects the cadence codes by the same reasoning, and leaves every
+           other code's relative order untouched.
+
+           6 IS THE RIGHT COMPANY. It already holds UNLOGGED, which is this
+           code's sibling -- "in your program and never logged" beside "logged
+           and not lately" -- plus NEGLECTED and a stalled isolation lift.
+           What separates 6 from 4 is not importance but COUNT: a severity-4
+           code names a specific thing to fix, while this one fires in bulk on
+           any large catalog. Fifty-five pieces of information must not bury
+           twenty-one actions.
+
+           NOT A CAP CHANGE. REC_CAP became a ranking rather than a filter on
+           2026-10-07 precisely so nothing is discarded silently, and the
+           overflow is already counted and shown. Raising it would hide the
+           ordering problem instead of fixing it. */
+        recs.push({ severity: 6, code: "EX_DORMANT", scope: "exercise",
           subject: r.name, text: r.name + ": " + r.verdict.text });
       }
       /* ---- CADENCE AND TIME UNDER LOAD (2026-11-07) --------------------
