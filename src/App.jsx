@@ -6382,11 +6382,19 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     setAt(prev => { const n = { ...prev }; delete n[id]; return n })
     /* The other THREE maps this editor holds, added 2026-10-21. They were
        orphaned here while this app's in-session removeEx already cleared all
-       six. Remove an exercise and re-add it -- one click away, the ADD form
-       is right there -- and it would inherit the removed one's opening, band
-       path and press setup. None of the three is inert: all three are PRICING
-       inputs, so the re-added exercise would be stamped against a rig nobody
-       chose. Mirrors fitness_app.html. */
+       six. All three are PRICING inputs keyed by exercise id, so leaving one
+       behind saves an entry that still names a rig for a lift the session no
+       longer contains.
+       THIS COMMENT WAS WRONG UNTIL 2026-11-09. It said the removed exercise
+       was "one click away, the ADD form is right there". IT IS NOT. THIS
+       EDITOR CANNOT ADD AN EXERCISE AT ALL -- its controls are + SET,
+       + PHASE / DROP, REMOVE EX, the two removals, SAVE CHANGES, CANCEL and
+       DELETE SESSION, and this app has no LOG PAST SESSION form either. The
+       sentence was written for the in-session card, where it is true, and
+       copied to a place it does not describe. Greg found it while reading
+       browser check 30, which had inherited the same false assumption and
+       told him to add an exercise here. The clearing above is still right --
+       only the reason given for it was wrong. Mirrors fitness_app.html. */
     setOp(prev => { const n = { ...prev }; delete n[id]; return n })
     setBp(prev => { const n = { ...prev }; delete n[id]; return n })
     setPs(prev => { const n = { ...prev }; delete n[id]; return n })
