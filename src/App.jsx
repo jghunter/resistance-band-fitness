@@ -3867,7 +3867,16 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                         <td style={{padding:'3px 8px',color:C.textSec}}>{c.n}</td>
                         <td style={{padding:'3px 8px',color:c.measured?C.green:C.dimGray}}>{c.measured}</td>
                         <td style={{padding:'3px 8px',color:C.dimGray}}>{c.derived}</td>
-                        <td style={{padding:'3px 8px',color:C.readout}}>{c.meanTul}s</td>
+                        <td style={{padding:'3px 8px',color:C.readout}}>
+                          {/* THE SAME FORMATTER THE PRINTED REPORT USES, not a round of our
+                              own. cadenceSummary rounds meanTul and meanGap to TWO
+                              DECIMALS, so this cell showed 47.33s where the printed
+                              CADENCE AND TIME UNDER LOAD table showed 47s -- two
+                              figures for one mean, on two surfaces, which is the
+                              defect the SETS column and the BEST SET LOAD card were
+                              both fixed for. Calling the engine's own fmtNum means
+                              they cannot disagree rather than happening to agree. */}
+                        {RBTS_REPORTS.fmtNum(c.meanTul)}s</td>
                         <td style={{padding:'3px 8px',color:fc}}>
                           {c.meanActual == null ? '—'
                             : c.meanActual+'s/rep over '+c.measuredPhases}
@@ -3877,7 +3886,8 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                             : c.std+'s '+String(c.flag||'').toUpperCase()}
                         </td>
                         <td style={{padding:'3px 8px',color:C.textSec}}>
-                          {c.meanGap == null ? '—' : c.meanGap+'s × '+c.gapsRecorded}
+                          {c.meanGap == null ? '—'
+                            : RBTS_REPORTS.fmtNum(c.meanGap)+'s × '+c.gapsRecorded}
                         </td>
                         <td style={{padding:'3px 8px',
                           color:c.mix.mixed?C.amber:C.dimGray}}>

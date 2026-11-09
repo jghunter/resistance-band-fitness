@@ -172,6 +172,21 @@
      so the two constants are built from one string and not typed twice. */
   var NO_LOAD_TAIL = "do not add load to dynamic neck work";
   var NO_LOAD_ADVICE = "add a rep or hold it longer -- " + NO_LOAD_TAIL;
+
+  /* CAPITALISE A SHARED PHRASE THAT MUST START A SENTENCE.
+     NO_LOAD_ADVICE is written lowercase because its first two call sites join
+     it with a dash -- "READY TO PROGRESS - add a rep ..." and "Hit the 12r
+     target - add a rep ...". TUL_SHORT's gated branch starts a NEW sentence
+     with it, and read "... under your 60s floor. add a rep or hold it
+     longer", which looks like a typo in advice Greg reads on a recommendation
+     row (found in Task 13's review, 2026-11-08).
+     THE TWO ALTERNATIVES ARE BOTH WORSE. Capitalising the constant breaks the
+     two dash sites. Spelling the phrase out again at the third site is how two
+     copies of one sentence come to disagree -- the whole reason NO_LOAD_TAIL
+     was split out of NO_LOAD_ADVICE in the first place. */
+  function capFirst(t) {
+    return t ? (t.charAt(0).toUpperCase() + t.slice(1)) : t;
+  }
   /* progressReps is the PROFILE's target (ctx.progressReps). Omit it and the
      CONST fallback applies. Time-based exercises always use PROG_SECS. */
   function threshOf(id, progressReps) {
@@ -8381,7 +8396,7 @@
             text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
               "across " + cd.measured + " timed set" + (cd.measured === 1 ? "" : "s") +
               ", under your " + lo + "s floor. " +
-              (gated ? NO_LOAD_ADVICE + "."
+              (gated ? capFirst(NO_LOAD_ADVICE) + "."
                      : "The band is heavy for your cadence -- " +
                        "drop to a lighter stack and hold the tempo.") });
         } else if (hi != null && cd.meanTul > hi) {
@@ -8749,8 +8764,16 @@
             String(c.measured),
             String(c.derived),
             fmtNum(c.meanTul) + "s",
-            /* AN EM DASH, NEVER A ZERO. An absent figure is not a small one,
-               the rule the % OF BEST column already follows. */
+            /* A DASH, NEVER A ZERO. An absent figure is not a small one,
+               the rule the % OF BEST column already follows.
+               AN ASCII HYPHEN, NOT AN EM DASH, and deliberately: every other
+               column in this document uses one -- see MUSCLE GROUP DETAIL's
+               LANDMARK and LAST TRAINED directly above. The ON-SCREEN table
+               uses a true em dash, because that surface uses them throughout.
+               The comment said "em dash" here until 2026-11-08 while the code
+               emitted a hyphen; the CODE was right. A comment that is wrong
+               about correct code is the dangerous direction -- it invites the
+               next session to "fix" the code to match it. */
             c.meanActual == null ? "-"
               : (c.meanActual + "s/rep over " + c.measuredPhases),
             (c.meanActual == null || c.std == null) ? "-"
