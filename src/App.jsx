@@ -6794,10 +6794,24 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   )
 }
 
-/* `settings` and `onChangeSettings` are here for ONE field: settings.splitId,
-   the split override. It decides which sessions every training day prescribes
-   and rode neither app's export until 2026-10-21 -- and this app has only a
-   MERGE, so the import below has to ask before changing a prescription. */
+/* `settings` is here for FOUR fields and `onChangeSettings` for ONE.
+
+   EXPORTED: splitId, startDate, schedule and progIdx -- the four keys that
+   decide what a training day prescribes and when the rotation starts. The
+   split override has ridden the export since 2026-10-21; the other three were
+   added 2026-11-09 on Greg's ruling, after a measured comparison showed this
+   app's export carried 11 top-level keys against the HTML app's 18 and
+   explained every omission but those three.
+
+   WRITTEN BACK: splitId alone, through onChangeSettings, and this app has only
+   a MERGE -- no REPLACE ALL -- so that import has to ask before it changes a
+   prescription. The other three are exported and never imported here, which is
+   the half of the question still waiting on Greg.
+
+   (This comment said `settings` was here for ONE field until 2026-11-09. It
+   was true when written and the export change made it false in the same
+   commit; a prop list is exactly where a stale count misleads the next
+   reader.) */
 function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user, onProgramsChanged, settings, onChangeSettings }) {
   const uid = user ? user.uid : null
   const [fromDate, setFromDate] = useState('')
@@ -6873,6 +6887,51 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
          cannot read as a deliberate wipe on import. */
       ...(Object.keys(getLocalBandGeom()).length ? { rbts_bandGeom: getLocalBandGeom() } : {}),
       ...(getLocalBodyweight().length ? { rbts_bodyweight: getLocalBodyweight() } : {}),
+      /* THE THREE SCHEDULE KEYS, in this app's export since 2026-11-09 and in
+         NONE before it -- GREG'S RULING, after a browser run measured the two
+         exports side by side on the same data: 18 top-level keys from
+         fitness_app.html against 11 from here. Four of the seven differences
+         are explained in the comments around this object and are right; these
+         three were absent with no comment at all, which is what made them
+         conspicuous next to an export that justifies every other omission.
+
+         THE ARGUMENT IS THE ONE rbts_splitId MAKES DIRECTLY BELOW, word for
+         word. These keys sync between THIS app's devices (settings reaches
+         users/{uid}/meta/settings), but fitness_app.html has NO Firestore and
+         the file is the only route between the two apps -- so without these
+         lines, changing your schedule or your program HERE reached that app by
+         no route at all. A desktop-to-phone transfer carried all three and a
+         phone-to-desktop transfer dropped them; that asymmetry was the shape
+         of the problem.
+
+         THE FILE CARRIES THE VALUE, NOT THE STORAGE ENCODING, and here that
+         needs no work: these come from getLocalSettings, which reads through
+         lsGet and therefore JSON.parses, so the strings are already bare.
+         fitness_app.html had to strip its own quotes on 2026-10-23 for the
+         same reason -- its export shipped lsGet's RAW result, and a quoted
+         value read by the other app is the defect that cost the split
+         override. Do not add a stringify step here to "match" that one: the
+         two apps now agree on the file format, and it is the bare value.
+
+         `|| '0'` ON progIdx IS NOT COSMETIC AND IS NOT A ZERO-GUARD -- it
+         matches fitness_app.html's own export line exactly, because that
+         app's REPLACE ALL guard is a bare truthiness test on the value. A
+         number 0 is FALSY there, so exporting index 0 as a number would mean
+         the first program in the list never restores, silently, while every
+         other index does. Its own export writes the string "0" for precisely
+         this reason. The value is a BARE ARRAY INDEX into PROGRAMS, so it
+         only names the same program when both devices hold the same
+         custom-program tail -- rbts_customPrograms rides this same file, and
+         REPLACE ALL stores both before it asks for the reload that reads them.
+
+         READ IN ONE DIRECTION ONLY, DELIBERATELY. This export is what Greg
+         asked for; whether a merge INTO this app should apply the three, ask
+         first, or only fill in what is missing is still his call, so the
+         merge below reads rbts_splitId alone and leaves these three untouched
+         on this device. A reader must not assume the symmetry. */
+      rbts_startDate: settings.startDate || '',
+      rbts_schedule:  settings.schedule  || '',
+      rbts_progIdx:   settings.progIdx   || '0',
       /* THE SPLIT OVERRIDE, in a backup since 2026-10-21 and in NONE before
          that. It decides which sessions every training day prescribes. It does
          sync between this app's devices (settings reaches
