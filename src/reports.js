@@ -7152,6 +7152,28 @@
     if (p == null || !isFinite(p)) return "-";
     return (p >= 0 ? "+" : "") + Math.round(p) + "%";
   }
+  /* WHY a delta is absent, said where the delta would have been (N7,
+     2026-11-10). deltaPct is null exactly when the window holds fewer than
+     two priced sessions for the lift. STRENGTH fills that gap by carrying a
+     start in from before the window and footnoting it; analyzeExercises
+     REFUSES to, because its verdict quotes deltaPct inside a sentence that
+     names the window. Both are right -- but only one tab said anything, so
+     the same lift read +6% on one screen and a bare dash on the other.
+     24 of 75 rows on Greg's 30-day window. The refusal stays; the silence
+     goes.
+
+     ONE function for every surface. `short` is the printed table's cell
+     form -- the same count with fewer words -- so the page and the print can
+     disagree about room, never about the reason. The count falls back to 0
+     rather than NaN on a row with no nLoaded at all, for the same reason
+     tulMeasuredPhrase guards its denominator: a hand-built row has not said
+     how many sessions it priced. */
+  function deltaAbsentPhrase(row, opts) {
+    if (!row || row.deltaPct != null) return "";
+    var n = finitePosNum(row.nLoaded) ? row.nLoaded : 0;
+    if (opts && opts.short) return "- (" + n + " priced)";
+    return n + " priced session" + (n === 1 ? "" : "s") + " in this window";
+  }
   /* One text line per set: intensifier, RIR, reps (+partials), side, bands,
      the FOLD, summed resistance. Drop-set segments become their own indented
      lines so the printed log shows the same shape the on-screen card does.
@@ -9622,7 +9644,14 @@
           r.name + " (#" + r.id + ")",
           String(r.n),
           fmtLb(r.firstTop) + " -> " + fmtLb(r.lastTop),
-          fmtDelta(r.deltaPct),
+          /* THE REASON, NOT A BARE DASH (N7, 2026-11-10). STRENGTH states a
+             carried figure for the same lift in the same window, so this
+             cell's dash read as a disagreement between the tabs. The cell
+             form carries the SAME count as the on-screen phrase through ONE
+             function, so the print and the page cannot name different
+             reasons. */
+          r.deltaPct == null ? deltaAbsentPhrase(r, { short: true })
+                             : fmtDelta(r.deltaPct),
           /* A PRINTED REPORT CANNOT DIM, so the staleness that is a colour
              on screen has to be a WORD here (N9, 2026-11-10). Without it
              the printed table is the one surface still saying a record
@@ -11351,6 +11380,7 @@
     fmtNum: fmtNum,
     fmtLb: fmtLb,
     fmtDelta: fmtDelta,
+    deltaAbsentPhrase: deltaAbsentPhrase,
     setLines: setLines,
     rangeExTable: rangeExTable,
     foldLabel: foldLabel,

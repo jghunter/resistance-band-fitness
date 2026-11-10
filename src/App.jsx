@@ -4090,8 +4090,15 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
             <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
               <span style={{...pill(exGroup(Number(r.id)).color), fontSize:9}}>{r.group}</span>
               <span style={{fontFamily:'monospace',fontSize:12,color:C.text}}>{r.name}</span>
+              {/* THE REASON REPLACES THE DASH when there is no delta (N7,
+                  2026-11-10). STRENGTH carries a start in from before the
+                  window and footnotes it; this tab refuses to, because its
+                  verdict quotes deltaPct inside a sentence that names the
+                  window -- so the same lift read +6% there and a bare dash
+                  here, with nothing saying why. The phrase is the ENGINE's,
+                  so the two apps and the printed report name one reason. */}
               <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
-                {r.n}× · {R2.fmtLb(r.firstTop)}→{R2.fmtLb(r.lastTop)} lb · {R2.fmtDelta(r.deltaPct)}
+                {r.n}× · {R2.fmtLb(r.firstTop)}→{R2.fmtLb(r.lastTop)} lb · {r.deltaPct == null ? R2.deltaAbsentPhrase(r) : R2.fmtDelta(r.deltaPct)}
               </span>
               {/* PRICED OF LOGGED, inline. The verdict text already says it for
                   INSUFFICIENT_N, HOLDING and EX_UNPRICED; every other verdict
