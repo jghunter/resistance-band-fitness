@@ -5271,11 +5271,41 @@
      effectiveLoad's standing rule: blaming the wrong one sends someone to
      re-measure a figure that was fine. The CADENCE is named first when both
      are missing, because it is the one a settings screen can fix. */
-  function phaseTul(phase, set, ctx) {
+  function phaseTul(phase, set, ctx, exId) {
     var cad = cadenceOf(phase, set, ctx);
     var spr = cad ? cad.secPerRep : null;
     if (finitePosNum(phase && phase.tulSec)) {
       return { sec: phase.tulSec, basis: "measured", secPerRep: spr, why: null };
+    }
+    /* A HOLD'S `reps` FIELD IS ALREADY SECONDS, so its time under load IS
+       that figure and NOTHING IS DERIVED (2026-11-09).
+
+       WITHOUT THIS BRANCH THE FIGURE WAS WRONG ELEVENFOLD. Falling through
+       to the derive step multiplied the seconds by the cadence standard, so a
+       45-second plank reported 495 seconds under load -- eight and a quarter
+       minutes -- on ANALYZE in both apps and in both COPY .md outputs. Found
+       in a browser on 2026-11-09; Greg's log contains no hold in 94 sessions,
+       so no surface he reads had ever shown one.
+
+       `basis` IS "measured", AND THAT IS THE SECOND HALF OF THE FIX. The old
+       answer was "derived" -- "nobody timed this" -- about the one exercise
+       type whose rep field IS a stopwatch reading. A hold is the most
+       directly measured set in the log.
+
+       BEFORE THE `!cad` TEST, DELIBERATELY: a hold needs no cadence at all,
+       so it must resolve on a profile that has never set one. Putting this
+       after would make every hold report basis "none" on a fresh install.
+
+       `secPerRep` IS NULL, never sec/reps. Seconds divided by seconds is 1
+       and means nothing; `actualCadence` refuses a hold for the same reason. */
+    if (isTimeBased(exId)) {
+      var held = (phase && phase.reps) || 0;
+      if (!finitePosNum(held)) {
+        return { sec: null, basis: "none", secPerRep: null,
+                 why: "this hold has no logged seconds, so it has no time " +
+                      "under load" };
+      }
+      return { sec: held, basis: "measured", secPerRep: null, why: null };
     }
     if (!cad) {
       return { sec: null, basis: "none", secPerRep: null,
@@ -5313,12 +5343,12 @@
      `gapsRecorded`: 0 recorded out of 1 expected means NOT RECORDED, never
      "the band change took no time" -- which is precisely the claim Greg
      objected to. Callers that print a gap must print both. */
-  function setTul(set, ctx) {
+  function setTul(set, ctx, exId) {
     var segs = setSegments(set);
     var sec = 0, mSec = 0, m = 0, d = 0, z = 0, whys = [];
     var gapTotal = 0, gapsRec = 0;
     segs.forEach(function (g, i) {
-      var t = phaseTul(g, set, ctx);
+      var t = phaseTul(g, set, ctx, exId);
       if (t.basis === "measured") { m++; sec += t.sec; mSec += t.sec; }
       else if (t.basis === "derived") { d++; sec += t.sec; }
       else { z++; whys.push("phase " + (i + 1) + ": " + t.why); }
@@ -5378,8 +5408,14 @@
      standard and would report perfect adherence for a set nobody timed.
      That would be a confident wrong answer, which this module does not
      ship. Returns null instead. */
-  function actualCadence(phase, set, ctx) {
-    var t = phaseTul(phase, set, ctx);
+  function actualCadence(phase, set, ctx, exId) {
+    /* A HOLD HAS NO PER-REP CADENCE, and since 2026-11-09 it has to be said
+       here rather than left to the callers. A hold's time is now MEASURED, so
+       the basis test below no longer excludes it, and seconds divided by the
+       same seconds is 1.0 -- a confident figure meaning nothing. Both apps'
+       `cadSfx` already refused a hold; this closes the hole behind them. */
+    if (isTimeBased(exId)) return null;
+    var t = phaseTul(phase, set, ctx, exId);
     if (t.basis !== "measured") return null;
     var reps = (phase && phase.reps) || 0;
     if (!finitePosNum(reps)) return null;
@@ -5495,7 +5531,7 @@
     var worst = null, worstOf = null, nJudged = 0;
     var anyNone = false, whys = [], bases = {};
     list.forEach(function (s) {
-      var t = setTul(s, ctx);
+      var t = setTul(s, ctx, exId);
       bases[t.basis] = 1;
       if (t.basis === "none") { anyNone = true; if (t.why) whys.push(t.why); return; }
       nJudged++;
@@ -5546,7 +5582,7 @@
         sec: wTul.sec,
         measuredSec: wTul.measuredSec,
         reps: finitePosNum(wSet && wSet.reps) ? wSet.reps : null,
-        secPerRep: actualCadence(wSet, wSet, ctx),
+        secPerRep: actualCadence(wSet, wSet, ctx, exId),
         stdSecPerRep: wCad ? wCad.secPerRep : null,
         ofPhases: finitePosNum(wSet && wSet.ofPhases) ? wSet.ofPhases : 1
       }
@@ -5630,7 +5666,7 @@
       if (!sets || !sets.length) return;
       sets.forEach(function (s) {
         n++;
-        var t = setTul(s, ctx);
+        var t = setTul(s, ctx, exId);
         points.push({ basis: t.basis });
         if (t.basis === "none") { z++; return; }
         /* THE TIMED COLUMN COUNTS MEASURED PHASES, NEVER THE BASIS STRING.
@@ -5651,7 +5687,7 @@
         tulSum += t.sec; tulN++;
         if (t.gapsRecorded > 0) { gapSum += t.gapTotalSec; gapN += t.gapsRecorded; }
         setSegments(s).forEach(function (g) {
-          var a = actualCadence(g, s, ctx);
+          var a = actualCadence(g, s, ctx, exId);
           if (a != null) { actSum += a; actN++; }
         });
       });
@@ -8656,7 +8692,22 @@
          string -- so this gate now means what it has always claimed to mean.
          Before that fix it could be satisfied by a set with no measured
          phase at all, and both codes below then said "timed". */
-      if (cd && cd.measured > 0 && cd.meanTul != null) {
+      /* A HOLD GETS NEITHER CODE, and that is the SAME rule the time bar
+         already follows -- see tulBarApplies, case 2: a hold's reps field
+         already holds SECONDS and threshOf already judges it against
+         PROG_SECS. "That IS its time bar; a second, different seconds bar
+         would be incoherent."
+
+         IT HAD TO BE SAID TWICE BECAUSE THE GATE WAS NEVER HERE (2026-11-09).
+         Until the same day, a hold's time came back basis "derived", so
+         `cd.measured` was 0 and this branch could not be reached for one by
+         accident. Making a hold MEASURED -- which it is -- opened the door,
+         and a 45-second plank would have been told it was "under your 60s
+         floor. The band is heavy for your cadence" in the same report that
+         told it "Hit the 30sec target - progress the load". Two thresholds,
+         opposite advice, one set. A gate placed inside one branch does not
+         protect a branch added beside it. */
+      if (cd && cd.measured > 0 && cd.meanTul != null && !isTimeBased(r.id)) {
         /* A NUMERIC GUARD, NOT `|| null`. A truthiness test on a number
            would turn a stored 0 into null and silently disable the floor
            check -- tulTargetFromProfile refuses 0 today, so this is

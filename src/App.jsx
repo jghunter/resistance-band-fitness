@@ -740,7 +740,7 @@ const partialsSfx = (s) => (s && s.partials > 0) ? ` +${s.partials}p` : ''
 function tulSfx(s, exId) {
   if (!s) return ''
   if (RBTS_REPORTS.isTimeBased(exId)) return ''
-  const t = RBTS_REPORTS.setTul(s, cadCtx())
+  const t = RBTS_REPORTS.setTul(s, cadCtx(), exId)
   if (!t.phases.measured) return ''
   let out = ' ' + Math.round(t.measuredSec) + 's'
   if (t.phases.derived || t.phases.unresolved) out += '~'
@@ -762,7 +762,7 @@ function cadSfx(s, exId) {
   if (!s) return ''
   if (RBTS_REPORTS.isTimeBased(exId)) return ''
   const segs = RBTS_REPORTS.setSegments(s)
-  const a = RBTS_REPORTS.actualCadence(segs[0] || {}, s, cadCtx())
+  const a = RBTS_REPORTS.actualCadence(segs[0] || {}, s, cadCtx(), exId)
   if (a == null) return ''
   const std = secPerRepNow()
   const flag = RBTS_REPORTS.cadenceFlag(a, std)
@@ -2420,8 +2420,11 @@ function PhaseTime({ phase, set, onChange, showGap, exId }) {
   if (RBTS_REPORTS.isTimeBased(exId)) return null
 
   const ctx  = cadCtx()
-  const t    = RBTS_REPORTS.phaseTul(phase || {}, set || {}, ctx)
-  const act  = RBTS_REPORTS.actualCadence(phase || {}, set || {}, ctx)
+  /* exId passed to BOTH since 2026-11-09, for the reason the HTML copy gives:
+     phaseTul prices a hold off its reps field now, and omitting the id gets
+     the pre-fix answer with no complaint. */
+  const t    = RBTS_REPORTS.phaseTul(phase || {}, set || {}, ctx, exId)
+  const act  = RBTS_REPORTS.actualCadence(phase || {}, set || {}, ctx, exId)
   const std  = secPerRepNow()
   const flag = RBTS_REPORTS.cadenceFlag(act, std)
   const basisCol = t.basis === 'measured' ? C.green
@@ -2814,7 +2817,10 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               const b = BANDS.find(x=>x.id===bid)
               return b ? `${b.brand.split(' ')[0]} ${b.color} ${b.model} (${b.res}lbs)` : '?'
             }).join(' + ')
-            return <span key={i}>{setRepsOf(s)}r{partialsSfx(s)}{tulSfx(s,id)}{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
+            /* THE UNIT, not a bare "r" (fixed 2026-11-09) -- a hold logs
+               SECONDS in this field. fitness_app.html's matching line has
+               always branched; this one never did. */
+            return <span key={i}>{setRepsOf(s)}{RBTS_REPORTS.isTimeBased(id)?'s':'r'}{partialsSfx(s)}{tulSfx(s,id)}{setSide(s)?' '+setSide(s):''}{setIntensifier(s)!=='straight'?' ⚡':''} [{bNames||'no band'}]{i<prevSets.length-1?', ':''}</span>
           })}
         </div>
       )}
@@ -2826,7 +2832,27 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
               from different places. The ctx below was corrected first and this
               line stayed stale, which is how the second consumer was found --
               a proxy for a badge is not the badge. */}
-          TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{progTargetRepsNow() + 1} REPS, +1 PER RIR → {RBTS_REPORTS.noLoadSuggest(id) ? 'ADD A REP OR HOLD IT LONGER' : 'MOVE UP A BAND'}
+          {/* A HOLD IS PRESCRIBED IN SECONDS (fixed 2026-11-09). This line had
+              NO unit branch at all, so id 71 Banded Plank read
+              "TARGET 8-12 REPS/SET - ALL SETS >=13 REPS" -- hold a plank for 8
+              to 12 seconds, add a band at 13 -- while fitness_app.html has
+              branched on isTimeBased since it was written and says 30s.
+              Measured side by side in a browser on 2026-11-09.
+
+              THE NECK GATE WAS ON THIS LINE AND THE UNITS WERE NOT, which is
+              what made the miss plausible: noLoadSuggest already switched the
+              tail of this very sentence. A gate inside one branch does not
+              protect a branch added beside it.
+
+              The hold branch deliberately does NOT consult noLoadSuggest. Ids
+              181 and 182 are neck HOLDS and sit outside NO_LOAD_SUGGEST, so
+              they are told to MOVE UP A BAND -- the wording this app already
+              used for them, and fitness_app.html's wording exactly. Whether
+              neck isometrics belong in that set is Greg's ruling, open in
+              OPEN_two_questions_from_the_2026-11-09_browser_run.md. */}
+          {RBTS_REPORTS.isTimeBased(id)
+            ? `TIME-BASED — LOG SECONDS HELD · ALL SETS ≥${RBTS_REPORTS.threshOf(id)}s → MOVE UP A BAND`
+            : <>TARGET {REP_RANGE[0]}–{REP_RANGE[1]} REPS/SET · ALL SETS ≥{progTargetRepsNow() + 1} REPS, +1 PER RIR → {RBTS_REPORTS.noLoadSuggest(id) ? 'ADD A REP OR HOLD IT LONGER' : 'MOVE UP A BAND'}</>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}}>
           <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray}}>GEAR</span>
@@ -7240,7 +7266,10 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                       <div key={i} style={{marginBottom:segs?4:2}}>
                         <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec}}>
                           <span style={{color:C.dimGray}}>S{i+1} </span>
-                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}r{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}</span>
+                          {/* THE UNIT (fixed 2026-11-09). A 45-second plank read `45r`
+                              here, in both apps. The PHASE line below needs no branch:
+                              a hold cannot carry segments. */}
+                          <span style={{color:reps>=PROG_REPS?C.green:C.text}}>{reps}{RBTS_REPORTS.isTimeBased(exId)?'s':'r'}{partialsSfx(s)}{setSide(s)?' '+setSide(s):''}</span>
                           {tulSfx(s,exId) && (
                             <span style={{fontFamily:'monospace',fontSize:10,color:C.readout}}
                               title="Measured time under load. A tilde means a phase of this set was not timed and its seconds are NOT included. A gap is unloaded time between phases and is never counted as time under load.">
