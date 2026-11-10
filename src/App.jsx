@@ -6803,15 +6803,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
    app's export carried 11 top-level keys against the HTML app's 18 and
    explained every omission but those three.
 
-   WRITTEN BACK: splitId alone, through onChangeSettings, and this app has only
-   a MERGE -- no REPLACE ALL -- so that import has to ask before it changes a
-   prescription. The other three are exported and never imported here, which is
-   the half of the question still waiting on Greg.
+   WRITTEN BACK: all four, through onChangeSettings, and this app has only a
+   MERGE -- no REPLACE ALL -- so each import has to ASK before it changes a
+   prescription. TWO confirms, not one: the split override answers "which
+   split", and the other three answer "which days, and which workout on each".
+   They are separate decisions and they almost never fire together.
 
-   (This comment said `settings` was here for ONE field until 2026-11-09. It
-   was true when written and the export change made it false in the same
-   commit; a prop list is exactly where a stale count misleads the next
-   reader.) */
+   (This comment claimed ONE field until 2026-11-09, then claimed one field was
+   written back, and both were made false by the next commit the same day. A
+   prop list is exactly where a stale count misleads the next reader, which is
+   why it is being kept current rather than left to rot.) */
 function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDeleteEntry, gearInv, myBands, onImportInventory, invLoaded, user, onProgramsChanged, settings, onChangeSettings }) {
   const uid = user ? user.uid : null
   const [fromDate, setFromDate] = useState('')
@@ -6924,11 +6925,12 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
          custom-program tail -- rbts_customPrograms rides this same file, and
          REPLACE ALL stores both before it asks for the reload that reads them.
 
-         READ IN ONE DIRECTION ONLY, DELIBERATELY. This export is what Greg
-         asked for; whether a merge INTO this app should apply the three, ask
-         first, or only fill in what is missing is still his call, so the
-         merge below reads rbts_splitId alone and leaves these three untouched
-         on this device. A reader must not assume the symmetry. */
+         THE MERGE READS THEM TOO, SINCE 2026-11-09. For one commit this
+         comment said the opposite, because the export was built on Greg's
+         first ruling and the import on his second two messages later: "ask
+         first, name the consequence, and stay silent when the file already
+         agrees." The merge block below does exactly that, behind ONE confirm
+         for the three. */
       rbts_startDate: settings.startDate || '',
       rbts_schedule:  settings.schedule  || '',
       rbts_progIdx:   settings.progIdx   || '0',
@@ -7074,6 +7076,92 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
             } else splitMsg = ' Split override: skipped.'
           }
         }
+        /* THE THREE SCHEDULE KEYS, behind ONE confirm. Greg's ruling,
+           2026-11-09: "ask first, name the consequence, and stay silent when
+           the file already agrees" -- the precedent rbts_splitId set directly
+           above. His export ruling came first; this is the other half of the
+           same question, answered two messages later.
+
+           ONE CONFIRM FOR THREE KEYS, NOT THREE. persistSettings writes them
+           together, they travel out of one settings object, and between them
+           they answer ONE question: which days are training days, and which
+           workout each one is. A PARTIAL ANSWER IS INCOHERENT -- startDate is
+           what countWkDays counts from, so it drives the session rotation and
+           the program week, and taking a new schedule while keeping the old
+           start date prescribes a day NEITHER device would have prescribed.
+           Asking three times for one decision also teaches the reader to press
+           OK without reading, which is the opposite of a confirm's purpose.
+
+           THE EMPTY STRING IS ABSENCE HERE, NOT A VALUE -- the exact OPPOSITE
+           of rbts_splitId above, so copying that block's typeof guard would be
+           the defect. "" IS the cleared state for the split override; for a
+           start date or a schedule it only means the exporting device held
+           nothing, because both apps write `|| ''`. progIdx needs a third
+           guard again: a FINITE test that ACCEPTS 0, since 0 is the first
+           program and a real index that a truthiness test would silently drop.
+           Three keys, three guards, each the shape its own value's domain asks
+           for. Same lesson as pressSetup, for the third time.
+
+           unq() FIRST, for the reason the split override block states at
+           length: every backup fitness_app.html wrote before 2026-10-23
+           carries the storage encoding rather than the value, so comparing
+           bare reports a difference that does not exist and prints the raw
+           form where a label belongs.
+
+           progIdx IS A BARE ARRAY INDEX, so it names the same program only
+           when both devices hold the same custom-program tail. This block sits
+           AFTER the customPrograms merge for that reason -- the ordering the
+           sign-in reconcile uses deliberately. It does not close the gap:
+           PROGRAMS is read at module load, so a program that arrived in THIS
+           file is not in the picker until a reload, and the confirm says so
+           rather than naming a program it cannot resolve. */
+        let schedMsg = ''
+        {
+          const str = v => (typeof v === 'string' ? v.trim() : '')
+          const fileSd = str(unq(state && state.rbts_startDate)) || null
+          const fileSc = str(unq(state && state.rbts_schedule)) || null
+          const rawPi = state ? state.rbts_progIdx : undefined
+          const nPi = (rawPi === '' || rawPi === null || rawPi === undefined)
+                        ? NaN : Number(unq(rawPi))
+          const filePi = (Number.isFinite(nPi) && nPi >= 0) ? Math.floor(nPi) : null
+          const myPi = Number(settings && settings.progIdx)
+          /* schedLabel parses the token, so a hand-edited or future token must
+             not take the whole merge down with it -- the raw token is a worse
+             label but an honest one. */
+          const schedName = v => { try { return schedLabel(v) } catch (err) { return v } }
+          const progName = i => (PROGRAMS && PROGRAMS[i])
+            ? `P${i + 1} ${PROGRAMS[i].name}`
+            : `P${i + 1} (not loaded on this device yet -- reload after the merge)`
+          const rows = []
+          if (fileSd !== null && fileSd !== str(settings && settings.startDate))
+            rows.push(`  START DATE  ${str(settings && settings.startDate) || '(none)'}`
+                      + `  ->  ${fileSd}`)
+          if (fileSc !== null && fileSc !== str(settings && settings.schedule))
+            rows.push(`  SCHEDULE    ${schedName(str(settings && settings.schedule))}`
+                      + `\n              ->  ${schedName(fileSc)}`)
+          if (filePi !== null && filePi !== myPi)
+            rows.push(`  PROGRAM     ${progName(myPi)}  ->  ${progName(filePi)}`)
+          /* SILENT WHEN THE FILE AGREES, which is the ordinary same-owner
+             merge and must ask nothing. A key the file does not carry is left
+             alone entirely -- the rule the measurements, the profile and the
+             split override all follow, so a backup written before 2026-11-09
+             cannot blank a schedule. */
+          if (rows.length) {
+            if (window.confirm('File changes WHEN AND WHAT YOU TRAIN:\n\n'
+                  + rows.join('\n') + '\n\n'
+                  + 'That decides which days are training days and which workout '
+                  + 'each one is. Cancel keeps this device\'s schedule and merges '
+                  + 'everything else. Continue?')) {
+              const patch = {}
+              if (fileSd !== null) patch.startDate = fileSd
+              if (fileSc !== null) patch.schedule = fileSc
+              if (filePi !== null) patch.progIdx = filePi
+              onChangeSettings(patch)
+              schedMsg = ` Schedule: ${rows.length} setting`
+                       + (rows.length === 1 ? '' : 's') + ' changed.'
+            } else schedMsg = ' Schedule: skipped.'
+          }
+        }
         // Inventory (gear + MY BANDS) is independent of the log merge.
         const invMsg = onImportInventory ? await onImportInventory(state) : ''
         /* Measurements ride along too — the two apps do not share an origin,
@@ -7118,14 +7206,14 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           } catch { /* storage full: the rest of the import still stands */ }
         }
         if (!incoming) {
-          if (customs.length || invMsg || measMsg || splitMsg || mergedProgs) {
+          if (customs.length || invMsg || measMsg || splitMsg || schedMsg || mergedProgs) {
             /* A file carrying ONLY tombstones has no log and no list, and
                lands here. It must still report what it removed. */
             alert('No rbts_log in file.' +
               (customs.length ? ` Imported ${customs.length} custom exercise definition(s) (${addedEx} new).` : '') +
               (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total.` : '') +
               (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
-              invMsg + measMsg + splitMsg)
+              invMsg + measMsg + splitMsg + schedMsg)
             return
           }
           alert('Invalid file — expected an rbts_log array.'); return
@@ -7154,7 +7242,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                abandons the LOG merge and nothing else. This whole item exists
                because an alert misdescribed what a merge did to the log; the
                same sentence one layer out is the same defect. */
-            alert('Log merge cancelled. Your log is unchanged.' + invMsg + splitMsg +
+            alert('Log merge cancelled. Your log is unchanged.' + invMsg + splitMsg + schedMsg +
                   '\n\nAnything else this file carried -- custom exercises, ' +
                   'programs, band calibration, the split override -- was ' +
                   'already merged before this point.')
@@ -7177,7 +7265,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           alert('Could not save the merged log on this device — storage is ' +
                 'probably full.\n\nWhat you see on screen has merged, but it ' +
                 'will be lost on reload. Nothing was sent to the cloud.' +
-                invMsg + measMsg + splitMsg)
+                invMsg + measMsg + splitMsg + schedMsg)
           return
         }
         alert(`Added ${res ? res.added : '?'} session(s), ` +
@@ -7190,7 +7278,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
           (mergedProgs ? ` Custom programs: ${mergedProgs.list.length} total — RELOAD to see them.` : '') +
           (progsGone ? ` ${progsGone} program${progsGone === 1 ? ' was' : 's were'} deleted elsewhere and REMOVED here.` : '') +
           (res && res.synced ? ' Synced to the cloud.' : ' Saved locally (sign in to sync).') +
-          invMsg + measMsg + splitMsg)
+          invMsg + measMsg + splitMsg + schedMsg)
       } catch (err) { alert('Could not read file: ' + err.message) }
     }
     reader.readAsText(file); e.target.value = ''
@@ -8631,9 +8719,12 @@ export default function App() {
         )}
         {tab==='today'    && <TodayTab user={user} log={log} onSaveEntry={handleSaveEntry} settings={settings} onChangeSettings={handleChangeSettings} gearInv={gear}/>}
         {tab==='history'  && <HistoryTab log={log} onMergeImport={handleMergeImport} onImportCustomEx={handleImportCustomEx} onSaveEntry={handleSaveEntry} onDeleteEntry={handleDeleteEntry} gearInv={gear} myBands={myBands} onImportInventory={handleImportInventory} invLoaded={invLoaded} user={user} onProgramsChanged={handleProgramsChanged} settings={settings} onChangeSettings={handleChangeSettings}/>}
-        {/* settings and onChangeSettings for the SPLIT OVERRIDE alone -- the
-            export carries it since 2026-10-21 and the merge can restore it,
-            behind a confirm, because this app has no REPLACE ALL.
+        {/* settings and onChangeSettings for the FOUR keys that decide what a
+            training day prescribes: the split override since 2026-10-21, and
+            startDate / schedule / progIdx since 2026-11-09. The export carries
+            all four and the merge can restore them, each behind a confirm,
+            because this app has no REPLACE ALL. (This said "the SPLIT OVERRIDE
+            alone" until 2026-11-09.)
             gearInv and myBands because makeReportCtx REQUIRES all three, and
             `gear: []` would pass every test while being wrong: the load a
             1RM is read off was frozen on the entry at save time, so an empty
