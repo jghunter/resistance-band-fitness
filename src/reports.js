@@ -6254,16 +6254,54 @@
   /* Stalled = STALL_N straight working sessions with no improvement in best
      plain-set reps. Drop sets are excluded: a correct drop set ends low by
      design and would fake a stall. */
-  function isStalled(log, exId, beforeDate, deloadOf) {
+  /* THE STALL JUDGMENT AND THE SESSIONS IT WAS MADE ON, from ONE exHistory
+     call (2026-11-10).
+
+     `isStalled` returned a bare boolean and the verdict said "No improvement
+     in 3 straight working sessions" while naming no dates -- so a reader had
+     no way to tell that TWO of those three sessions can sit outside the
+     window whose name is at the top of the tab. This reads `ctx.log`, NOT
+     `win.entries`, and that is correct and must not change: the in-workout
+     badge needs the same rule, and three working sessions are three working
+     sessions whenever they happened. ONLY THE SILENCE WAS WRONG.
+
+     Measured on `rbts_backup_2026-11-10T19-06-32.json`: the CURRENT BLOCK
+     window held ONE session (2026-11-10, his first P37 workout) and SIX of
+     his eight lifts read STALLED. #43 Standing Band Overhead Press was judged
+     on 2026-11-10, 2026-09-24 and 2026-09-17 -- two of the three 54 days
+     before the block opened, and before a program change -- and was told to
+     "drop back 10% and rebuild" on day one of a new program.
+
+     ONE exHistory CALL, NOT TWO. Computing the span beside the boolean
+     rather than in a second function is the point: two calls that must agree
+     about which sessions were judged is how a verdict and its own citation
+     come to name different sessions. `isStalled` keeps its exact contract
+     and delegates, because the setup sheet and the exercise card both call
+     it and neither wants the span.
+
+     `entriesFor` sorts NEWEST FIRST, so h[0] is the latest session and
+     h[h.length - 1] the earliest -- which is also why the loop below tests
+     best[0] against every older reading. */
+  function stallState(log, exId, beforeDate, deloadOf) {
     var h = exHistory(log, exId, beforeDate, CONST.STALL_N, deloadOf);
-    if (h.length < CONST.STALL_N) return false;
+    /* NULL SPAN WHEN NOT STALLED, never a span with `stalled: false` beside
+       it. A span is a citation, and a citation for a judgment that was not
+       made is an invitation to quote it anyway. */
+    if (h.length < CONST.STALL_N) return { stalled: false, span: null };
     var best = h.map(function (e) {
       return workingSets(e.sets).reduce(function (m, s) {
         var r = setReps(s); return r > m ? r : m;
       }, 0);
     });
-    for (var i = 1; i < best.length; i++) if (best[0] > best[i]) return false;
-    return true;
+    for (var i = 1; i < best.length; i++) {
+      if (best[0] > best[i]) return { stalled: false, span: null };
+    }
+    return { stalled: true,
+             span: { from: h[h.length - 1].date, to: h[0].date, n: h.length,
+                     dates: h.map(function (e) { return e.date; }).reverse() } };
+  }
+  function isStalled(log, exId, beforeDate, deloadOf) {
+    return stallState(log, exId, beforeDate, deloadOf).stalled;
   }
   /* Double progression; a logged RIR raises the rep bar rather than gating it.
      L and R sets are evaluated INDEPENDENTLY
@@ -6372,13 +6410,21 @@
        bar does not apply, and a null bar does not withhold READY. */
     var tulBar = tulBarState(ctx, exId, working);
     var ready = repsReady && !loadDropped && (tulBar ? tulBar.ready : true);
+    /* ONE CALL, and both halves read off it -- see stallState. Computing the
+       boolean here and the span somewhere else would let a verdict cite
+       sessions it was not decided on. */
+    var st = stallState(ctx.log, exId, beforeDate, deloadOf);
     return {
       ready: ready,
       sides: sides,
       /* NOT gated on loadDropped: flat reps with FALLING load is a genuine
          stall. It is RISING load that suppresses STALLED (see exerciseVerdict),
          because flat reps at a heavier stack is load progression. */
-      stalled: !ready && isStalled(ctx.log, exId, beforeDate, deloadOf),
+      stalled: !ready && st.stalled,
+      /* THE SESSIONS THAT STALL WAS JUDGED ON, or null. Null whenever
+         `stalled` is false -- including when `ready` suppressed it -- so a
+         caller can never quote a span behind a judgment that was not made. */
+      stallSpan: (!ready && st.stalled) ? st.span : null,
       threshold: thresh,
       rirAdd: rirAdd,
       barApplied: thresh + rirAdd,
@@ -7254,6 +7300,39 @@
              from: from, to: to, asOf: asOf, spanDays: spanDays,
              entries: entries, prevEntries: prevEntries };
   }
+  /* ---- A BOUNDED WINDOW THAT COVERS THE WHOLE LOG (2026-11-10) ----------
+     1 YEAR and ALL TIME were the same window. Measured on
+     `rbts_backup_2026-11-10T19-06-32.json`, a log spanning 161 days:
+     identical sessions (95), exercises (102), recommendations (109) and row
+     order. Worse than merely redundant -- 1 YEAR's `prevEntries` comes back
+     EMPTY, because the period before it holds nothing, so the VS PREVIOUS
+     card is present on 90 DAYS and silently absent on 1 YEAR. Two adjacent
+     buttons, one of which removes a widget and changes nothing else.
+
+     The same rule the STRENGTH group filter already follows: it offers only
+     the groups actually present in the window, because A BUTTON THAT CANNOT
+     CHANGE THE ANSWER IS NOT A CONTROL.
+
+     TRUE only for a BOUNDED numeric window. "all", "block" and "last" are
+     not periods of N days and have their own meanings -- answering true for
+     them would invite a caller to hide ALL TIME itself.
+
+     AN EMPTY LOG IS NOT COVERED. With no entries every window holds nothing,
+     and hiding buttons on a fresh install would leave a new user staring at
+     one control for a reason that has nothing to do with them. Both tabs
+     already show a "no workouts logged yet" panel in that state. */
+  function windowCoversLog(ctx, key, opts) {
+    var n = parseInt(String(key), 10);
+    if (isNaN(n) || n <= 0 || String(n) !== String(key)) return false;
+    var all = sortedLog((ctx && ctx.log) || []);
+    if (!all.length) return false;
+    var asOf = (opts && opts.asOf) || localISO();
+    /* The SAME arithmetic resolveWindow uses for this key, so the test and
+       the window it describes can never disagree about where `from` lands. */
+    var from = shiftISO(asOf, -(n - 1));
+    return String(all[0].date) >= String(from);
+  }
+
   /* Least-squares slope over session index, expressed as percent of the first
      value per session. Under 3 points there is no trend worth claiming. */
   function slopePct(series) {
@@ -7308,6 +7387,37 @@
     if (!(skipped > 0)) return "";
     return ", skipping " + skipped + " unpriced session" +
       (skipped === 1 ? "" : "s") + " in between";
+  }
+
+  /* ---- WHERE THE STALL EVIDENCE CAME FROM (added 2026-11-10) -------------
+     STALLED is the one verdict decided on sessions the window may not
+     contain. isStalled reads the whole log, correctly -- but the sentence
+     named no dates, so a CURRENT BLOCK of one session could report six
+     stalled lifts and read as though all the evidence were inside it.
+
+     TWO SEPARATE DISCLOSURES, and the second is conditional:
+
+       the DATES are always named. A judgment is being quoted; the reader is
+       entitled to know which sessions it is about, whether or not any of
+       them fall outside.
+
+       the OUTSIDE COUNT is named only when it is non-zero, which is the same
+       rule gapClause and mixedBasisClause follow: a disclosure must be
+       informative when it appears, so "0 of them before this window" would
+       be noise on every fully-contained span and would train the reader to
+       skip the clause on the spans where it matters.
+
+     SILENT ON A MISSING SPAN rather than inventing one. A row whose
+     stallSpan is null reads exactly as it did before this change -- a
+     hand-built row, or a caller that does not carry the field, must not be
+     made to print a sentence about sessions it never identified. */
+  function stallSpanClause(span) {
+    if (!span || !span.from || !span.to) return "";
+    var s = " (" + span.from + " to " + span.to;
+    if (span.beforeWindow > 0) {
+      s += ", " + span.beforeWindow + " of them before this window";
+    }
+    return s + ")";
   }
 
   /* ---- the BASIS of a load comparison (added 2026-10-07) ------------------
@@ -7670,7 +7780,8 @@
        narrative verdict differs. */
     if (row.stalled && row.trend !== "GROWING") {
       return { code: "STALLED", text: "No improvement in " + CONST.STALL_N +
-        " straight working sessions. Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." };
+        " straight working sessions" + stallSpanClause(row.stallSpan) +
+        ". Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." };
     }
     /* NO PRICED SESSION AT ALL. Every branch below this point divides by or
        compares a figure this row does not have, and would report "only N
@@ -7774,6 +7885,84 @@
      and show PR badges on two surfaces; a second copy of this rule is how the
      ANALYZE report and the STRENGTH table come to disagree about whether the
      same session was a personal record. */
+  /* ---- HOW EACH 1RM METHOD FITS THIS LIFTER'S OWN HISTORY (2026-11-10) ----
+     The `!` marker means "beyond this method's validated rep range -- the
+     estimate still prints, marked". Measured on
+     `rbts_backup_2026-11-10T19-06-32.json` over all 102 ALL TIME rows:
+
+       epley (his)   2-10 reps    53 marked,  1 row with a refusal
+       brzycki       3-8  reps    69 marked, 21 rows with refusals
+       lander        2-10 reps    51 marked, 21 rows with refusals
+       LOMBARDI      10-20 reps    7 marked,  1 row with a refusal
+       mayhew        3-10 reps    53 marked,  1
+       oconner       2-10 reps    53 marked,  1
+       wathen        2-10 reps    53 marked,  1
+
+     His rep bars are 12 and 10. SIX of the seven methods are validated at or
+     below 10 reps, so for the way he actually trains the marker is not an
+     exception -- it is the normal state, on 53 of 102 rows. A marker that
+     fires on the majority stops being read. Lombardi, validated at 10-20
+     reps, marks SEVEN, and nothing in the picker said so: it offered seven
+     prose descriptions and NOT ONE FIGURE FROM HIS OWN LOG, which is the
+     single fact that would decide the choice.
+
+     ALL-TIME, ALWAYS, and the panel must say so. The scope argument is the
+     one the table's own footnote already makes about BEST / EST. MAX /
+     BEST MAX: a statement about demonstrated capacity should not change
+     because you changed the period you are looking at. A method choice is a
+     property of how someone trains, not of a 30-day slice. It follows that
+     this count does NOT equal the `!` count in the table on any window but
+     ALL TIME -- 53 here against 39 marked on his 30 DAYS -- so the two
+     scopes are named in both places rather than left to collide.
+
+     ONE FULL PASS, THEN SEVEN CHEAP ONES. `exerciseMaxSummary` is the only
+     method-dependent part of a row, so the row set is built once with the
+     ctx as given and only the summary is recomputed per method. Measured at
+     27ms for all seven on his 95-entry log. Taking the row set from
+     exerciseProgressionRows rather than from a fresh scan of the log is
+     deliberate: it is the TABLE's row set, so the figure describes the rows
+     the reader is looking at and cannot drift from them.
+
+     THE CTX IS COPIED, NEVER MUTATED. `oneRmMethod` is read live off
+     TRAINING_STYLE in both apps, so writing the key onto the caller's ctx
+     to score a method would leave the last one scored in place -- silently
+     re-pricing EST. MAX for the rest of the render. */
+  function oneRmMethodFit(ctx, opts) {
+    var win = resolveWindow(ctx, { window: "all",
+                                   asOf: (opts && opts.asOf) || null });
+    var rows = exerciseProgressionRows(ctx, win, { carryIn: true });
+    return ONE_RM_METHODS.map(function (m) {
+      var c = assign(ctx, { oneRmMethod: m.k });
+      var marked = 0, refused = 0, estimated = 0;
+      rows.forEach(function (r) {
+        var s = exerciseMaxSummary(c, r.id);
+        if (s.estMax != null) estimated++;
+        if (s.outOfRange) marked++;
+        if (s.refusedN) refused++;
+      });
+      return { k: m.k, name: m.name, bestAt: m.bestAt,
+               lifts: rows.length, estimated: estimated,
+               marked: marked, refusedRows: refused,
+               /* THE CURRENT one, so the panel can say "this is the one you
+                  are on" without re-reading the profile and risking a
+                  different answer from the one that produced these counts.
+
+                  `.method.k`, NOT `.k`. resolveOneRmMethod returns
+                  `{method, substituted, asked}`, so a bare `.k` is undefined
+                  and the flag is silently FALSE on every row -- which is
+                  exactly what it did on the first run here. Same trap
+                  makeReportCtx warns about one layer up: ctx.oneRmMethod is
+                  a KEY STRING and RBTS_REPORTS.oneRmMethod is the LOOKUP
+                  FUNCTION.
+
+                  RESOLVED, not raw: a stored key this build does not know
+                  falls back to the default, and the default is what actually
+                  priced these counts. Marking the unrecognised key would
+                  point at a method no figure here came from. */
+               current: resolveOneRmMethod(ctx && ctx.oneRmMethod).method.k === m.k };
+    });
+  }
+
   function isGenuinePR(lastTop, priorTop, n, nLoaded) {
     if (!(lastTop > 0)) return false;
     if (priorTop > 0) return lastTop > priorTop;
@@ -7974,6 +8163,23 @@
            functions at all. ANALYZE's verdict needs it; the STRENGTH
            progression table does not draw it. Asserted by absence. */
         tulBar: ps.tulBar,
+        /* THE STALL CITATION, and the one figure that needs `win` to compute:
+           how many of the judged sessions fall BEFORE this window opened.
+           Built here rather than inside progressionState because that
+           function has no window -- the in-workout badge calls it too, and a
+           badge has no period to be outside of.
+
+           ON analyzeExercises' ROWS AND DELIBERATELY NOT ON
+           exerciseProgressionRows'. Same rule foldSpan, travelSpan and
+           tulBar follow: the STRENGTH table draws no verdict, so handing it
+           a field nobody renders is how the two row builders drift. Asserted
+           by absence. */
+        stallSpan: ps.stallSpan
+          ? { from: ps.stallSpan.from, to: ps.stallSpan.to, n: ps.stallSpan.n,
+              beforeWindow: ps.stallSpan.dates.filter(function (d) {
+                return String(d) < String(win.from);
+              }).length }
+          : null,
         /* The window's own cadence and time figures. On analyzeExercises'
            rows only, like tulBar and foldSpan -- exerciseProgressionRows
            draws neither. */
@@ -10839,6 +11045,7 @@
     lastSessionNote: lastSessionNote,
     exHistory: exHistory,
     isStalled: isStalled,
+    stallState: stallState,
     progressionState: progressionState,
     detectBlocks: detectBlocks,
     esc: esc,
@@ -11023,6 +11230,9 @@
     foldStateOf: foldStateOf,
     foldChangeClause: foldChangeClause,
     travelChangeClause: travelChangeClause,
+    stallSpanClause: stallSpanClause,
+    oneRmMethodFit: oneRmMethodFit,
+    windowCoversLog: windowCoversLog,
     windowTopLoad: windowTopLoad,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,

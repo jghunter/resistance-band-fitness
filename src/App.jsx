@@ -3690,12 +3690,23 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
   const [exFilter, setExFilter] = useState('action')
   const prog = PROGRAMS[Number(settings?.progIdx) || 0] || PROGRAMS[0]
 
+  /* 1 YEAR IS WITHHELD WHILE IT CANNOT DIFFER FROM ALL TIME -- see
+     StrengthTab, same engine test so the two tabs and the two apps cannot
+     disagree about which windows exist. KEY-BASED fallback, never an index. */
+  const aCtx = makeReportCtx({ log, gear: gearInv, myBands })
+  const SHOWN_AWINDOWS = ANALYZE_WINDOWS.filter(
+    w => !RBTS_REPORTS.windowCoversLog(aCtx, w.key))
+  const aWin = SHOWN_AWINDOWS.find(w => w.key === win)
+            || SHOWN_AWINDOWS.find(w => w.key === '90')
+            || SHOWN_AWINDOWS[SHOWN_AWINDOWS.length - 1]
+  const winKey = aWin ? aWin.key : win
+
   const res = useMemo(() => {
     try {
       return RBTS_REPORTS.analyze(
-        makeReportCtx({ log, gear: gearInv, myBands }), { window: win, prog })
+        makeReportCtx({ log, gear: gearInv, myBands }), { window: winKey, prog })
     } catch (e) { return { error: e.message } }
-  }, [win, log, gearInv, myBands, settings])
+  }, [winKey, log, gearInv, myBands, settings])
 
   if (res.error) return (
     <div style={{...widget, border:'1px solid '+C.red}}>
@@ -3707,13 +3718,16 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
 
   const R2 = RBTS_REPORTS
   const doc = () => R2.buildAnalysisDoc(res)
-  const docName = () => `analysis_${localISO()}_${win}.md`
+  /* winKey, not win: the file must be named for the window the report was
+     actually built over. They differ only when a stored `win` names a window
+     this log is too short to offer. */
+  const docName = () => `analysis_${localISO()}_${winKey}.md`
 
   const toolbar = (
     <div style={{...widget, display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
       <span style={{...lbl, marginBottom:0, marginRight:6}}>WINDOW</span>
-      {ANALYZE_WINDOWS.map(w => (
-        <button key={w.key} style={{...btn(win===w.key), fontSize:10, padding:'5px 10px'}}
+      {SHOWN_AWINDOWS.map(w => (
+        <button key={w.key} style={{...btn(winKey===w.key), fontSize:10, padding:'5px 10px'}}
           onClick={() => setWin(w.key)}>{w.label}</button>
       ))}
       <span style={{marginLeft:'auto'}}>
@@ -3906,6 +3920,18 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
         const rows = (res.exercises||[]).filter(r =>
           r.cadence && r.cadence.n > 0 && r.cadence.meanTul != null)
         if (!rows.length) return null
+        /* THE SAME SILENCE RULE, ONE LEVEL DOWN. The table above withholds
+           itself when nothing is timed and nothing derives, because a table
+           of em dashes is not information -- and then rendered a MEAN GAP
+           column that was an em dash on EVERY row, on EVERY window, plus two
+           sentences explaining it. Measured across Greg's whole log on
+           2026-11-10: 984 phases, 17 carrying a tulSec, and ZERO carrying a
+           gapSec. The field has a writer -- the per-phase editor offers it on
+           any phase after the first -- and has never been filled once.
+           A gap can only exist on a multi-phase set, so most logs will never
+           have one; the column appears the moment a drop set or a rest-pause
+           is timed. */
+        const anyGap = rows.some(r => r.cadence.meanGap != null)
         return (
           <div style={{...widget, marginBottom:12}}>
             <div style={lbl}>CADENCE AND TIME UNDER LOAD</div>
@@ -3916,9 +3942,9 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               standard, so averaging it in would report perfect adherence for
               a set nobody timed. MEAN TUL is the whole set and DOES include
               derived phases, which is why TIMED and DERIVED are counted
-              beside it. MEAN GAP is unloaded time between the phases of a
-              set and is never counted as time under load; an em dash means
-              none was recorded, which is not a gap of zero. BASIS reads
+              beside it.{anyGap ? ' MEAN GAP is unloaded time between the phases of a ' +
+              'set and is never counted as time under load; an em dash means ' +
+              'none was recorded, which is not a gap of zero.' : ''} BASIS reads
               &ne; when the SPAN disagrees with itself; a bare "mixed" there
               is ONE SET that disagrees with itself, some of its phases timed
               and the rest derived from your standard.
@@ -3927,7 +3953,9 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
               <table style={{borderCollapse:'collapse',fontFamily:'monospace',fontSize:10}}>
                 <thead><tr>
                   {['EXERCISE','SETS','TIMED','DERIVED','MEAN TUL',
-                    'ACTUAL CADENCE','VS STANDARD','MEAN GAP','BASIS'].map(h => (
+                    'ACTUAL CADENCE','VS STANDARD']
+                    .concat(anyGap ? ['MEAN GAP'] : [])
+                    .concat(['BASIS']).map(h => (
                     <th key={h} style={{textAlign:'left',padding:'3px 8px',
                       color:C.dimGray,borderBottom:'1px solid '+C.dimGray}}>{h}</th>
                   ))}
@@ -3961,10 +3989,15 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                           {(c.meanActual == null || c.std == null) ? '—'
                             : c.std+'s '+String(c.flag||'').toUpperCase()}
                         </td>
-                        <td style={{padding:'3px 8px',color:C.textSec}}>
-                          {c.meanGap == null ? '—'
-                            : RBTS_REPORTS.fmtNum(c.meanGap)+'s × '+c.gapsRecorded}
-                        </td>
+                        {/* The CELL is withheld with its header, never left
+                            behind -- a td with no th shifts every column
+                            after it by one. */}
+                        {anyGap ? (
+                          <td style={{padding:'3px 8px',color:C.textSec}}>
+                            {c.meanGap == null ? '—'
+                              : RBTS_REPORTS.fmtNum(c.meanGap)+'s × '+c.gapsRecorded}
+                          </td>
+                        ) : null}
                         {/* AMBER FOR A PER-SET MIXTURE TOO. mix.mixed is
                             FALSE for a span of one set whose own basis is
                             "mixed" -- one reading cannot disagree with
@@ -4230,6 +4263,11 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
      method change has to announce itself. Same tick the TRAINING STYLE panel
      uses, and for the same reason. */
   const [tsTick, setTsTick] = useState(0)
+  /* The 1RM panel's own open state. The method-fit figures cost seven passes
+     over the log, and a <details> renders its children even while CLOSED --
+     so without this they would be recomputed on every render of this tab,
+     for a panel nobody has opened. */
+  const [rmOpen, setRmOpen] = useState(false)
   const data = (log || []).slice().sort((a,b) => a.date.localeCompare(b.date))
 
   if (data.length === 0) {
@@ -4255,11 +4293,23 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
     { key:'365',  label:'1 YEAR'     },
     { key:'all',  label:'ALL TIME'   },
   ]
-  const cfg = WINDOWS.find(w => w.key === win) || WINDOWS[2]
-
   /* ONCE, above everything that needs it -- never inside a map.
      Mirrors fitness_app.html. */
   const rmCtx = makeReportCtx({ log, gear: gearInv, myBands })
+  /* 1 YEAR IS WITHHELD WHILE IT CANNOT DIFFER FROM ALL TIME. On a 161-day log
+     the two buttons drew identical rows, identical recommendations and
+     identical row order -- and 1 YEAR's VS PREVIOUS card vanished, because the
+     year before it holds nothing. Same rule the group filter below follows: a
+     button that cannot change the answer is not a control. The TEST is the
+     engine's, so this tab, ANALYZE and the other app cannot disagree about
+     which windows exist. */
+  const SHOWN_WINDOWS = WINDOWS.filter(w => !RBTS_REPORTS.windowCoversLog(rmCtx, w.key))
+  /* KEY-BASED FALLBACK, never an index. WINDOWS[2] was 30 DAYS only while the
+     array was whole; reading a position out of a filtered list is how a
+     default silently becomes a different period. */
+  const cfg = SHOWN_WINDOWS.find(w => w.key === win)
+           || SHOWN_WINDOWS.find(w => w.key === '30')
+           || SHOWN_WINDOWS[SHOWN_WINDOWS.length - 1]
   const W = RBTS_REPORTS.resolveWindow(rmCtx, { window: cfg.key })
   const winEntries = W.entries, prevEntries = W.prevEntries
 
@@ -4296,6 +4346,12 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
 
      See rbts_reports.js exerciseProgressionRows and test_strength_rows.cjs. */
   const exRows = RBTS_REPORTS.exerciseProgressionRows(rmCtx, W, { carryIn: true })
+  /* ONLY WHILE THE 1RM PANEL IS OPEN. `tsTick` is in the dependency list
+     because the fit marks which method is CURRENT, and that changes the
+     moment one of those buttons is pressed. Mirrors fitness_app.html. */
+  const rmFit = useMemo(
+    () => (rmOpen ? RBTS_REPORTS.oneRmMethodFit(rmCtx) : null),
+    [rmOpen, log, gearInv, myBands, tsTick])
 
   const series = winEntries.map(e => ({ date:e.date, sets:entryStats(e).sets }))
   /* THE NOTES IN THIS WINDOW. Session-level prose is what makes a volume
@@ -4338,7 +4394,8 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
           Daniel, Jaclyn and Mike run the PWA, and the seven descriptions
           exist so the reader picks for themselves rather than being handed
           one equation and no way to tell what it assumes. */}
-      <details style={widget}>
+      <details style={widget} open={rmOpen}
+        onToggle={e => setRmOpen(!!e.target.open)}>
         <summary style={{...lbl,cursor:'pointer'}}>
           1RM METHOD — {RBTS_REPORTS.oneRmMethodLabel(TRAINING_STYLE.oneRmMethod)}
         </summary>
@@ -4350,14 +4407,46 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
           HARDEST point of the rep. So an estimated max off band reps is a real,
           trackable number, and it is NOT the same quantity as a barbell one-rep max.
         </div>
+        {/* HOW EACH METHOD FITS **THIS LOG**. The panel used to give seven
+            prose descriptions and not one figure from the reader's own
+            history, which is the single fact that decides the choice.
+            Measured on Greg's log 2026-11-10: under Epley, his method, the
+            `!` marker fires on 53 of 102 lifts; under Lombardi, validated at
+            10-20 reps against his 12/10 rep bars, it fires on SEVEN.
+            ALL-TIME ALWAYS, and the note says so -- so it does NOT equal the
+            table's `!` count on any window but ALL TIME, and both scopes are
+            named rather than left to collide. */}
+        <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
+          lineHeight:1.6,marginBottom:8}}>
+          OUTSIDE RANGE counts your lifts whose latest estimated session sat beyond
+          that method's validated rep range &mdash; the estimate still prints, marked
+          with a <span style={{color:C.amber}}>!</span> in the table below. REFUSED
+          counts lifts where at least one session was too long for the equation to
+          answer at all. Both are over your WHOLE LOG, not the window above, so they
+          do not move when the window does.
+        </div>
         {RBTS_REPORTS.ONE_RM_METHODS.map(m => {
           const on = TRAINING_STYLE.oneRmMethod === m.k
+          const f = rmFit ? rmFit.find(x => x.k === m.k) : null
+          /* THE BEST SCORE, so "fewest" is a fact rather than something the
+             reader has to work out across seven rows. Ties are all marked. */
+          const best = rmFit
+            ? rmFit.reduce((a,x) => (a == null || x.marked < a) ? x.marked : a, null)
+            : null
           return (
             <div key={m.k} style={{marginBottom:10}}>
               <button onClick={()=>{ saveTrainingStyle({oneRmMethod:m.k}, user?.uid); setTsTick(tsTick+1) }}
                 style={{...btn(on),fontSize:10,padding:'4px 10px'}}>
                 {m.name} ({m.year})
               </button>
+              {f ? (
+                <span style={{fontFamily:'monospace',fontSize:9,marginLeft:8,
+                  color: f.marked === best ? C.green : C.amber}}>
+                  {f.marked} of {f.lifts} outside range
+                  {f.refusedRows ? ` · ${f.refusedRows} refused` : ''}
+                  {f.marked === best && rmFit.length > 1 ? ' · fewest' : ''}
+                </span>
+              ) : null}
               <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,
                 marginTop:3,lineHeight:1.6}}>
                 {m.equation} · {m.curve} · best at {m.bestAt}<br/>
@@ -4371,8 +4460,8 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
 
       <div style={{...widget,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
         <span style={{...lbl,marginBottom:0,marginRight:6}}>WINDOW</span>
-        {WINDOWS.map(w => (
-          <button key={w.key} style={{...btn(win===w.key, win===w.key?C.accent:undefined),fontSize:10,padding:'5px 10px'}}
+        {SHOWN_WINDOWS.map(w => (
+          <button key={w.key} style={{...btn(cfg.key===w.key, cfg.key===w.key?C.accent:undefined),fontSize:10,padding:'5px 10px'}}
             onClick={()=>setWin(w.key)}>{w.label}</button>
         ))}
       </div>
