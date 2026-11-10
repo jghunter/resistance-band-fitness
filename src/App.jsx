@@ -3855,7 +3855,14 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
         {(res.recommendationsMore || []).length ? (
           <details style={{marginTop:10}}>
             <summary style={{...lbl,cursor:'pointer',marginBottom:0}}>
+              {/* "BY SEVERITY" alone stopped being true on 2026-11-10: the
+                  visible list is ranked by severity AND limited to
+                  REC_PER_CODE of any one code until the others have had a
+                  turn. A reader trusting the old wording would expect
+                  everything below to be less severe than everything above,
+                  and it is not. */}
               {res.recommendationsMore.length} MORE, BELOW THE TOP {res.recommendations.length} BY SEVERITY
+              {res.recommendationsPerCodeCap ? ` (MAX ${res.recommendationsPerCodeCap} PER CODE)` : ''}
               {(() => {
                 /* The CODES are named in the summary, closed. "25 more" says
                    nothing about whether it is worth opening. */
@@ -4108,7 +4115,19 @@ function AnalyzeTab({ log, gearInv, myBands, settings }) {
                   {basis.text}
                 </span>
               ) : null}
-              {r.isPR && <span style={{...pill(C.green), fontSize:9}}>PR</span>}
+              {/* STALE, NOT WITHHELD (N9, 2026-11-10). On ALL TIME a third of the
+                  rows wear a PR and two thirds of those sit on lifts not trained in
+                  over a month -- a record set in August, beside a dimmed LAST date
+                  and an EX_DORMANT verdict on the other tab. Every badge is correct;
+                  what it must stop doing is reading as NEWS. Dimmed past the SAME
+                  threshold the LAST column uses, so one lift is never bright in one
+                  column and dim in another. The rule is the ENGINE's (prIsStale), so
+                  the two apps and the two tabs cannot disagree. */}
+              {r.isPR && <span style={{...pill(r.prStale?C.dimGray:C.green), fontSize:9,
+                ...(r.prStale?{opacity:0.65}:{})}}
+                title={r.prStale
+                  ? `Best priced session for this lift, but it was ${r.daysSince} days ago`
+                  : 'Best priced session for this lift, and it is the most recent one'}>PR</span>}
               <span style={{...pill(VERDICT_COLOR[r.verdict.code]||C.dimGray), fontSize:9, marginLeft:'auto'}}>
                 {r.verdict.code}
               </span>
@@ -4719,7 +4738,19 @@ function StrengthTab({ user, log, gearInv, myBands, settings }) {
                     <div style={{display:'flex',gap:6,alignItems:'baseline',flexWrap:'wrap'}}>
                       <span style={{...pill((gMeta&&gMeta.color)||C.accent),fontSize:8}}>{r.group}</span>
                       <span>{r.name}</span>
-                      {r.isPR ? <span style={pill(C.green)}>PR</span> : null}
+                      {/* STALE, NOT WITHHELD (N9, 2026-11-10). On ALL TIME a third of the
+                          rows wear a PR and two thirds of those sit on lifts not trained in
+                          over a month -- a record set in August, beside a dimmed LAST date
+                          and an EX_DORMANT verdict on the other tab. Every badge is correct;
+                          what it must stop doing is reading as NEWS. Dimmed past the SAME
+                          threshold the LAST column uses, so one lift is never bright in one
+                          column and dim in another. The rule is the ENGINE's (prIsStale), so
+                          the two apps and the two tabs cannot disagree. */}
+                      {r.isPR ? <span style={{...pill(r.prStale?C.dimGray:C.green),
+                        ...(r.prStale?{opacity:0.65}:{})}}
+                        title={r.prStale
+                          ? `Best priced session for this lift, but it was ${r.daysSince} days ago`
+                          : 'Best priced session for this lift, and it is the most recent one'}>PR</span> : null}
                     </div>
                     {/* THE BASIS, named in place rather than footnoted: the
                         reader needs to know WHICH bases before the number means
@@ -6168,6 +6199,50 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                   {' '}{bad.join('; ')}. READY will stop firing on those lifts
                   unless you time the set. Lower the target, slow the cadence,
                   or raise the rep target.
+                </div>
+              )
+            })()}
+            {(() => {
+              /* THE MIRROR, added 2026-11-10. The block above warns when the
+                 rep bar CANNOT REACH this figure. Nothing warned about the
+                 opposite state -- a bar that can only be cleared by passing
+                 it -- and that is the one Greg is actually in.
+
+                 ONE STORED NUMBER, TWO OPPOSITE READINGS: tulBarState gates
+                 READY on `worst >= hi` (a floor to reach) while TUL_LONG
+                 fires on `meanTul > hi` (a ceiling to stay under). At 11
+                 s/rep against 120s no WHOLE rep count satisfies both -- 10
+                 reps derives 110s and 11 derives 121s -- and the cost on his
+                 log is ELEVEN TUL_LONG items each saying "Add a band".
+
+                 THIS CHANGES NO THRESHOLD. The real fix is a separate
+                 ceiling field so the two rules stop sharing a number, and
+                 that needs its own spec. Mirrors fitness_app.html. */
+              const ctx2 = reachCtx()
+              const over = []
+              let noSafe = false, lastUnder = null
+              ;[[9,'upper'],[217,'lower']].forEach(pair => {
+                const o = RBTS_REPORTS.tulBarOvershoots(ctx2, pair[0])
+                if (o) {
+                  over.push(pair[1].toUpperCase()+': '+o.repsAtBar+' reps at '+
+                    o.secPerRep+' s/rep derives '+o.derivedSec+'s, '+o.overBy+
+                    's over the '+o.hi+'s target')
+                  if (o.noSafeReps) { noSafe = true; lastUnder = o.lastUnderReps }
+                }
+              })
+              if (!over.length) return null
+              return (
+                <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                  marginTop:4,maxWidth:340,lineHeight:1.6}}>
+                  REACHING THIS TARGET ALSO PASSES IT —
+                  {' '}{over.join('; ')}. This one figure is BOTH the bar READY
+                  must reach and the ceiling the TUL_LONG recommendation says
+                  you are over.{noSafe ? ` On a set you do not time no whole rep`
+                  + ` count satisfies both: ${lastUnder} reps lands under the`
+                  + ` target and one more lands past it.` : ''}
+                  {' '}The ceiling only complains once you have timed a set on
+                  that lift. Until the two figures are separate settings, expect
+                  TUL_LONG on lifts that are hitting their reps.
                 </div>
               )
             })()}

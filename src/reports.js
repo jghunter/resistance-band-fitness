@@ -48,6 +48,11 @@
     UNDER_FACTOR: 0.75, // weekly sets below this x the landmark = UNDER
     OVER_FACTOR:  1.5,  // weekly sets above this x the landmark = OVER
     REC_CAP:      10,   // max recommendations surfaced
+    /* Max slots ONE code may take of those ten before every other code has
+       had its turn. The backfill then refills any slack, so this binds only
+       when there is something else to show. 2 because the data picked it --
+       see visibleSlice. */
+    REC_PER_CODE:  2,
     /* Minimum sessions before a direction is asserted. A 3x/week trainee on the
        5-session rotation gets n=3 per exercise per 6-week block and n=2 at the
        30-day window. At n=3 the least-squares slope is exactly
@@ -5633,6 +5638,77 @@
     };
   }
 
+  /* ---- `tulTargetSec.hi` IS A FLOOR AND A CEILING AT ONCE (2026-11-10) ---
+     ONE STORED NUMBER, read in two opposite directions:
+
+       tulBarState (the READY gate)     ready: worst >= hi   a floor to REACH
+       buildRecommendations (TUL_LONG)  cd.meanTul > hi      a ceiling to STAY UNDER
+
+     The TRAINING STYLE panel sides with the first -- "Reaching the HIGH
+     figure is the second bar READY has to clear" -- and the recommendation
+     sides with the second: "over your 120s ceiling. Add a band."
+
+     ON A DERIVED SET THE TWO CAN BE MUTUALLY UNSATISFIABLE, and on Greg's
+     live profile they are. Measured 2026-11-10: cadence 5/1/5/0 = 11 s/rep,
+     hi 120, upper rep bar 12 so the bar is cleared at 13 reps.
+
+       10 reps x 11 = 110s  -> under hi, NOT ready
+       11 reps x 11 = 121s  -> ready, and already OVER the ceiling
+       13 reps x 11 = 143s  -> ready, 23s over
+
+     There is no INTEGER rep count that reaches the floor without passing the
+     ceiling, because hi is not a whole multiple of the cadence. The result on
+     his log is ELEVEN TUL_LONG recommendations, each saying "Add a band".
+
+     THE MIRROR OF tulBarReachable, WHICH WARNS IN ONE DIRECTION ONLY. That
+     function fires when a rep bar CANNOT REACH hi, on the rule that a bar
+     which can never be cleared is not a bar. The opposite state -- a bar that
+     can only be cleared by breaking a second rule -- had no warning at all,
+     and it is the state he is actually in. Same `volumeModel: "hit"` landmark
+     failure in a third form.
+
+     WHAT THIS DOES NOT DO: it does not change a threshold, move a severity,
+     or invent a second constant. The engine is left alone deliberately. The
+     real fix is a SEPARATE ceiling field so the two rules stop sharing a
+     number, and that deserves its own spec; inventing a multiple of hi here
+     would be a constant with no principled basis, which is the objection that
+     killed the ratio threshold in O9 on 2026-10-07. This states the
+     contradiction so the lifter can settle it by moving a number.
+
+     SILENT WHEN THERE IS NOTHING TO SAY: no ceiling, no cadence, a hold id,
+     or a bar whose derived time lands at or under hi. `overBy` is only ever
+     positive. */
+  function tulBarOvershoots(ctx, exId) {
+    if (isTimeBased(exId)) return null;
+    var hi = tulTargetHi(ctx);
+    if (hi == null) return null;
+    var cad = cadenceOf(null, null, ctx);
+    if (!cad) return null;
+    var tgt = repTargetFor(ctx, exId);
+    var repsAtBar = tgt.target + 1;
+    var derivedSec = repsAtBar * cad.secPerRep;
+    if (!(derivedSec > hi)) return null;
+    /* THE LAST REP COUNT THAT STAYS UNDER THE CEILING, and the first that
+       reaches the floor. When they are not the same number there is no
+       integer rep count satisfying both, and the sentence can say so
+       outright rather than leaving the reader to do the division. */
+    var lastUnder = Math.floor(hi / cad.secPerRep);
+    var firstAtOrOver = Math.ceil(hi / cad.secPerRep);
+    return {
+      repsAtBar: repsAtBar,
+      derivedSec: derivedSec,
+      hi: hi,
+      overBy: derivedSec - hi,
+      secPerRep: cad.secPerRep,
+      half: tgt.half,
+      /* TRUE when NO whole number of reps can both reach hi and stay at or
+         under it -- i.e. hi is not an exact multiple of the cadence. */
+      noSafeReps: lastUnder < firstAtOrOver ||
+                  (firstAtOrOver * cad.secPerRep) > hi,
+      lastUnderReps: lastUnder
+    };
+  }
+
   /* ---- CADENCE AND TIME SUMMARY FOR ONE LIFT OVER A WINDOW --------------
      EVERY MEAN NAMES HOW MANY READINGS IT IS OVER, because a mean over two
      phases and a mean over forty must not look alike on a table -- the
@@ -5657,6 +5733,7 @@
     var n = 0, m = 0, d = 0, z = 0;
     var actSum = 0, actN = 0, tulSum = 0, tulN = 0;
     var gapSum = 0, gapN = 0;
+    var fullSum = 0, fullN = 0;
     var points = [];
     sortedLog((ctx && ctx.log) || []).forEach(function (e) {
       if (!e || !e.date) return;
@@ -5685,6 +5762,15 @@
         if (t.phases.measured > 0) m++;
         if (t.phases.derived > 0) d++;
         tulSum += t.sec; tulN++;
+        /* THE FULLY-TIMED MEAN, added 2026-11-10 (finding N2).
+           `t.sec` is a whole-set duration and is only a MEASUREMENT when
+           EVERY phase of the set was timed. A "mixed" set's `sec` is part
+           stopwatch and part reps-times-the-standard, so adding it here
+           would reintroduce the very averaging this figure exists to avoid.
+           A partially timed set is therefore counted in `measured` (it does
+           contain a measurement) and NOT here, and the two figures are
+           different on purpose. */
+        if (t.basis === "measured") { fullSum += t.sec; fullN++; }
         if (t.gapsRecorded > 0) { gapSum += t.gapTotalSec; gapN += t.gapsRecorded; }
         setSegments(s).forEach(function (g) {
           var a = actualCadence(g, s, ctx, exId);
@@ -5710,6 +5796,17 @@
          over one timed set and one untimed one, which is the second half of
          the 2026-11-08 Critical. */
       nPriced: tulN,
+      /* THE MEAN OVER FULLY TIMED SETS ONLY, and how many that was (N2,
+         2026-11-10). meanTul above is over EVERY priced set and is the
+         right work-time figure for the ANALYZE table, which discloses the
+         mixture beside it. It is the WRONG figure to raise a complaint on:
+         TUL_LONG fired on spans that were 2-25% measured, so the decision
+         was made by derived numbers -- reps times the lifter's own
+         standard -- and the advice was 'Add a band'.
+         null, never 0, when no set was fully timed: 0 would claim a
+         measured duration of nothing. */
+      meanMeasuredTul: fullN ? (Math.round((fullSum / fullN) * 100) / 100) : null,
+      nMeasuredSets: fullN,
       meanGap: gapN ? (Math.round((gapSum / gapN) * 100) / 100) : null,
       gapsRecorded: gapN,
       mix: tulMix(points)
@@ -5730,6 +5827,26 @@
      A SUMMARY WITH NO nPriced is a hand-built one from a caller older than
      that field. It degrades to the measured count and the old wording
      rather than printing "null sets". */
+  /* THE DENOMINATOR FOR A FULLY-TIMED MEAN (N2, 2026-11-10). tulSpanPhrase
+     below names what `meanTul` is over -- every priced set, with the timed
+     share disclosed. The TUL recommendations no longer quote that figure, so
+     they must not quote its sentence either: saying "43 sets, 1 of them
+     timed" beside a mean taken over the ONE would misname the denominator in
+     the opposite direction from the defect it was written to fix.
+
+     EVERY SET THIS COUNTS WAS TIMED END TO END, so "timed set" is literally
+     true here in a way it was not before -- and the phrase also says how
+     much of the span it represents, because a figure over 1 of 43 sets and
+     one over 40 of 43 must not read alike. That is tulSpanPhrase's own
+     lesson, applied to a different denominator. */
+  function tulMeasuredPhrase(cd) {
+    var fN = (cd && finitePosNum(cd.nMeasuredSets)) ? cd.nMeasuredSets : 0;
+    var nP = finitePosNum(cd && cd.nPriced) ? cd.nPriced : fN;
+    var head = fN + " fully timed set" + (fN === 1 ? "" : "s");
+    if (nP > fN) head += " of " + nP;
+    return head;
+  }
+
   function tulSpanPhrase(cd) {
     var nP = finitePosNum(cd && cd.nPriced) ? cd.nPriced : null;
     var mN = (cd && finiteNonNegNum(cd.measured)) ? cd.measured : 0;
@@ -7969,6 +8086,38 @@
     return n === nLoaded;
   }
 
+  /* ---- A PR ON A LIFT YOU STOPPED DOING (N9, 2026-11-10) ----------------
+     `isGenuinePR` is right and does not move: it compares against sessions
+     strictly EARLIER than the one being judged, and `n === nLoaded`
+     disambiguates a 0 prior. No individual badge is wrong.
+
+     WHAT IS WRONG IS HOW MANY THERE ARE AND WHERE THEY SIT. Measured on
+     `rbts_backup_2026-11-10T19-06-32.json`:
+
+       window      rows   PR badges   of those, on a DORMANT lift
+       30 DAYS       75       25              13
+       90 DAYS       96       35              23
+       ALL TIME     102       34              22
+
+     On ALL TIME a THIRD of the table wears a green PR and two thirds of
+     those sit on lifts he stopped doing -- a record set in August, next to a
+     dimmed LAST date, and an EX_DORMANT verdict on the other tab. The badge
+     means "this lift's best priced session was its most recent one"; a
+     reader takes it to mean "you just set a record". On a dormant lift those
+     are very different statements.
+
+     STALE, NOT WITHHELD. The record is real and deleting it would lose a
+     true fact; what it must stop doing is reading as NEWS. Same treatment
+     the LAST column already gets past this threshold, and the same threshold,
+     so one lift cannot be dimmed in one column and bright in another.
+
+     IN THE ENGINE RATHER THAN IN EACH APP because two copies of a rule is
+     how two surfaces come to disagree -- the reason `isGenuinePR` was
+     hoisted here in the first place. */
+  function prIsStale(daysSince) {
+    return finiteNonNegNum(daysSince) && daysSince >= CONST.DORMANT_DAYS;
+  }
+
   function analyzeExercises(ctx, win) {
     /* Deloads are excluded from every judgment: reduced load is not a
        regression. They still count toward volume totals elsewhere. */
@@ -8147,6 +8296,10 @@
         volume: arr.reduce(function (a, x) { return a + x.vol; }, 0),
         allTimeBest: allBest[exId] == null ? null : allBest[exId],
         isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
+        /* THE BADGE IS STALE, NOT WITHHELD -- see prIsStale. Set on BOTH
+           row builders because both surfaces draw a PR badge, which is
+           the condition the "no field nobody renders" rule asks for. */
+        prStale: prIsStale(daysBetween(last.date, win.asOf)),
         ready: ps.ready,
         /* NEEDED BY exerciseVerdict's READY_BUT_FAST BRANCH BELOW, which
            reads row.repsReady to tell "the reps cleared but the time did
@@ -8356,6 +8509,9 @@
            the same function. Two copies is how the ANALYZE report and this
            table come to disagree about whether one session was a record. */
         isPR: isGenuinePR(pLast ? pLast.top : 0, priorTop, arr.length, priced.length),
+        /* See prIsStale. Both row builders carry it because both
+           surfaces draw a PR badge. */
+        prStale: prIsStale(daysBetween(last.date, win.asOf)),
         skippedGaps: skipped,
         /* THE BASIS of the START -> LATEST span. Over the PRICED points, and
            over the WINDOW's points only -- a carried-in START is marked on the
@@ -8913,7 +9069,34 @@
          told it "Hit the 30sec target - progress the load". Two thresholds,
          opposite advice, one set. A gate placed inside one branch does not
          protect a branch added beside it. */
-      if (cd && cd.measured > 0 && cd.meanTul != null && !isTimeBased(r.id)) {
+      /* THE GATE AND THE FIGURE BOTH MOVED TO FULLY-TIMED SETS (N2,
+         2026-11-10). It read `cd.measured > 0 && cd.meanTul != null`, so ONE
+         timed set anywhere in the window opened the whole DERIVED mean to a
+         verdict. Measured on `rbts_backup_2026-11-10T19-06-32.json`, ALL
+         TIME, every TUL item that fired:
+
+           Standing Band Chest Press      148s over 43 sets,  1 timed   2%
+           Standing Band Overhead Press   151s over 30 sets,  1 timed   3%
+           Neck Flexion                   129s over 18 sets,  1 timed   6%
+           Stiff-Leg Deadlift             173s over 13 sets,  1 timed   8%
+           ... eleven in all, nine of them a SINGLE timed set
+
+         The sentence disclosed the share honestly -- "across 43 sets, 1 of
+         them timed" -- and the DECISION to print it at all was still made by
+         42 derived numbers. And those 42 are N1's arithmetic: reps times a
+         standard that necessarily exceeds the ceiling, so TUL_LONG was
+         reporting the PROFILE rather than the training.
+
+         `actualCadence` has refused to average derived phases since the
+         feature shipped, "so averaging it in would report perfect adherence
+         for a set nobody timed". THE RULE EXISTED ONE FUNCTION OVER AND THIS
+         GATE DID NOT FOLLOW IT. It does now.
+
+         FULLY timed, not merely containing a measurement: a mixed set's
+         `sec` is part stopwatch and part standard, so it is not a measured
+         duration either. See cadenceSummary's meanMeasuredTul. */
+      if (cd && cd.nMeasuredSets > 0 && cd.meanMeasuredTul != null &&
+          !isTimeBased(r.id)) {
         /* A NUMERIC GUARD, NOT `|| null`. A truthiness test on a number
            would turn a stored 0 into null and silently disable the floor
            check -- tulTargetFromProfile refuses 0 today, so this is
@@ -8924,22 +9107,22 @@
         var hi = (ctx && ctx.tulTargetSec && finiteNonNegNum(ctx.tulTargetSec.hi))
           ? ctx.tulTargetSec.hi : null;
         var gated = noLoadSuggest(r.id);
-        if (lo != null && cd.meanTul < lo) {
+        if (lo != null && cd.meanMeasuredTul < lo) {
           recs.push({ severity: 5, code: "TUL_SHORT", scope: "exercise",
             subject: r.name,
-            detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + lo + "s floor)",
-            text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
-              "across " + tulSpanPhrase(cd) +
+            detail: r.name + " (" + Math.round(cd.meanMeasuredTul) + "s vs " + lo + "s floor)",
+            text: r.name + " averages " + Math.round(cd.meanMeasuredTul) + "s under load " +
+              "across " + tulMeasuredPhrase(cd) +
               ", under your " + lo + "s floor. " +
               (gated ? capFirst(NO_LOAD_ADVICE) + "."
                      : "The band is heavy for your cadence -- " +
                        "drop to a lighter stack and hold the tempo.") });
-        } else if (hi != null && cd.meanTul > hi) {
+        } else if (hi != null && cd.meanMeasuredTul > hi) {
           recs.push({ severity: 5, code: "TUL_LONG", scope: "exercise",
             subject: r.name,
-            detail: r.name + " (" + Math.round(cd.meanTul) + "s vs " + hi + "s ceiling)",
-            text: r.name + " averages " + Math.round(cd.meanTul) + "s under load " +
-              "across " + tulSpanPhrase(cd) +
+            detail: r.name + " (" + Math.round(cd.meanMeasuredTul) + "s vs " + hi + "s ceiling)",
+            text: r.name + " averages " + Math.round(cd.meanMeasuredTul) + "s under load " +
+              "across " + tulMeasuredPhrase(cd) +
               ", over your " + hi + "s ceiling. " +
               (gated ? "Do not add load to dynamic neck work -- " +
                        "shorten the set instead."
@@ -9010,7 +9193,85 @@
     });
     out.sort(function (a, b) { return a.severity - b.severity; });
     var cap = (opts && opts.cap != null) ? opts.cap : CONST.REC_CAP;
-    return cap === Infinity ? out : out.slice(0, cap);
+    if (cap === Infinity) return out;
+    return visibleSlice(out, cap,
+      (opts && opts.perCodeCap != null) ? opts.perCodeCap : CONST.REC_PER_CODE
+    ).visible;
+  }
+
+  /* ---- NO ONE CODE MAY FILL THE PANEL (2026-11-10) ----------------------
+     REC_CAP stopped being a FILTER in October -- the overflow is counted,
+     named in its closed summary and printed -- and the list was still
+     unreadable, because a ranked ten holding TWO codes has stopped being a
+     mix. Measured on `rbts_backup_2026-11-10T19-06-32.json`:
+
+       window    generated  the visible ten was        READY  first READY
+       30 DAYS       81     STALLED x5, DECLINING x5     17     rank 12
+       90 DAYS      102     STALLED x5, DECLINING x5     17     rank 14
+       ALL TIME     109     STALLED x6, DECLINING x4     17     rank 17
+
+     The reader opens the panel, sees ten stall and decline notices, and reads
+     "everything is going badly" on a day when seventeen lifts are ready to
+     progress and sixteen cadence findings exist. **Every one of the five new
+     cadence codes fired and none reached the visible ten.**
+
+     WHY A SHARE CAP AND NOT ANOTHER SEVERITY MOVE. Moving one severity has
+     now been tried twice. 2026-11-08 moved EX_DORMANT from 4 to 6 and it
+     WORKED -- dormancy fell from rank 1 to rank 45 and READY rose from
+     35/58/64 to 12/14/17 -- and STALLED (2) plus DECLINING (3) immediately
+     took all ten slots instead. Each move fixes the window it was measured on
+     and hands the same failure to the next code family. A share cap is the
+     only rule that survives the NEXT one.
+
+     TWO PASSES, AND THE SECOND IS NOT OPTIONAL. Pass one takes at most
+     `perCode` of any code, in rank order. Pass two BACKFILLS the remaining
+     slots from what pass one deferred, still in rank order -- without it a
+     window generating only two codes would show six of ten and hide four,
+     which helps nobody and would be a worse panel than the one this
+     replaces. So the cap BINDS ONLY WHEN THERE IS SOMETHING ELSE TO SHOW,
+     and the visible count never falls below what it was.
+
+     PERCODE IS 2, AND THE DATA PICKED IT. At 3, READY is invisible on ALL
+     TIME; at 4, invisible on 90 DAYS and ALL TIME as well. Only 2 surfaces
+     READY on every retrospective window, and it yields SIX distinct codes
+     on all four windows against the two it replaces.
+
+     NOTHING IS DISCARDED AND NOTHING IS REORDERED. The deferred items keep
+     their rank and go to the overflow the October change built, which is
+     already counted and code-named in its closed summary. The severity
+     ladder is untouched. */
+  function visibleSlice(list, cap, perCode) {
+    var all = list || [];
+    if (!(cap < Infinity)) return { visible: all.slice(), more: [] };
+    /* NO GUARD ON `perCode`, AND THAT IS DELIBERATE RATHER THAN AN OVERSIGHT.
+       A `(perCode > 0) ? perCode : Infinity` guard stood here for one commit
+       and was removed when a mutation test could not kill it: with a perCode
+       of 0 pass one defers EVERYTHING, and pass two then backfills in rank
+       order up to `cap` -- which is exactly a plain severity head, i.e. "no
+       per-code rule", which is what the guard was written to produce. The two
+       branches are indistinguishable for every input, so the guard was dead
+       code wearing the look of a safety check.
+
+       Keeping unpinnable code is worse than not having it: the next reader
+       trusts a guard the suite cannot prove, and this project's own rule is
+       to assert BEHAVIOUR rather than presence. The 0 case is asserted
+       directly instead. */
+    var pc = perCode;
+    var seen = {}, visible = [], deferred = [], i, r, n;
+    for (i = 0; i < all.length; i++) {
+      r = all[i];
+      if (visible.length >= cap) { deferred.push(r); continue; }
+      n = seen[r.code] || 0;
+      if (n >= pc) { deferred.push(r); continue; }
+      seen[r.code] = n + 1;
+      visible.push(r);
+    }
+    var more = [];
+    for (i = 0; i < deferred.length; i++) {
+      if (visible.length < cap) visible.push(deferred[i]);
+      else more.push(deferred[i]);
+    }
+    return { visible: visible, more: more };
   }
 
   /* ---- the single public entry point ------------------------------------- */
@@ -9048,8 +9309,17 @@
        unchanged. See buildRecommendations' header for the measurement. */
     var recsAll = buildRecommendations(ctx, exercises, groups, unlogged,
                                        { cap: Infinity });
-    var recommendations = recsAll.slice(0, CONST.REC_CAP);
-    var recommendationsMore = recsAll.slice(CONST.REC_CAP);
+    /* THE SAME SLICER THE BUILDER USES, not a second copy of the rule.
+       Two copies of an ordering rule is how a tab and a printed report come
+       to list the same findings differently -- the lesson `key:"engine"` and
+       `isGenuinePR` both exist for. `recommendations` is no longer simply the
+       first REC_CAP by severity: no single code may take more than
+       REC_PER_CODE of them until every other code has had a turn, with the
+       remainder BACKFILLED so the visible count never falls. See
+       visibleSlice. */
+    var recCut = visibleSlice(recsAll, CONST.REC_CAP, CONST.REC_PER_CODE);
+    var recommendations = recCut.visible;
+    var recommendationsMore = recCut.more;
     /* Estimated one-rep max, one row per exercise already trained in this
        window, plus the two ORM flags for each. groupOf here must hand
        oneRmFlags the LABEL, not the {label,color} object ctx.groupOf itself
@@ -9160,6 +9430,9 @@
       recommendationsMore: recommendationsMore,
       recommendationsTotal: recsAll.length,
       recommendationsCap: CONST.REC_CAP,
+      /* Reported so a surface can SAY what shaped the visible list rather
+         than leaving a reader to infer it from the counts. */
+      recommendationsPerCodeCap: CONST.REC_PER_CODE,
       oneRm: oneRm,
       oneRmMethodName: oneRmMethodLabel(ctx.oneRmMethod)
     };
@@ -9350,7 +9623,12 @@
           String(r.n),
           fmtLb(r.firstTop) + " -> " + fmtLb(r.lastTop),
           fmtDelta(r.deltaPct),
-          r.trend + (r.isPR ? " PR" : ""),
+          /* A PRINTED REPORT CANNOT DIM, so the staleness that is a colour
+             on screen has to be a WORD here (N9, 2026-11-10). Without it
+             the printed table is the one surface still saying a record
+             from August is simply "PR". Same rule, same threshold --
+             prIsStale -- so the page and the print cannot disagree. */
+          r.trend + (r.isPR ? (r.prStale ? " PR (stale)" : " PR") : ""),
           r.bestReps + r.unit + " / " + r.barApplied + r.unit,
           r.verdict.code
         ]);
@@ -9415,8 +9693,16 @@
       : ["Nothing needs attention in this window - everything is either " +
          "progressing or on schedule."];
     if ((res.recommendationsMore || []).length) {
+      /* "BY SEVERITY" ALONE STOPPED BEING TRUE on 2026-11-10. The visible
+         list is ranked by severity AND limited to REC_PER_CODE of any one
+         code until the others have had a turn, so a reader who trusts the
+         old wording would expect the overflow to be uniformly less severe
+         than everything above it -- and it is not. Naming both rules is the
+         difference between a heading that explains the list and one that
+         misdescribes it. */
       recRows.push("--- below the top " + res.recommendations.length +
-        " by severity; " + res.recommendationsMore.length + " more of " +
+        " by severity, at most " + res.recommendationsPerCodeCap +
+        " per code; " + res.recommendationsMore.length + " more of " +
         res.recommendationsTotal + " ---");
       res.recommendationsMore.forEach(function (r, i) {
         recRows.push((res.recommendations.length + i + 1) + ". [" + r.code +
@@ -11033,8 +11319,10 @@
     tulBarApplies: tulBarApplies,
     tulBarState: tulBarState,
     tulBarReachable: tulBarReachable,
+    tulBarOvershoots: tulBarOvershoots,
     cadenceSummary: cadenceSummary,
     tulSpanPhrase: tulSpanPhrase,
+    tulMeasuredPhrase: tulMeasuredPhrase,
     setSide: setSide,
     setPartials: setPartials,
     setTopLoad: setTopLoad,
@@ -11233,6 +11521,8 @@
     stallSpanClause: stallSpanClause,
     oneRmMethodFit: oneRmMethodFit,
     windowCoversLog: windowCoversLog,
+    visibleSlice: visibleSlice,
+    prIsStale: prIsStale,
     windowTopLoad: windowTopLoad,
     skippedGapCount: skippedGapCount,
     unpricedBetween: unpricedBetween,
