@@ -568,7 +568,16 @@ function cadenceNow() {
 }
 function tulTargetFromCandidate(t) {
   const pos = v => typeof v === 'number' && isFinite(v) && v > 0
-  return (t && pos(t.lo) && pos(t.hi) && t.hi >= t.lo) ? { lo: t.lo, hi: t.hi } : null
+  if (!(t && pos(t.lo) && pos(t.hi) && t.hi >= t.lo)) return null
+  /* THE OPTIONAL CEILING (SPEC_tul_ceiling.md, 2026-11-10). Absent is a
+     valid answer -- HIGH then stays both the READY bar and the TUL_LONG
+     ceiling, exactly as before the field existed. Present, it must sit AT
+     OR ABOVE HIGH: a ceiling under the floor would complain about the very
+     set READY requires, so it is refused the way hi < lo is -- the WHOLE
+     window is refused, never a half of it stored. */
+  if (t.cap == null) return { lo: t.lo, hi: t.hi }
+  if (!(pos(t.cap) && t.cap >= t.hi)) return null
+  return { lo: t.lo, hi: t.hi, cap: t.cap }
 }
 function tulTargetNow() {
   const p = activeRawProfile()
@@ -631,7 +640,11 @@ function cadCtx() { return { cadence: cadenceNow() } }
    pause" is a real answer. A blank LIFT or LOWER box means there is no
    cadence at all, because a rep with no lifting phase is not a rep. */
 const CAD_KEYS = ['pos', 'hold', 'neg', 'turn']
-const TUL_KEYS = ['lo', 'hi']
+/* "cap" rides the same boxes/buffer/seed machinery as lo and hi. It is the
+   ONE key that may legitimately be absent from a stored window, which is why
+   tulRaw and tulSeed below guard the stored value with != null -- without
+   that, a cap-less window renders the string "undefined" in the third box. */
+const TUL_KEYS = ['lo', 'hi', 'cap']
 /* What the box for `key` currently SHOWS: the raw text being typed if there
    is any, else the stored figure, else empty. */
 function cadRaw(buf, key) {
@@ -642,7 +655,7 @@ function cadRaw(buf, key) {
 function tulRaw(buf, key) {
   if (buf && buf[key] != null) return buf[key]
   const t = tulTargetNow()
-  return t ? String(t[key]) : ''
+  return (t && t[key] != null) ? String(t[key]) : ''
 }
 function cadFromBuf(buf) {
   const out = {}
@@ -676,7 +689,7 @@ function cadSeed(buf) {
 function tulSeed(buf) {
   const out = { ...buf }
   const t = tulTargetNow()
-  if (t) TUL_KEYS.forEach(k => { if (out[k] == null) out[k] = String(t[k]) })
+  if (t) TUL_KEYS.forEach(k => { if (out[k] == null && t[k] != null) out[k] = String(t[k]) })
   return out
 }
 /* A MINIMAL ctx FOR tulBarReachable, and deliberately NOT makeReportCtx().
@@ -6134,10 +6147,13 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               margin:'2px 0 4px 0',maxWidth:340,lineHeight:1.6}}>
               The window a set should land in. Reaching the HIGH figure is the
               second bar READY has to clear, alongside the rep bar. Leave blank
-              and only the rep bar applies.
+              and only the rep bar applies. CEILING is where the TUL_LONG
+              recommendation starts complaining — it must be at or above HIGH,
+              and the gap between them is the landing zone. Leave CEILING blank
+              and HIGH is both the bar and the ceiling, as before.
             </div>
             <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-              {[['lo','LOW'],['hi','HIGH']].map(f => {
+              {[['lo','LOW'],['hi','HIGH'],['cap','CEILING']].map(f => {
                 const key = f[0]
                 return (
                   <div key={key} style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
@@ -6227,29 +6243,38 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
                  that needs its own spec. Mirrors fitness_app.html. */
               const ctx2 = reachCtx()
               const over = []
-              let noSafe = false, lastUnder = null
+              let noSafe = false, lastUnder = null, anyCap = false
               ;[[9,'upper'],[217,'lower']].forEach(pair => {
                 const o = RBTS_REPORTS.tulBarOvershoots(ctx2, pair[0])
                 if (o) {
                   over.push(pair[1].toUpperCase()+': '+o.repsAtBar+' reps at '+
                     o.secPerRep+' s/rep derives '+o.derivedSec+'s, '+o.overBy+
-                    's over the '+o.hi+'s target')
+                    's over the '+o.ceiling+'s ceiling')
                   if (o.noSafeReps) { noSafe = true; lastUnder = o.lastUnderReps }
+                  if (o.capSet) anyCap = true
                 }
               })
               if (!over.length) return null
+              /* TWO STATES, TWO SENTENCES (SPEC_tul_ceiling.md). With no
+                 CEILING set, hi is still one figure read two ways and the
+                 remedy is the box above. With one set, the bar overshoots
+                 a ceiling the user chose, and the remedy is to move one of
+                 the two numbers. Mirrors fitness_app.html. */
               return (
                 <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
                   marginTop:4,maxWidth:340,lineHeight:1.6}}>
-                  REACHING THIS TARGET ALSO PASSES IT —
-                  {' '}{over.join('; ')}. This one figure is BOTH the bar READY
-                  must reach and the ceiling the TUL_LONG recommendation says
-                  you are over.{noSafe ? ` On a set you do not time no whole rep`
+                  {anyCap ? 'THE REP BAR PASSES YOUR CEILING — ' : 'REACHING THIS TARGET ALSO PASSES IT — '}
+                  {over.join('; ')}.
+                  {anyCap ? '' : ' This one figure is BOTH the bar READY' +
+                    ' must reach and the ceiling the TUL_LONG recommendation' +
+                    ' says you are over.'}
+                  {noSafe ? ` On a set you do not time no whole rep`
                   + ` count satisfies both: ${lastUnder} reps lands under the`
-                  + ` target and one more lands past it.` : ''}
+                  + ` ceiling and reaching the bar lands past it.` : ''}
                   {' '}The ceiling only complains once you have timed a set on
-                  that lift. Until the two figures are separate settings, expect
-                  TUL_LONG on lifts that are hitting their reps.
+                  that lift.{anyCap
+                    ? ' Raise the CEILING, lower the rep target, or speed the cadence.'
+                    : ' Set a CEILING in the boxes above to separate the two figures.'}
                 </div>
               )
             })()}
@@ -7795,16 +7820,18 @@ function BandCalibration({ myBands, user }) {
             record the force. STRETCH is how far BEYOND the rest length you pulled, not
             the total gap: pull a 41in band to a 66in gap and type 25. Two readings are
             enough to replace the assumed curve with a real one; three is better, and
-            spread them wide — outside your readings the app holds the nearest one
-            rather than extrapolating.
+            spread them wide — between your readings the figure is MEASURED;
+            outside them it is modeled from the nearest one (above the top
+            reading it climbs at the vendor's rated rate from your reading;
+            below the lowest it runs a straight line down to zero force at
+            zero stretch) and is reported as MODELED, not MEASURED.
             The three TARGET STRETCH figures beside each band are the points
             the app's own curve is anchored on — the vendor's minimum, a
             normal working lift, and the vendor's maximum. Readings taken
             anywhere else still count; readings that bracket all three make
             the curve exact where the app actually evaluates it. If a band is
             too strong to reach the third figure, take the two you can and
-            make sure they straddle the middle one — anything above your top
-            reading is reported as that reading, not extrapolated.
+            make sure they straddle the middle one.
             Leave it all blank and the app keeps using the
             vendor's rated range, reported as MODELED rather than MEASURED.
           </div>
@@ -7816,6 +7843,16 @@ function BandCalibration({ myBands, user }) {
           {pool.map(b => {
             const g = geom[b.id] || {}
             const pts = g.measured || []
+            /* A LOGGED LIFT SITS BELOW THIS BAND'S READINGS (Greg's call,
+               SPEC_low_side_force.md 2026-11-10). Below the lowest reading
+               the figure is a modeled line to zero -- it shrinks the old
+               overstatement, but only a reading taken where the lift
+               operates removes it, and only the lifter can take one. So the
+               panel names the exact stretch. Reads rbts_log from storage the
+               way the merge path does; the panel is collapsed by default,
+               so the scan runs only while it is open. */
+            const lowGap = RBTS_REPORTS.bandLowSideGap(
+              JSON.parse(localStorage.getItem('rbts_log') || 'null') || [], b.id, g)
             const status = RBTS_REPORTS.bandCalibrationLabel(pts)
             /* bandTargetStretches treats an empty object exactly as it treats
                null, so `g` needs no extra guard here. */
@@ -7841,6 +7878,16 @@ function BandCalibration({ myBands, user }) {
                       ? '  — from your taped rest length of ' + tgt.rest + ' in'
                       : "  — from the band's nominal " + tgt.rest +
                         ' in; tape the rest length to make these exact'}
+                  </div>
+                )}
+                {lowGap && (
+                  <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,
+                    marginBottom:6,maxWidth:420,lineHeight:1.6}}>
+                    A LOGGED LIFT SITS BELOW YOUR READINGS — you have used this
+                    band at {lowGap.minEffIn}in of stretch and your lowest reading
+                    is at {lowGap.lowestReadingIn}in. Below a reading the figure is
+                    modeled, not measured. Take a reading near {lowGap.suggestIn}in
+                    to replace the model where this lift actually operates.
                   </div>
                 )}
                 <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>

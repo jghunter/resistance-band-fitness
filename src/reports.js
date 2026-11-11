@@ -497,9 +497,31 @@
     var pts = (geom && Array.isArray(geom.measured)) ? sanitizeMeasuredPoints(geom.measured) : [];
 
     if (pts.length >= LOAD_MODEL.MIN_MEASURED_POINTS) {
-      /* Piecewise-linear through real readings; clamp outside the measured
-         span rather than extrapolating a curve nobody measured. */
-      if (stretchIn <= pts[0].stretchIn) return pts[0].lb;
+      /* Piecewise-linear through real readings. Outside the span: above,
+         the vendor-rate extrapolation below; BELOW, a straight line from
+         the origin to the lowest reading (Greg's option B,
+         SPEC_low_side_force.md, 2026-11-10).
+
+         IT HELD AT THE LOWEST READING UNTIL THAT DAY, which made the
+         reading a FLOOR: every lighter set was overstated, and a SLACK band
+         priced as the reading. The line is the existing sub-rated ramp
+         re-anchored -- the no-readings fit already draws origin -> vendor
+         minimum at strain 0.5; this draws origin -> HIS reading, the same
+         "start from his reading" principle that chose option C above.
+         Continuous at both ends, never negative, never above the old hold.
+
+         Vendor-rate DESCENT (option C) was rejected: it crosses zero and a
+         floor of 0 is the "confident 0 lb" defect the ramp was built to
+         kill. Switching to the vendor fit down here (option D) was rejected
+         for the same discontinuity that killed it on the top side.
+
+         Incidence when built: TWO uses in 95 entries, both under a pound
+         of overstatement (`measure_lowside.cjs`). The real remedy is still
+         a reading taken further IN -- bandLowSideGap names the stretch. */
+      if (stretchIn <= pts[0].stretchIn) {
+        if (stretchIn <= 0) return 0;
+        return pts[0].lb * (stretchIn / pts[0].stretchIn);
+      }
       var last = pts[pts.length - 1];
       if (stretchIn >= last.stretchIn) {
         /* ABOVE THE TOP READING: EXTRAPOLATE AT THE VENDOR'S OWN RATE, never
@@ -678,6 +700,53 @@
   function bandCalibrationLabel(points) {
     return sanitizeMeasuredPoints(points).length >= LOAD_MODEL.MIN_MEASURED_POINTS
       ? "MEASURED" : "RATED";
+  }
+
+  /* HAS THIS BAND BEEN USED BELOW ITS OWN READINGS -- and if so, where
+     should the next reading be taken (SPEC_low_side_force.md, Greg's call
+     2026-11-10). Below the lowest reading the force is now a modeled line
+     to the origin, which SHRINKS the old overstatement; a reading taken
+     where the lift actually operates REMOVES it, and only the lifter can
+     take one. This names the stretch so the calibration panel can ask for
+     exactly the reading that would retire the model.
+
+     THE SCAN READS THE FROZEN STAMPS, not a recomputation: `stretchIn` is
+     what the load model actually evaluated at save time, and the FOLD
+     doubles the strain, so the per-band figure is stretchIn * (doubled ?
+     2 : 1) -- the same arithmetic the 2026-11-04 top-side measurement used.
+     The band list is the entry's first set via setBands (the working-stack
+     convention), so a band swapped in on a later drop-down is not scanned;
+     this is a PROMPT, and a missed exotic case costs one un-asked-for
+     suggestion, never a wrong load figure.
+
+     Null when there is nothing to say: fewer than two readings (no span to
+     be below), no logged use of the band, or every use at or above the
+     lowest reading. */
+  function bandLowSideGap(log, bandId, geom) {
+    var pts = sanitizeMeasuredPoints(geom && geom.measured);
+    if (pts.length < LOAD_MODEL.MIN_MEASURED_POINTS) return null;
+    var minEff = null;
+    (log || []).forEach(function (e) {
+      var loads = (e && e.load) || {};
+      Object.keys(loads).forEach(function (ex) {
+        var st = loads[ex];
+        if (!st || !finitePosNum(st.stretchIn)) return;
+        var sets = ((e.exercises || {})[ex]) || [];
+        if (!sets.length) return;
+        var bands = setBands(sets[0]) || [];
+        if (bands.indexOf(bandId) < 0) return;
+        var eff = st.stretchIn * (st.doubled ? 2 : 1);
+        if (minEff === null || eff < minEff) minEff = eff;
+      });
+    });
+    if (minEff === null || !(minEff < pts[0].stretchIn)) return null;
+    return {
+      /* Rounded DOWN to the quarter inch the reading inputs step by, so the
+         suggested reading sits at or below every logged use. */
+      suggestIn: Math.floor(minEff * 4) / 4,
+      minEffIn: minEff,
+      lowestReadingIn: pts[0].stretchIn
+    };
   }
 
   /* A typed rest length. `entry` is the band's current geom entry (or
@@ -5521,6 +5590,33 @@
     var t = ctx && ctx.tulTargetSec;
     return (t && finitePosNum(t.hi)) ? t.hi : null;
   }
+  /* THE SEPARATE CEILING (SPEC_tul_ceiling.md, Greg's decision 2026-11-10).
+     `hi` had been a FLOOR to tulBarState (ready: worst >= hi) and a CEILING
+     to TUL_LONG (mean > hi) at once, and at 11 s/rep against 120s no whole
+     rep count satisfies both. `cap` is the ceiling, OPTIONAL: absent, every
+     rule reads exactly what it read before, so a profile that never opens
+     the panel sees no change (absent-cap behaviour A1 -- the derived cap
+     and the silent-TUL_LONG options were both rejected in the spec).
+
+     A cap BELOW the floor is self-contradictory -- it would complain about
+     a set READY requires -- so it is treated as not set rather than
+     half-used, the posture validCadence takes with a partial cadence. The
+     apps' validators refuse to STORE one; this guard is for a hand-built
+     ctx that never went through them. */
+  function tulTargetCap(ctx) {
+    var t = ctx && ctx.tulTargetSec;
+    if (!t || !finitePosNum(t.cap)) return null;
+    var hi = finitePosNum(t.hi) ? t.hi : null;
+    if (hi != null && t.cap < hi) return null;
+    return t.cap;
+  }
+  /* What TUL_LONG and the overshoot mirror actually compare against:
+     the cap when one is set, else hi -- ONE resolver, so the complaint and
+     the warning can never read different ceilings. */
+  function tulCeiling(ctx) {
+    var cap = tulTargetCap(ctx);
+    return cap != null ? cap : tulTargetHi(ctx);
+  }
   function tulBarApplies(ctx, exId) {
     if (isTimeBased(exId)) return false;
     return tulTargetHi(ctx) != null;
@@ -5682,29 +5778,38 @@
     if (isTimeBased(exId)) return null;
     var hi = tulTargetHi(ctx);
     if (hi == null) return null;
+    /* THE CEILING IS THE CAP WHEN ONE IS SET (SPEC_tul_ceiling.md). With a
+       cap of 150 over a floor of 120 at 11 s/rep, 13 reps derives 143s --
+       inside the band -- and this warning goes silent because the
+       contradiction is actually resolved, not because it was muted. Without
+       a cap, ceiling === hi and every figure below is what it was. */
+    var ceiling = tulCeiling(ctx);
+    var capSet = tulTargetCap(ctx) != null;
     var cad = cadenceOf(null, null, ctx);
     if (!cad) return null;
     var tgt = repTargetFor(ctx, exId);
     var repsAtBar = tgt.target + 1;
     var derivedSec = repsAtBar * cad.secPerRep;
-    if (!(derivedSec > hi)) return null;
+    if (!(derivedSec > ceiling)) return null;
     /* THE LAST REP COUNT THAT STAYS UNDER THE CEILING, and the first that
-       reaches the floor. When they are not the same number there is no
+       reaches the floor. When the first overshoots the ceiling there is no
        integer rep count satisfying both, and the sentence can say so
        outright rather than leaving the reader to do the division. */
-    var lastUnder = Math.floor(hi / cad.secPerRep);
+    var lastUnder = Math.floor(ceiling / cad.secPerRep);
     var firstAtOrOver = Math.ceil(hi / cad.secPerRep);
     return {
       repsAtBar: repsAtBar,
       derivedSec: derivedSec,
       hi: hi,
-      overBy: derivedSec - hi,
+      ceiling: ceiling,
+      capSet: capSet,
+      overBy: derivedSec - ceiling,
       secPerRep: cad.secPerRep,
       half: tgt.half,
-      /* TRUE when NO whole number of reps can both reach hi and stay at or
-         under it -- i.e. hi is not an exact multiple of the cadence. */
-      noSafeReps: lastUnder < firstAtOrOver ||
-                  (firstAtOrOver * cad.secPerRep) > hi,
+      /* TRUE when NO whole number of reps can both reach the floor and stay
+         at or under the ceiling. With no cap the two are one number and
+         this reduces to "hi is not an exact multiple of the cadence". */
+      noSafeReps: (firstAtOrOver * cad.secPerRep) > ceiling,
       lastUnderReps: lastUnder
     };
   }
@@ -9128,6 +9233,12 @@
           ? ctx.tulTargetSec.lo : null;
         var hi = (ctx && ctx.tulTargetSec && finiteNonNegNum(ctx.tulTargetSec.hi))
           ? ctx.tulTargetSec.hi : null;
+        /* THE CEILING, NOT hi (SPEC_tul_ceiling.md, 2026-11-10). hi stays
+           the floor READY reaches; a set that lands between hi and the cap
+           is in the band the two rules used to make impossible. No cap set
+           means tulCeiling answers hi and this line behaves as it always
+           did -- absent-cap behaviour A1. */
+        var ceilSec = tulCeiling(ctx);
         var gated = noLoadSuggest(r.id);
         if (lo != null && cd.meanMeasuredTul < lo) {
           recs.push({ severity: 5, code: "TUL_SHORT", scope: "exercise",
@@ -9139,13 +9250,13 @@
               (gated ? capFirst(NO_LOAD_ADVICE) + "."
                      : "The band is heavy for your cadence -- " +
                        "drop to a lighter stack and hold the tempo.") });
-        } else if (hi != null && cd.meanMeasuredTul > hi) {
+        } else if (ceilSec != null && cd.meanMeasuredTul > ceilSec) {
           recs.push({ severity: 5, code: "TUL_LONG", scope: "exercise",
             subject: r.name,
-            detail: r.name + " (" + Math.round(cd.meanMeasuredTul) + "s vs " + hi + "s ceiling)",
+            detail: r.name + " (" + Math.round(cd.meanMeasuredTul) + "s vs " + ceilSec + "s ceiling)",
             text: r.name + " averages " + Math.round(cd.meanMeasuredTul) + "s under load " +
               "across " + tulMeasuredPhrase(cd) +
-              ", over your " + hi + "s ceiling. " +
+              ", over your " + ceilSec + "s ceiling. " +
               (gated ? "Do not add load to dynamic neck work -- " +
                        "shorten the set instead."
                      : "Add a band.") });
@@ -11348,6 +11459,8 @@
     tulBarApplies: tulBarApplies,
     tulBarState: tulBarState,
     tulBarReachable: tulBarReachable,
+    tulTargetCap: tulTargetCap,
+    tulCeiling: tulCeiling,
     tulBarOvershoots: tulBarOvershoots,
     cadenceSummary: cadenceSummary,
     tulSpanPhrase: tulSpanPhrase,
@@ -11408,6 +11521,7 @@
     bandForceAt: bandForceAt,
     sanitizeMeasuredPoints: sanitizeMeasuredPoints,
     bandCalibrationLabel: bandCalibrationLabel,
+    bandLowSideGap: bandLowSideGap,
     bandTargetStretches: bandTargetStretches,
     applyBandRestLengthEdit: applyBandRestLengthEdit,
     applyBandMeasuredPointEdit: applyBandMeasuredPointEdit,
