@@ -5133,6 +5133,43 @@
   }
   function isPlainSet(s) { return setIntens(s) === "straight"; }
 
+  /* THE rom_tempo FAMILY THE PROGRESSION JUDGMENT MAY SEE, with the
+     straight-set-equivalent multiplier the STALL comparison credits each
+     one at (Option AB, SPEC_rom_tempo_progression.md, Greg's ruling
+     2026-11-10: "the proxy may EXCUSE, never PRESCRIBE").
+
+     THE VALUES MIRROR INTENSIFIERS[k].sseMultiplier IN BOTH APPS and a
+     drift guard in test_intensifier_progression.cjs pins them there in
+     both directions -- the engine has no INTENSIFIERS table of its own,
+     and a second copy of a constant is how two surfaces come to disagree.
+
+     m_set IS DELIBERATELY ABSENT, NOT FORGOTTEN. Greg's logged m_set rep
+     figures count EACH PARTIAL RETURN (his recall, 2026-11-10), so face
+     value would overstate the set and x2.5 on top of movements would be
+     wildly wrong. It stays excluded from the judgment, with a disclosure
+     where the exclusion could mislead (see stallState). Do not add it on
+     the strength of the apps' table carrying a 2.5 for it -- that 2.5 was
+     written for rep CLUSTERS nobody logs. */
+  var ROM_TEMPO_SSE = {
+    one_and_quarter: 1.25,
+    tempo: 1.15,
+    super_slow_ecc: 1.35,
+    neg_accentuated: 1.30,
+    pause: 1.10
+  };
+  /* The STALL comparison's credit for one working set: face-value reps
+     times the technique's multiplier, x1 for a straight set or a
+     synthesized first phase (which carries no `intensifier` by
+     construction). Rounded to 0.1 the way the apps' sseReps rounds.
+     NEVER CONSULTED BY READY OR THE REP BAR -- sideReady reads setReps
+     directly, and that asymmetry is the whole design: a multiplied figure
+     may excuse a would-be stall, it must never manufacture an instruction
+     to add load. */
+  function sseStallReps(w) {
+    var m = (w && w.intensifier && ROM_TEMPO_SSE[w.intensifier]) || 1;
+    return Math.round(setReps(w) * m * 10) / 10;
+  }
+
   /* THE WORKING SET inside a logged set -- for the PROGRESSION judgment only.
 
      A SEGMENTED set (drop set, rest-pause, cluster, 30-10-30) opens with a
@@ -5196,7 +5233,19 @@
   function workingSetOf(s) {
     if (!s) return null;
     var segs = (Array.isArray(s.segments) && s.segments.length) ? s.segments : null;
-    if (!segs) return isPlainSet(s) ? s : null;
+    /* THE rom_tempo FAMILY IS ADMITTED, BY IDENTITY, AT FACE VALUE
+       (Option AB, 2026-11-10). These sets carry real reps at a real stack;
+       before this they were invisible, so a session logged entirely as
+       tempo work could never read READY and scored ZERO best reps toward a
+       stall -- the 2026-11-04 defect's last surviving corner. The two
+       shapes that MUST stay excluded still are: the LEGACY `drop: true`
+       row (setIntens answers "drop_set", a phase masquerading as a set)
+       and m_set (absent from ROM_TEMPO_SSE on purpose -- its logged reps
+       count partial returns; see the map's comment). */
+    if (!segs) {
+      if (isPlainSet(s)) return s;
+      return ROM_TEMPO_SSE[setIntens(s)] ? s : null;
+    }
     var g = segs[0] || {};
     /* THE secs GUARD IS "SECONDS WITH NO REP COUNT", not "seconds at all"
        (tightened 2026-11-07). The original refusal was right about the
@@ -6473,9 +6522,11 @@
     return flags;
   }
 
-  /* Stalled = STALL_N straight working sessions with no improvement in best
-     plain-set reps. Drop sets are excluded: a correct drop set ends low by
-     design and would fake a stall. */
+  /* Stalled = STALL_N straight working sessions with no improvement in the
+     best working-set credit. A segmented set is judged on its FIRST PHASE
+     (2026-11-04); a rom_tempo set is judged at straight-set-equivalent
+     reps (Option AB, 2026-11-10); a drop set's drop-downs stay excluded --
+     a correct drop set ends low by design and would fake a stall. */
   /* THE STALL JUDGMENT AND THE SESSIONS IT WAS MADE ON, from ONE exHistory
      call (2026-11-10).
 
@@ -6510,9 +6561,30 @@
        it. A span is a citation, and a citation for a judgment that was not
        made is an invitation to quote it anyway. */
     if (h.length < CONST.STALL_N) return { stalled: false, span: null };
+    /* THE STALL COMPARISON RUNS ON STRAIGHT-SET EQUIVALENTS (Option AB,
+       2026-11-10): sseStallReps credits a rom_tempo set at reps x its
+       multiplier, x1 for everything else. The failure mode this exists
+       for: a switch from straight 12s to tempo 10s read as "no
+       improvement" when 10 x 1.15 = 11.5 is nearly the same effort. The
+       multiplier may EXCUSE a would-be stall this way; READY never sees
+       it -- sideReady still reads face-value reps.
+
+       sseCredited and mSetSkipped are counted HERE, on the same sessions
+       the boolean was decided on, for the same reason the span is: a
+       disclosure computed in a second pass can cite sets the judgment
+       never saw. mSetSkipped counts plain-shaped m_set sets, the kind
+       workingSetOf refuses -- a session of nothing but m_set work scores
+       zero best reps, and the verdict must be able to say why. */
+    var sseCredited = 0, mSetSkipped = 0;
     var best = h.map(function (e) {
+      (e.sets || []).forEach(function (s) {
+        if (!s || Array.isArray(s.segments) && s.segments.length) return;
+        var k = setIntens(s);
+        if (ROM_TEMPO_SSE[k]) sseCredited++;
+        else if (k === "m_set") mSetSkipped++;
+      });
       return workingSets(e.sets).reduce(function (m, s) {
-        var r = setReps(s); return r > m ? r : m;
+        var r = sseStallReps(s); return r > m ? r : m;
       }, 0);
     });
     for (var i = 1; i < best.length; i++) {
@@ -6520,7 +6592,8 @@
     }
     return { stalled: true,
              span: { from: h[h.length - 1].date, to: h[0].date, n: h.length,
-                     dates: h.map(function (e) { return e.date; }).reverse() } };
+                     dates: h.map(function (e) { return e.date; }).reverse(),
+                     sseCredited: sseCredited, mSetSkipped: mSetSkipped } };
   }
   function isStalled(log, exId, beforeDate, deloadOf) {
     return stallState(log, exId, beforeDate, deloadOf).stalled;
@@ -7663,6 +7736,26 @@
     }
     return s + ")";
   }
+  /* The two AB disclosures, each silent when it has nothing to say
+     (Option AB, SPEC_rom_tempo_progression.md, 2026-11-10). Both ride the
+     STALLED verdict ONLY: the credit and the skip are facts about REPS,
+     which is STALLED's own subject -- the reps-only rule that keeps the
+     load-basis clause OFF STALLED is the same rule that lets these ON. */
+  function romTempoStallClause(span) {
+    if (!span || !(span.sseCredited > 0)) return "";
+    return " The comparison credited " + span.sseCredited +
+      " intensified set" + (span.sseCredited === 1 ? "" : "s") +
+      " at straight-set-equivalent reps (face reps x the technique's " +
+      "multiplier), so a harder rep style is not what is being read as " +
+      "no improvement.";
+  }
+  function mSetStallClause(span) {
+    if (!span || !(span.mSetSkipped > 0)) return "";
+    return " " + span.mSetSkipped + " M-Set set" +
+      (span.mSetSkipped === 1 ? " in these sessions was" : "s in these sessions were") +
+      " not judged: their rep figures count partial returns, which no rep " +
+      "bar can read.";
+  }
 
   /* ---- the BASIS of a load comparison (added 2026-10-07) ------------------
      A load trend is only a strength claim if every reading in it was measured
@@ -8023,9 +8116,12 @@
        that is climbing. progressionState is deliberately left alone; only this
        narrative verdict differs. */
     if (row.stalled && row.trend !== "GROWING") {
+      /* The AB clauses come AFTER the advice, never instead of it --
+         the house rule every disclosure follows. */
       return { code: "STALLED", text: "No improvement in " + CONST.STALL_N +
         " straight working sessions" + stallSpanClause(row.stallSpan) +
-        ". Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." };
+        ". Apply a high-intensity technique you have not used on it recently, or drop back 10% and rebuild." +
+        romTempoStallClause(row.stallSpan) + mSetStallClause(row.stallSpan) };
     }
     /* NO PRICED SESSION AT ALL. Every branch below this point divides by or
        compares a figure this row does not have, and would report "only N
@@ -11458,6 +11554,10 @@
     tulTargetHi: tulTargetHi,
     tulBarApplies: tulBarApplies,
     tulBarState: tulBarState,
+    ROM_TEMPO_SSE: ROM_TEMPO_SSE,
+    sseStallReps: sseStallReps,
+    romTempoStallClause: romTempoStallClause,
+    mSetStallClause: mSetStallClause,
     tulBarReachable: tulBarReachable,
     tulTargetCap: tulTargetCap,
     tulCeiling: tulCeiling,
