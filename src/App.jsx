@@ -7280,6 +7280,12 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
       // initial cloud sync would otherwise carry empty arrays, which import as
       // a deliberate inventory wipe on another device.
       ...(invLoaded ? { rbts_gear: gearInv || [], rbts_myBands: myBands || [] } : {}),
+      /* THE RACK RIDES THIS EXPORT TOO. Unlike the inventory above it is
+         read straight from localStorage rather than gated on invLoaded:
+         it is not a Firestore-backed list, so there is nothing to wait
+         for, and omitting it when a lazy load had not run is exactly how
+         the three schedule keys went missing for months. */
+      rbts_myDumbbells: getLocalMyDumbbells(),
       /* Measurements are expensive to produce and exist only where they were
          entered — the two apps do not share an origin, so without these the
          gear geometry and band calibration would have to be typed twice.
@@ -7586,6 +7592,31 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
         if (Array.isArray(state && state.rbts_bodyweight) && state.rbts_bodyweight.length) {
           saveLocalBodyweight(state.rbts_bodyweight)
           measMsg += ` ${state.rbts_bodyweight.length} bodyweight entries.`
+        }
+        /* THE RACK: REPLACES, BEHIND ONE CONFIRM THAT NAMES THE CONSEQUENCE.
+           A union cannot express "I sold the 3s", so an additive merge would
+           keep a weight that is gone and put it in the advice forever. Greg's
+           rule for the three schedule keys applies: ask first, name what is
+           lost, and STAY SILENT WHEN THE FILE AGREES with what is stored --
+           a prompt with nothing to decide trains people to click OK.
+
+           Array.isArray, never truthiness: an EMPTY list is a real value
+           meaning "I own none", and a truthy test would refuse to restore a
+           rack somebody deliberately emptied. */
+        if (Array.isArray(state && state.rbts_myDumbbells)) {
+          const haveDb = getLocalMyDumbbells()
+          const sameDb = JSON.stringify(haveDb) ===
+            JSON.stringify(state.rbts_myDumbbells.slice().sort((a, b) => a.lb - b.lb))
+          if (sameDb) {
+            saveLocalMyDumbbells(state.rbts_myDumbbells)
+          } else if (confirm(
+              `File lists ${state.rbts_myDumbbells.length} dumbbell weight(s). ` +
+              `This REPLACES this device's ${haveDb.length}. Continue?`)) {
+            saveLocalMyDumbbells(state.rbts_myDumbbells)
+            measMsg += ` Dumbbells replaced (${state.rbts_myDumbbells.length}).`
+          } else {
+            measMsg += ' Dumbbells: skipped.'
+          }
         }
         /* Profile: only ever restored from a file that actually carries one, so
            an older backup cannot wipe it. TRAINING_STYLE is read at module load,
