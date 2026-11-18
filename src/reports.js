@@ -7429,14 +7429,56 @@
     }
     return out;
   }
+  /* THE SAME MAXIMUM RULE FOR IRON, and it has to be the same rule: what to
+     carry to the rack is "the most of this weight any one set needs", never
+     a sum. Two sets at two 40s still means carrying ONE pair.
+
+     A DUMBBELL DROP SET NEEDS BOTH PAIRS, and this returns both -- the
+     maximum is taken PER WEIGHT, so two 40s down to two 30s yields 40,40,
+     30,30. That is correct: you set both pairs out before you start, which
+     is the whole point of a pull list.
+
+     Keyed by the WEIGHT rather than a band id, so the keys are numbers that
+     JavaScript turns into strings on an object. They are turned back with
+     Number() at the one place that reads them -- see the DUMBBELLS row in
+     buildSetupDoc. */
+  function stagedDumbbellsOf(sets) {
+    var maxC = {}, order = [], out = [], i;
+    (sets || []).forEach(function (s) {
+      var perSet = {};
+      setSegments(s).forEach(function (g) {
+        if (!finitePosNum(g && g.dbLb)) return;
+        var n = finitePosNum(g.dbCount) ? Math.round(g.dbCount) : 1;
+        var k = String(g.dbLb);
+        if (perSet[k] == null || n > perSet[k]) perSet[k] = n;
+      });
+      Object.keys(perSet).forEach(function (k) {
+        if (maxC[k] == null) { maxC[k] = 0; order.push(k); }
+        if (perSet[k] > maxC[k]) maxC[k] = perSet[k];
+      });
+    });
+    /* Heaviest first: that is the order you pick them off the rack, and it
+       puts the set you open with at the front. */
+    order.sort(function (a, b) { return Number(b) - Number(a); });
+    for (i = 0; i < order.length; i++) {
+      for (var q = 0; q < maxC[order[i]]; q++) out.push(Number(order[i]));
+    }
+    return out;
+  }
   /* Staging quantity is the MAXIMUM any single exercise needs, never the sum:
      two exercises each using two red bands still means carrying two. */
   function pullList(perEx) {
     var bandMax = {}, bandOrder = [], gearMax = {}, gearOrder = [];
+    var dbMax = {}, dbOrder = [];
     (perEx || []).forEach(function (ex) {
-      var bc = {}, gc = {};
+      var bc = {}, gc = {}, dc = {};
       (ex.bandIds || []).forEach(function (id) { bc[id] = (bc[id] || 0) + 1; });
       (ex.gearIds || []).forEach(function (id) { gc[id] = (gc[id] || 0) + 1; });
+      /* THE IRON TAKES THE SAME MAXIMUM-ACROSS-EXERCISES RULE as the bands
+         above it: two lifts each wanting a pair of 40s still means carrying
+         ONE pair. The per-exercise list arrives already staged by
+         stagedDumbbellsOf, so this level only has to compare exercises. */
+      (ex.dbLbs || []).forEach(function (lb) { dc[lb] = (dc[lb] || 0) + 1; });
       Object.keys(bc).forEach(function (id) {
         if (bandMax[id] == null) { bandMax[id] = 0; bandOrder.push(id); }
         if (bc[id] > bandMax[id]) bandMax[id] = bc[id];
@@ -7445,10 +7487,20 @@
         if (gearMax[id] == null) { gearMax[id] = 0; gearOrder.push(id); }
         if (gc[id] > gearMax[id]) gearMax[id] = gc[id];
       });
+      Object.keys(dc).forEach(function (lb) {
+        if (dbMax[lb] == null) { dbMax[lb] = 0; dbOrder.push(lb); }
+        if (dc[lb] > dbMax[lb]) dbMax[lb] = dc[lb];
+      });
     });
+    dbOrder.sort(function (a, b) { return Number(b) - Number(a); });
     return {
       bands: bandOrder.map(function (id) { return { id: id, count: bandMax[id] }; }),
-      gear: gearOrder.map(function (id) { return { id: id, count: gearMax[id] }; })
+      gear: gearOrder.map(function (id) { return { id: id, count: gearMax[id] }; }),
+      /* `lb` is a NUMBER here, turned back from the object key it had to
+         become. A caller printing it must not get the string "40". */
+      dumbbells: dbOrder.map(function (lb) {
+        return { lb: Number(lb), count: dbMax[lb] };
+      })
     };
   }
   function gearLabel(gearIds, gearOf) {
@@ -7496,7 +7548,7 @@
       .concat(ctx.orderSlots(session.primary || {}, opts.focusLabel))
       .concat(ctx.orderSlots(session.accessories || {}, opts.focusLabel));
 
-    var exRows = [], perEx = [], rawEntries = [], n = 0;
+    var exRows = [], perEx = [], rawEntries = [], dbUnknown = [], n = 0;
     slots.forEach(function (pair) {
       var slot = pair[0], id = pair[1];
       if (id == null) return;
@@ -7518,6 +7570,21 @@
          pullList applies across exercises. A drop set that removes bands
          between phases must not read as needing twice as many. */
       var pullBands = lu ? stagedBandsOf(lu.sets) : [];
+      /* WHAT IRON TO SET OUT, from the LAST SESSION of this lift -- Greg's
+         ruling, 2026-11-18. The sheet is written BEFORE the session exists,
+         so there is no weight to read except the one he used last time, and
+         saying nothing would leave a lift that definitely needs iron absent
+         from the list of what to carry.
+
+         IT IS A REMINDER, NOT A PRESCRIPTION. The advice about what to lift
+         next is READY's job and says so in its own words; this row only
+         answers "what do I pick up off the rack before I start". */
+      var pullDb = lu ? stagedDumbbellsOf(lu.sets) : [];
+      /* A DUMBBELL LIFT WITH NO WEIGHT TO QUOTE gets NAMED instead of being
+         silently missing -- a first session, or one logged before the weight
+         box existed. The honest row says which lift it cannot price rather
+         than leaving a gap the reader has to notice. */
+      if (isDumbbellLift(id) && !pullDb.length) dbUnknown.push(ctx.nameOf(id));
       /* One formatted line per set, from the SAME function the history report
          uses, so the two printouts cannot drift. */
       var lastSets = [];
@@ -7598,7 +7665,7 @@
         flags: flags,
         blanks: blanks
       });
-      perEx.push({ bandIds: pullBands, gearIds: gearIds });
+      perEx.push({ bandIds: pullBands, gearIds: gearIds, dbLbs: pullDb });
     });
 
     var pl = pullList(perEx);
@@ -7613,6 +7680,21 @@
         var g = ctx.gearOf(x.id);
         return (g ? g.brand + " " + g.name : x.id) + (x.count > 1 ? " x" + x.count : "");
       }).join(" | ") });
+    }
+    /* THE IRON TO SET OUT, heaviest first. Written as "2 x 40 lb" -- the
+       SAME wording dumbbellSetPhrase uses on the history lines, so one
+       phrase means one thing wherever it appears. */
+    if (pl.dumbbells.length) {
+      pullRows.push({ label: "DUMBBELLS", value: pl.dumbbells.map(function (x) {
+        return x.count + " x " + x.lb + " lb";
+      }).join(" | ") });
+    }
+    /* ONE KEY, ONE MEANING: the row above is weights to carry, this one is
+       lifts whose weight is not known yet. Folding them together would make
+       a reader parse which half of the value was which. */
+    if (dbUnknown.length) {
+      pullRows.push({ label: "DUMBBELLS - NOT YET LOGGED",
+                      value: dbUnknown.join(" | ") + " - no previous weight to quote" });
     }
 
     var techCount = Object.keys(techMap).length;
@@ -12004,6 +12086,7 @@
     gearLabel: gearLabel,
     repsLabel: repsLabel,
     pullList: pullList,
+    stagedDumbbellsOf: stagedDumbbellsOf,
     buildSetupDoc: buildSetupDoc,
     entryTotals: entryTotals,
     fmtNum: fmtNum,
