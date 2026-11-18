@@ -147,7 +147,14 @@
      NO_LOAD_SUGGEST's comment.)
 
      DO NOT PUT THEM BACK. What remains here is six genuine HOLDS. */
-  var TIME_BASED = [71, 72, 166, 181, 182, 184];
+  /* 276 Dumbbell Farmer's Carry joined 2026-11-17, approved by Greg. A carry
+     is measured in seconds, and 166 Band Farmer's Carry Hold is already
+     here. SEVEN now, not six -- and the membership is deliberate in both
+     directions: ids 177, 178 and 179 came OFF this list on 2026-11-07 when
+     Greg confirmed his logged "12" meant twelve REPETITIONS. This list means
+     one thing only: THE REP FIELD IS SECONDS. It is not the safety gate --
+     that is NO_LOAD_SUGGEST, below. */
+  var TIME_BASED = [71, 72, 166, 181, 182, 184, 276];
   function isTimeBased(id) { return TIME_BASED.indexOf(Number(id)) >= 0; }
 
   /* ---- EXERCISES THAT MUST NEVER BE TOLD TO ADD LOAD -------------------
@@ -168,6 +175,48 @@
      have to pick the wrong list. */
   var NO_LOAD_SUGGEST = [177, 178, 179];
   function noLoadSuggest(id) { return NO_LOAD_SUGGEST.indexOf(Number(id)) >= 0; }
+
+  /* ---- DUMBBELL LIFTS -------------------------------------------------
+     THE FIFTH ID-KEYED TABLE. The four named everywhere else are
+     EX_GROUP_OVERRIDE, EX_CLASS_OVERRIDE, EX_UNILATERAL and EX_CAUTION;
+     this is the fifth, and CLAUDE.md plus the exercise-catalog skill were
+     updated in the same branch to say so. A table keyed by id cannot tell
+     that an id changed meaning underneath it, so nothing automated can
+     catch a stale entry here.
+
+     IT DOES TWO JOBS ON PURPOSE. Membership means "this lift is performed
+     with dumbbells", and the VALUE is the default number of dumbbells in
+     the lifter's hands. Two tables would be two things to keep in step.
+
+     THE VALUE IS A SEED, NEVER A LIMIT. The card seeds this count and the
+     lifter may change it per set: a goblet squat is one bell, until the
+     day it is two. Nothing in the load path reads this table -- it reads
+     the SET's own dbCount. The only readers are the card's seed and the
+     UI's "is this a dumbbell lift" question.
+
+     COUNT AND SIDEDNESS ARE INDEPENDENT AXES. 271-273 hold a dumbbell in
+     each hand (count 2) while working one leg (L/R rows), so a reader that
+     derives one from the other halves the load on every lunge. */
+  var EX_DUMBBELL = {
+    249: 2, 250: 2, 251: 2, 252: 2,          // chest: press, incline press, flies
+    253: 2, 254: 2, 255: 2, 256: 2,          // shoulders: OHP, Arnold, lateral raises
+    257: 1,                                  // one bell in two hands, overhead
+    258: 1, 259: 2,                          // kickback (per side), skull crusher
+    260: 2, 261: 1, 262: 2,                  // row, one-arm row, rear delt flies
+    263: 2, 264: 2, 265: 2, 266: 2, 267: 1,  // curls; preacher curl is one arm
+    268: 1, 269: 1,                          // goblet and sumo squat: one bell held
+    270: 2,                                  // RDL
+    271: 2, 272: 2, 273: 2,                  // lunges and split squat: BOTH hands, ONE leg
+    274: 2, 275: 1,                          // calf raise, one-leg calf raise
+    276: 2,                                  // farmer's carry -- also on TIME_BASED
+    277: 1, 278: 1, 279: 1                   // russian twist, leg raise, crunch
+  };
+  function isDumbbellLift(id) {
+    return Object.prototype.hasOwnProperty.call(EX_DUMBBELL, String(Number(id)));
+  }
+  function dumbbellCountDefault(id) {
+    return isDumbbellLift(id) ? EX_DUMBBELL[Number(id)] : 0;
+  }
   /* ONE WORDING, used by every surface that would otherwise say "add a band",
      so they cannot drift. NO_LOAD_TAIL is the half that is a PROHIBITION
      rather than a suggestion, split out 2026-11-09 because a FIFTH surface
@@ -177,6 +226,73 @@
      so the two constants are built from one string and not typed twice. */
   var NO_LOAD_TAIL = "do not add load to dynamic neck work";
   var NO_LOAD_ADVICE = "add a rep or hold it longer -- " + NO_LOAD_TAIL;
+
+  /* ---- THE NEXT PAIR UP ------------------------------------------------
+     "Progress the load" is the most actionable thing this app says, and for
+     a band it can name the band. For iron it must name a weight the lifter
+     OWNS -- the app goes to four people with four racks, so this cannot be
+     a constant in the code. The inventory arrives as ctx.dumbbellsOwned,
+     and an absent one means an empty rack, which is the neutral default a
+     fresh install must have.
+
+     THE WINDOW IS THE BAND STACK CALCULATOR'S: +5-15% on the top end, +10%
+     ideal. Both kinds of load progress by one standard rather than two.
+
+     THE COUNT IS HELD FIXED. Going from one 40 to two 25s is a different
+     exercise setup, not a load step, and an advice line that changed the
+     setup under the lifter would be telling them to do something else.
+
+     A PAIR NEEDS TWO PHYSICAL DUMBBELLS. An entry with qty 1 can be the
+     next SINGLE bell and can never be the next pair -- the rack is what it
+     is, and advice that assumes otherwise sends somebody to a shelf.
+
+     FOUR ANSWERS, and "none" is a real one:
+       next  a step inside the window: name it.
+       gap   the only step owned is over 15%: name it AS a jump, and offer
+             reps or a band instead. Greg's own rack has this between the
+             30s and the 40s -- 60 lb to 80 lb is 33%, and nobody
+             progresses a working set by a third.
+       top   nothing heavier is owned: say so plainly. Never invent a 45.
+       none  no inventory, or an unusable current weight: the caller falls
+             back to the wording it used before this existed. */
+  var DB_STEP_MAX_PCT = 15;
+  function dumbbellNextStep(inventory, each, count) {
+    var NONE = { kind: "none", each: null, total: null, pct: null,
+                 text: "progress the load" };
+    if (!finitePosNum(each)) return NONE;
+    var n = finitePosNum(count) ? Math.round(count) : 1;
+    var list = [];
+    (inventory || []).forEach(function (e) {
+      /* finitePosNum on BOTH fields: an imported "50" is a string, and a
+         rack that trusts it would sort "50" between 5 and 6. */
+      if (e && finitePosNum(e.lb) && finitePosNum(e.qty) && e.qty >= n) {
+        list.push(e.lb);
+      }
+    });
+    if (!list.length) return NONE;
+    list.sort(function (a, b) { return a - b; });
+    var cur = each * n, i, nextEach = null;
+    for (i = 0; i < list.length; i++) {
+      if (list[i] * n > cur) { nextEach = list[i]; break; }
+    }
+    if (nextEach === null) {
+      return { kind: "top", each: null, total: null, pct: null,
+               text: n + " x " + each + " lb is the heaviest you own - " +
+                     "add reps, slow the cadence, or add a band to the dumbbell" };
+    }
+    var total = nextEach * n;
+    var pct = ((total - cur) / cur) * 100;
+    var pairPhrase = n + " x " + nextEach + " lb";
+    if (pct > DB_STEP_MAX_PCT) {
+      return { kind: "gap", each: nextEach, total: total, pct: pct,
+               text: "your next pair is " + pairPhrase + ", a " +
+                     Math.round(pct) + "% jump - hold " + n + " x " + each +
+                     " lb and add reps, or add a band to the dumbbell" };
+    }
+    return { kind: "next", each: nextEach, total: total, pct: pct,
+             text: "next up: " + pairPhrase + " (" + total + " lb, +" +
+                   Math.round(pct) + "%)" };
+  }
 
   /* CAPITALISE A SHARED PHRASE THAT MUST START A SENTENCE.
      NO_LOAD_ADVICE is written lowercase because its first two call sites join
@@ -327,6 +443,24 @@
     // Overhead / shoulder.
     187: "Overhead under band tension. Do not press into a shrug, and stop if the shoulder pinches at the top.",
     56:  "Upright rows can impinge the shoulder. Keep the pull below chest height and stop for any pinching.",
+    // Dumbbell lifts, 2026-11-17. DISPLAY TEXT ONLY -- this table gates
+    // nothing, and no dumbbell lift belongs in NO_LOAD_SUGGEST: all 31
+    // progress by load, which is the whole feature.
+    259: "The dumbbells pass over your face on every rep, so control the bottom of the range rather than the rep count. Lower to beside the head, not behind it, and end the set when the elbows begin to drift outward.",
+    /* The closing clause deliberately echoes 37, the band hip hinge: it is
+       the same failure mode, and 37's words were written for exactly it. */
+    270: "Hinge from the hips with a neutral spine and keep the dumbbells against your legs. A weight that drifts forward loads the back hardest exactly where form breaks — stop the set when the back rounds, not when the reps run out.",
+    /* GREG CORRECTED THIS HAZARD, 2026-11-17. The first draft warned that
+       the dumbbells drop on the lifter's feet. His words: "wait is beside
+       the body not directly over the feet ... However it's a grip for a
+       long period of time you should feel the grip loosening and deal with
+       it before it just drops." So the words name the failure he will
+       actually meet -- a grip that gives way gradually and is felt first --
+       and the instruction acts on that. Kept as a lesson: the draft was
+       plausible enough to read past, and would have taught the wrong thing
+       about a movement he does. */
+    276: "A carry is a long grip, and a grip gives way gradually. Set the dumbbells down when you feel it loosening rather than holding on for the time. They land beside your feet rather than on them, but they still land.",
+    277: "Loaded rotation at the lumbar spine. Turn from the ribs with the hips quiet, keep the range short, and stop for any pinch or ache in the low back rather than at the rep count.",
   };
   function exCautionOf(id) { return EX_CAUTION[Number(id)] || null; }
   function techCautionOf(k) { return TECH_CAUTION[k] || null; }
@@ -3294,7 +3428,17 @@
          the band. It degrades the WHOLE stack to RATED with a `basis`
          naming the reason, rather than let bandForceAt's correct 0-at-slack
          floor read as a real answer. */
-  function effectiveLoad(ctx, bandIds, gearIds, opts) {
+  /* ---- THE BAND HALF OF THE LOAD ---------------------------------------
+     THIS FUNCTION IS THE BODY `effectiveLoad` HAD UNTIL 2026-11-17. It was
+     renamed and NOTHING ELSE about it changed, which is what makes a
+     band-only figure provably identical before and after: same number,
+     same provenance, same basis string.
+
+     The rename exists because this function has TWENTY `return out` exits.
+     Adding the dumbbell to each one is a guaranteed missed branch, and a
+     missed branch here is a set priced without its iron -- silently short,
+     with nothing on screen saying so. The wrapper below adds it ONCE. */
+  function bandEffectiveLoad(ctx, bandIds, gearIds, opts) {
     var ids = bandIds || [];
     var o = opts || {};
     var d = o.doubled ? 2 : 1;
@@ -3954,6 +4098,146 @@
     }
     return out;
   }
+  /* ---- PROVENANCE TIERS -----------------------------------------------
+     "Heaviest" is decided WITHIN a tier first and only then by pounds, so
+     a vendor guess can never outrank a real measurement by being bigger.
+
+     MEASURED and MODELED have always shared tier 1: both are real loads on
+     the same scale. EXACT joins them for the same reason -- a stamped
+     dumbbell is a real load, and it is the most certain figure this app
+     produces. It does NOT get a tier of its own: within a tier the heavier
+     set wins, which is the behaviour that was wanted anyway.
+
+     AN UNKNOWN WORD IS TIER 0, the least certain. A figure this table does
+     not recognise must never outrank one it does. */
+  var PROV_TIER = { RATED: 0, MODELED: 1, MEASURED: 1, EXACT: 1 };
+  function tierOfProvenance(pv) {
+    return Object.prototype.hasOwnProperty.call(PROV_TIER, pv) ? PROV_TIER[pv] : 0;
+  }
+  /* ONE function, so the panel and the printed report cannot hold two
+     copies of a ranking rule. `analyze` had to be pinned to a shared
+     slicer on 2026-11-10 for exactly this reason: two copies of an
+     ordering rule is how two surfaces come to disagree about which
+     figures matter. A MIXED set carries its own rankTier (the weakest
+     part); everything else derives it from the word. */
+  function loadRankTier(e) {
+    if (!e) return -1;
+    if (typeof e.rankTier === "number") return e.rankTier;
+    return tierOfProvenance(e.provenance);
+  }
+
+  /* ---- THE IRON HALF --------------------------------------------------
+     Returns null when there is no dumbbell in play at all, an object with
+     `missing` when a dumbbell lift recorded no weight, and a priced part
+     otherwise.
+
+     THE WEIGHT IS READ FROM THE SET, NOT FROM EX_DUMBBELL. The table
+     decides which card leads with the dumbbell row and what the count
+     SEEDS to; it never decides what a logged set weighed. That is why any
+     exercise can carry iron -- a dumbbell held during a band squat is a
+     real rig -- and why a dumbbell lift with an empty weight box is
+     missing data rather than a zero.
+
+     A COUNT WITH NO WEIGHT IS NOT A LOAD. The count alone says how many
+     hands were full, not how heavy they were. */
+  function dumbbellPart(o) {
+    var each = o.dbLb;
+    if (!finitePosNum(each)) {
+      return isDumbbellLift(o.exId) ? { missing: "dumbbell weight" } : null;
+    }
+    /* An absent or unusable count is counted as ONE and the basis says so.
+       Greg's ruling, 2026-11-17: refusing the whole set would throw away a
+       weight that WAS known. The card seeds the count, so this fires only
+       for an import or a hand-edited file. */
+    var assumed = !finitePosNum(o.dbCount);
+    var count = assumed ? 1 : Math.round(o.dbCount);
+    return {
+      lb: each * count,
+      provenance: "EXACT",
+      basis: "dumbbell: " + count + " x " + each + " lb stamped" +
+             (assumed ? " (count not recorded, counted as one)" : ""),
+      each: each,
+      count: count,
+      countAssumed: assumed
+    };
+  }
+
+  /* ---- THE WHOLE LOAD -------------------------------------------------
+     The band half, the iron half, and one figure that says honestly what
+     it is made of. Every return sets `parts` and `rankTier` so no caller
+     ever has to test for undefined -- the resolveVideo rule, applied here.
+     Greg's rulings, 2026-11-17: EXACT for iron alone, MIXED when both load
+     one set, and a MIXED figure RANKS at its weakest part. */
+  function effectiveLoad(ctx, bandIds, gearIds, opts) {
+    var o = opts || {};
+    var ids = bandIds || [];
+    var band = bandEffectiveLoad(ctx, ids, gearIds, o);
+    var iron = dumbbellPart(o);
+
+    var bandPart = ids.length
+      ? { lb: band.lb, provenance: band.provenance, basis: "band: " + band.basis }
+      : null;
+
+    if (!iron) {
+      band.parts = bandPart ? [bandPart] : [];
+      band.rankTier = tierOfProvenance(band.provenance);
+      return band;
+    }
+
+    if (iron.missing) {
+      /* THE BAND HALF STILL STANDS and is still priced. What is unknown is
+         the iron, and `missing` is what stops volume, est. 1RM and the PR
+         badge from treating an incomplete figure as a complete one. The
+         alternative -- reporting the band total as though it were the whole
+         load -- is the confident wrong answer this whole design avoids. */
+      band.missing = iron.missing;
+      band.basis = bandPart
+        ? band.basis + "; no dumbbell weight recorded"
+        : "no dumbbell weight recorded";
+      band.parts = bandPart ? [bandPart] : [];
+      band.rankTier = tierOfProvenance(band.provenance);
+      return band;
+    }
+
+    if (!bandPart) {
+      /* IRON ALONE. The band fields are meaningless here and are set to the
+         same absent values bandEffectiveLoad uses, so a reader cannot pick
+         up a stray stretch or attach height from a set that had neither. */
+      band.lb = iron.lb;
+      band.rated = iron.lb;
+      band.ratio = 1;
+      band.provenance = "EXACT";
+      band.basis = iron.basis;
+      band.stretchIn = null;
+      band.attachHeightIn = null;
+      band.belowRated = false;
+      band.aboveRated = false;
+      band.romBlind = false;
+      band.parts = [{ lb: iron.lb, provenance: "EXACT", basis: iron.basis }];
+      band.rankTier = tierOfProvenance("EXACT");
+      band.dumbbell = { each: iron.each, count: iron.count };
+      return band;
+    }
+
+    /* BOTH. The parts are summed and the word says MIXED, because RATED on
+       a figure that is 80 lb stamped iron plus 22 lb of vendor guess would
+       imply the whole 102 lb is a guess. The RANK, though, is the weakest
+       part's: the badge tells the truth on screen while the ranking keeps
+       meaning "how much of this figure is a guess". */
+    band.lb = band.lb + iron.lb;
+    band.rated = band.rated + iron.lb;
+    band.provenance = "MIXED";
+    band.basis = iron.basis + " + " + bandPart.basis;
+    band.parts = [
+      { lb: iron.lb, provenance: "EXACT", basis: iron.basis },
+      bandPart
+    ];
+    band.rankTier = Math.min(tierOfProvenance("EXACT"),
+                             tierOfProvenance(bandPart.provenance));
+    band.dumbbell = { each: iron.each, count: iron.count };
+    return band;
+  }
+
 
   /* The heaviest set in a sets list, as an effectiveLoad result -- the same
      selection stampLoad uses to decide what a whole exercise "means" when the
@@ -4004,18 +4288,33 @@
                        pressSetup, pressTravel) {
     var best = null, bestTier = -1;
     (sets || []).forEach(function (s) {
-      var bands = Array.isArray(s.segments)
-        ? (((s.segments[0] || {}).bands) || []) : (s.bands || []);
-      if (!bands.length) return;
+      /* PHASE 0 IS THE WORKING STACK on a segmented set -- the later phases
+         are the drop-downs. The iron is read from the SAME phase as the
+         bands, because a drop set changes both together. */
+      var p0 = Array.isArray(s.segments) ? (s.segments[0] || {}) : s;
+      var bands = p0.bands || [];
+      var dbLb = p0.dbLb, dbCount = p0.dbCount;
+      /* THE GUARD USED TO BE `if (!bands.length) return;`, which skipped
+         every dumbbell-only set before it was ever priced -- so a dumbbell
+         lift could have no heaviest set, no PR badge and no est. 1RM, with
+         nothing on screen saying why. A set counts now if it carries
+         EITHER a band or a weight. */
+      if (!bands.length && !finitePosNum(dbLb)) return;
       var e = effectiveLoad(ctx, bands, gearIds,
                             { doubled: !!s.doubled, attachHeightIn: attachHeightIn,
                               exId: exId, opening: opening, bandPath: bandPath,
                               pressSetup: pressSetup,
                               pressTravel: pressTravel,
+                              dbLb: dbLb, dbCount: dbCount,
                               /* Per-SET, like `doubled`. A one-sided set has no
                                  top span at all -- see effectiveLoad. */
                               side: setSide(s) });
-      var tier = e.provenance === "RATED" ? 0 : 1;
+      /* AN INCOMPLETE FIGURE CANNOT BE A PERSONAL RECORD. A dumbbell lift
+         whose weight box was left empty is short by the iron, and a short
+         figure presented as the heaviest set is a wrong number wearing a
+         badge. It is skipped, not counted as zero. */
+      if (e.missing) return;
+      var tier = loadRankTier(e);
       if (!best || tier > bestTier || (tier === bestTier && e.lb > best.lb)) {
         best = e; bestTier = tier;
       }
@@ -4149,6 +4448,18 @@
                     deltaIn: isAbs ? undefined : best.stretchIn,
                     stretchIn: isAbs ? best.stretchIn : undefined,
                     doubled: best.doubled || undefined,
+                    /* THE PARTS ARE FROZEN WITH THE TOTAL. A stamp exists so
+                       that re-measuring a band next year cannot rewrite what
+                       a past workout meant; a MIXED set whose stamp kept only
+                       the total would lose the fact that most of it was iron,
+                       and the band half would then read as the whole load.
+                       BOTH ARE UNDEFINED ON A BAND-ONLY STAMP, deliberately:
+                       an empty array or an empty object on every band-only
+                       stamp is a shape change to every reader of the 95
+                       entries already logged. */
+                    parts: (best.parts && best.parts.length > 1)
+                           ? best.parts : undefined,
+                    dumbbell: best.dumbbell || undefined,
                     attachIn: best.attachHeightIn == null ? undefined : best.attachHeightIn,
                     openingN: openingUsed ? openingN : undefined,
                     /* Frozen only when the absolute-stretch path actually
@@ -4322,6 +4633,26 @@
    179,                    // lateral neck flexion -- one side at a time
    217,                    // split squat (belt)
    220, 222,               // side plank row, bird dog (per-side)
+   /* DUMBBELL LIFTS, 2026-11-17. STRUCTURAL, not gear-conditional: these
+      seven are one side at a time by the shape of the movement, and no
+      bar, plate, handle or anchor changes that.
+
+      COUNT IS A SEPARATE AXIS. 271-273 hold a dumbbell in EACH HAND while
+      working ONE leg, so they are L/R rows carrying a count of 2. A reader
+      that derives the count from the sidedness halves the load on every
+      lunge.
+
+      257 (overhead extension) and 263 (bicep curl) are DELIBERATELY ABSENT.
+      Greg, 2026-11-17: "it can be either one -- I've done both exercises
+      both ways and should still be able to do it either way." The side chip
+      renders on every set row, so he taps L/R on the day he does the
+      alternating version; this table only decides the shape the card starts
+      in. Do not add them. */
+   258,                    // triceps kickback -- precedent: 147 band kickback
+   261,                    // one-arm row -- precedent: 24 band single-arm row
+   267,                    // preacher curl -- precedent: 133 concentration curl
+   271, 272, 273,          // lunges and split squat -- precedent: 102-108
+   275,                    // one-leg calf raise -- precedent: 169
    /* FOUR FROM THE PROMOTED 226-234 BLOCK, added 2026-09-15 on Greg's report
       from doing them: 227 Cross Block "works one side and then the other",
       and 229, 231 and 232 "are all generally one side at a time".
@@ -5064,6 +5395,18 @@
     var g = { reps: (s && s.reps) || 0, bands: (s && s.bands) || [] };
     if (s && typeof s.tulSec === "number") g.tulSec = s.tulSec;
     if (s && s.cadenceSec) g.cadenceSec = s.cadenceSec;
+    /* THE IRON IS A PHASE-LEVEL FIELD, like the bands beside it: a dumbbell
+       DROP SET is a real set -- press two 40s, change to two 30s, keep
+       going -- so the weight must be able to differ per phase. Named here
+       because this branch rebuilds the phase FIELD BY FIELD and anything
+       unnamed is dropped in silence; dropping the weight would make a
+       dumbbell drop set lose its iron with no error anywhere.
+       The count rides only when there is a weight: a count alone says how
+       many hands were full, not how heavy they were. */
+    if (s && finitePosNum(s.dbLb)) {
+      g.dbLb = s.dbLb;
+      if (finitePosNum(s.dbCount)) g.dbCount = s.dbCount;
+    }
     return [g];
   }
   function setReps(s) {
@@ -5111,6 +5454,14 @@
     var all = segs.length > 0 && timed === segs.length;
     return {
       bands: (((segs[0] || {}).bands) || []).slice(),
+      /* THE IRON FOLLOWS THE BANDS: phase 0, the working stack. null means
+         "the collapsed set carries no dumbbell", which the caller applies
+         by DELETING any dbLb already on the set -- the same contract
+         tulSec's null has. Returning 0 would make a band-only set claim a
+         zero-pound dumbbell. */
+      dbLb: finitePosNum((segs[0] || {}).dbLb) ? segs[0].dbLb : null,
+      dbCount: (finitePosNum((segs[0] || {}).dbLb) &&
+                finitePosNum(segs[0].dbCount)) ? segs[0].dbCount : null,
       reps: segs.reduce(function (a, g) { return a + ((g && g.reps) || 0); }, 0),
       /* null means "the collapsed set carries no measured time", which the
          caller must apply by DELETING any tulSec already on the set. */
@@ -5127,6 +5478,18 @@
   /* Display band stack = the FIRST segment's bands (the working stack you set
      up with); later segments are the drop-downs. */
   function setBands(s) { return setSegments(s)[0].bands || []; }
+  /* Display dumbbell = PHASE 0's iron, exactly as setBands takes the
+     working band stack from phase 0. Later phases are the drop-downs.
+     Returns null rather than a zeroed object, so a caller cannot print
+     "0 lb" for a set that had no dumbbell at all. */
+  function setDumbbell(s) {
+    var p0 = setSegments(s)[0] || {};
+    if (!finitePosNum(p0.dbLb)) return null;
+    return {
+      each: p0.dbLb,
+      count: finitePosNum(p0.dbCount) ? Math.round(p0.dbCount) : 1
+    };
+  }
   function setIntens(s) {
     if (s && s.intensifier) return s.intensifier;
     return (s && s.drop) ? "drop_set" : "straight";
@@ -7974,6 +8337,21 @@
         return { code: "READY", text: "Hit the " + phrase + " - " +
           NO_LOAD_ADVICE + "." };
       }
+      /* IRON FIRST, WHEN THERE IS IRON. A dumbbell lift's next step is a
+         pair the lifter owns, and naming it is the whole point of keeping
+         an inventory. THIS BRANCH SITS BELOW THE noLoadSuggest GATE ABOVE,
+         so dynamic neck work can never reach it -- that gate is the EIGHTH
+         site of the prohibition, and the ORDER here is what makes it hold.
+         A gate placed inside one branch does not protect a branch added
+         beside it; that defect shipped once in this project already. */
+      var ironStep = (row.lastDumbbell && isDumbbellLift(row.id))
+        ? dumbbellNextStep(ctx.dumbbellsOwned, row.lastDumbbell.each,
+                           row.lastDumbbell.count)
+        : null;
+      if (ironStep && ironStep.kind !== "none") {
+        return { code: "READY", text: "Hit the " + phrase + " - " +
+          ironStep.text + "." };
+      }
       var sug = ctx.suggestOf ? ctx.suggestOf(row.lastBands || []) : null;
       var how = sug ? (sug.add || sug.swap) : null;
       return { code: "READY", text: "Hit the " + phrase +
@@ -8390,7 +8768,12 @@
                                  ? eff.pressTravelIn : null,
                          hasBand: exUseHasBand(e, exId),
                          reps: reps, vol: vol, best: best,
-                         bands: setBands((e.exercises[exId] || [])[0]) });
+                         bands: setBands((e.exercises[exId] || [])[0]),
+                         /* THE WORKING IRON of this session's first set,
+                            read through setDumbbell so a DROP set reports
+                            its opening weight -- the same phase `bands`
+                            above comes from. null when there is none. */
+                         dumbbell: setDumbbell((e.exercises[exId] || [])[0]) });
       });
     });
     /* All-time bests come from the FULL log, not the window, so a PR badge means
@@ -8564,6 +8947,11 @@
         lastDate: last.date,
         daysSince: daysBetween(last.date, win.asOf),
         lastBands: last.bands || [],
+        /* The iron the most recent session worked with, for the READY
+           advice. null on a band-only lift, which makes the advice
+           fall back to the band wording rather than invent a weight
+           nobody logged. */
+        lastDumbbell: last.dumbbell || null,
         verdict: null
       };
       row.verdict = exerciseVerdict(ctx, row);
@@ -11531,6 +11919,11 @@
     sumRes: sumRes,
     bandMid: bandMid,
     setSegments: setSegments,
+    setDumbbell: setDumbbell,
+    EX_DUMBBELL: EX_DUMBBELL,
+    isDumbbellLift: isDumbbellLift,
+    dumbbellNextStep: dumbbellNextStep,
+    dumbbellCountDefault: dumbbellCountDefault,
     collapseSegments: collapseSegments,
     setReps: setReps,
     setBands: setBands,
@@ -11746,6 +12139,8 @@
     distinctBandIds: distinctBandIds,
     migrateFoldEncoding: migrateFoldEncoding,
     effectiveLoad: effectiveLoad,
+    tierOfProvenance: tierOfProvenance,
+    loadRankTier: loadRankTier,
     bestSetLoad: bestSetLoad,
     stampLoad: stampLoad,
     applyLoadStamp: applyLoadStamp,
