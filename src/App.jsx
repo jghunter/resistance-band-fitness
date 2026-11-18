@@ -2449,6 +2449,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           non-Babel script tag and cannot hold JSX; the PURE part is shared —
           plateBandPathOptions — so neither app builds its own path list. */}
       {(function(){
+        if (ironOnly) return null
         if (!RBTS_REPORTS.plateBandPathOptions) return null
         const po = RBTS_REPORTS.plateBandPathOptions(sel, gearOf)
         if (!po) return null
@@ -2582,7 +2583,6 @@ function PhaseTime({ phase, set, onChange, showGap, exId }) {
   const [gBuf, setGBuf] = useState(null)
 
   useEffect(() => {
-        if (ironOnly) return null
     if (!run) return
     const iv = setInterval(() => setElapsed(s => s + 1), 1000)
     return () => clearInterval(iv)
@@ -3682,6 +3682,11 @@ function makeReportCtx({ log, gear, myBands }) {
     orderSlots: (obj, focusLabel) => orderSlotsByFocus(obj, focusMuscleOf(focusLabel)),
     initSetsOf: (id) => initSets(id).map(x => (x.side ? { side: x.side } : {})),
     suggestOf: (bandIds) => suggestProgressionPWA(bandIds, bands),
+    /* The rack the advice may name a weight from. An ABSENT field means
+       an empty rack, which is exactly the neutral default: dumbbellNextStep
+       returns kind "none" and the READY verdict falls back to the wording
+       that shipped before this feature. */
+    dumbbellsOwned: getLocalMyDumbbells(),
     // the PWA has no sessionDisplay; dayName is the equivalent and is imported
     sessionLabelOf: (p, sKey) => dayName(p, sKey),
     deloadOf: (e) => {
@@ -7960,6 +7965,104 @@ function GearDims({ it, onChange }) {
    backup export/import; that path still works unchanged for signed-out use
    and for carrying calibration between the two apps, which do not share an
    origin. */
+/* ── MY DUMBBELLS ──────────────────────────────────────────────────────
+   The dumbbells the user owns, so "progress the load" can name a weight
+   they actually have. [{lb, qty}] in rbts_myDumbbells. Mirrors the HTML
+   app's MyDumbbells panel.
+
+   IT STARTS EMPTY AND IS NEVER SEEDED, for the same reason the GEAR
+   inventory stopped being seeded on 2026-08-21: an inventory is a claim
+   about a room, and this app goes to four rooms.
+
+   TWO OF A WEIGHT MAKES A PAIR. The qty is what lets the advice tell a
+   pair from a single bell: a qty of 1 can be the next step for a
+   one-handed lift and can never be the next pair. */
+function MyDumbbells() {
+  const [open, setOpen] = useState(false)
+  const [list, setList] = useState(getLocalMyDumbbells())
+  const [newLb, setNewLb] = useState('')
+  const [newQty, setNewQty] = useState('2')
+
+  const commit = next => { saveLocalMyDumbbells(next); setList(getLocalMyDumbbells()) }
+  const removeAt = lb => commit(list.filter(e => e.lb !== lb))
+  const setQty = (lb, q) => {
+    const n = parseInt(q, 10)
+    if (!isFinite(n) || n < 1) return
+    commit(list.map(e => e.lb === lb ? { lb: e.lb, qty: n } : e))
+  }
+  const add = () => {
+    const lb = parseFloat(newLb)
+    let q = parseInt(newQty, 10)
+    if (!isFinite(lb) || lb <= 0) return
+    if (!isFinite(q) || q < 1) q = 1
+    /* A WEIGHT ALREADY IN THE LIST REPLACES ITS QTY rather than appearing
+       twice: two rows for 40 lb would make the rack ambiguous. */
+    commit([...list.filter(e => e.lb !== lb), { lb, qty: q }])
+    setNewLb('')
+  }
+
+  const total = list.reduce((a, e) => a + e.lb * e.qty, 0)
+  return (
+    <div style={widget}>
+      <div onClick={() => setOpen(!open)}
+        style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
+        <span style={lbl}>MY DUMBBELLS</span>
+        <span style={{fontFamily:'monospace',fontSize:10,color:C.dimGray}}>
+          {open ? '\u25be' : '\u25b8'} {list.length
+            ? `${list.length} weight(s), ${Math.round(total)} lb of iron`
+            : 'none recorded'}
+        </span>
+      </div>
+      {open && (
+        <div style={{marginTop:10}}>
+          <div style={{fontFamily:'monospace',fontSize:10,color:C.textSec,lineHeight:1.6,marginBottom:10}}>
+            What you own, so READY can name the next pair instead of saying
+            &quot;add load&quot;. TWO of a weight makes a PAIR: a single dumbbell can
+            still be the next step for a one-handed lift, and can never be the next
+            pair. The app never suggests a weight you have not entered here.
+          </div>
+          {list.length ? (
+            <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:10}}>
+              {list.map(e => (
+                <div key={e.lb} style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontFamily:'monospace',fontSize:12,color:C.readout,minWidth:58}}>
+                    {e.lb} lb
+                  </span>
+                  <span style={{fontSize:9,color:C.dimGray}}>qty</span>
+                  <input type="number" min="1" max="20" value={e.qty}
+                    onChange={ev => setQty(e.lb, ev.target.value)}
+                    style={{...inputStyle,width:46,textAlign:'center',padding:'5px 4px',fontSize:12}}/>
+                  <span style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,flex:1}}>
+                    {e.qty >= 2 ? 'pair available' : 'single bell only'}
+                  </span>
+                  <button onClick={() => removeAt(e.lb)}
+                    title={`Remove ${e.lb} lb from your inventory`}
+                    style={{...btn(false),padding:'4px 9px',fontSize:11}}>
+                    {'\u2715'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <input type="number" inputMode="decimal" step="0.5" min="0" max="999"
+              value={newLb} placeholder="lb" title="The weight of ONE dumbbell"
+              onChange={e => setNewLb(e.target.value)}
+              style={{...inputStyle,width:62,textAlign:'right',padding:'6px 5px',fontSize:12}}/>
+            <span style={{fontSize:9,color:C.dimGray}}>lb</span>
+            <input type="number" min="1" max="20" value={newQty}
+              onChange={e => setNewQty(e.target.value)}
+              title="How many of this weight you own"
+              style={{...inputStyle,width:46,textAlign:'center',padding:'6px 4px',fontSize:12}}/>
+            <span style={{fontSize:9,color:C.dimGray}}>qty</span>
+            <button onClick={add} style={{...btn(true),padding:'6px 12px',fontSize:11}}>ADD</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BandCalibration({ myBands, user }) {
   const [open, setOpen] = useState(false)
   const [geom, setGeom] = useState(() => getLocalBandGeom())
@@ -8320,6 +8423,7 @@ function GearTab({ gear, myBands, onSaveGear, onRemoveGear, onSetMyBands, onRest
           </div>
         )}
       </div>
+      <MyDumbbells/>
       <BandCalibration myBands={myBands} user={user}/>
       <div style={widget}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
