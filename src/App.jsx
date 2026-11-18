@@ -1461,7 +1461,9 @@ function ExCard({ id, role, techKey }) {
         <span style={pill(group.color)}>{group.label}</span>
         {role && <span style={pill(C.readout)}>{role}</span>}
       </div>
-      <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4}}>{name}</div>
+      <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4}}>
+        {name}<DumbbellTag id={id}/>
+      </div>
       {tech && (
         <div style={{fontSize:10,fontFamily:'monospace',color:C.amber,
           background:`${C.amber}18`,border:`1px solid ${C.amber}44`,
@@ -1526,6 +1528,150 @@ function SessionView({ prog, sKey, week }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // BAND PICKER
 // ─────────────────────────────────────────────────────────────────────────────
+/* ── THE DUMBBELLS THE USER OWNS ───────────────────────────────────────
+   [{lb, qty}], sorted ascending on read. DEFAULTS TO EMPTY AND IS NEVER
+   SEEDED: a fresh install must be NEUTRAL, because this app goes to
+   Daniel, Jaclyn and Mike, and seeding Greg's rack onto their devices
+   would make their readouts quietly describe his gear.
+
+   FILTERED ON READ RATHER THAN TRUSTED. An imported "40" is a string and a
+   rack that trusts it would sort it between 4 and 5. The engine's
+   dumbbellNextStep guards the same way -- two guards, because each is
+   reached by a path the other does not cover. */
+const MYDB_KEY = 'rbts_myDumbbells'
+function getLocalMyDumbbells() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MYDB_KEY) || '[]')
+    if (!Array.isArray(raw)) return []
+    return raw.filter(e => e && typeof e.lb === 'number' && isFinite(e.lb) && e.lb > 0 &&
+                            typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0)
+              .sort((a, b) => a.lb - b.lb)
+  } catch { return [] }
+}
+let _myDumbbells = getLocalMyDumbbells()
+function myDumbbellsNow() { return _myDumbbells }
+function saveLocalMyDumbbells(list) {
+  try { localStorage.setItem(MYDB_KEY, JSON.stringify(list || [])) } catch {}
+  _myDumbbells = getLocalMyDumbbells()
+}
+
+/* ── THE DUMBBELL ROW ──────────────────────────────────────────────────
+   TWO AXES, ONE CONTROL EACH -- `lb each` is the magnitude, COUNT is how
+   many are in your hands. The TOTAL IS SHOWN, NEVER TYPED, so a count of 2
+   cannot hide inside a weight figure. Mirrors fitness_app.html's
+   DumbbellRow; the two are kept in step by hand, like BandPicker. */
+function DumbbellRow({ each, count, owned, onChange }) {
+  const n = (count === 1 || count === 2) ? count : 1
+  const list = owned || myDumbbellsNow()
+  const total = (typeof each === 'number' && isFinite(each) && each > 0)
+    ? Math.round(each * n * 10) / 10 : null
+  const picks = list.filter(e => (e.qty || 0) >= n)
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',margin:'3px 0'}}>
+      <span style={{fontFamily:'monospace',fontSize:9,letterSpacing:0.5,
+        color:C.amber,minWidth:58,flexShrink:0}}>DUMBBELL</span>
+      <input type="number" inputMode="decimal" step="0.5" min="0" max="999"
+        value={(typeof each === 'number') ? each : ''} placeholder="lb"
+        title="The weight of ONE dumbbell"
+        onChange={e => {
+          const v = e.target.value
+          onChange({ each: v === '' ? undefined : Math.max(0, parseFloat(v) || 0), count: n })
+        }}
+        style={{...inputStyle,width:52,textAlign:'right',padding:'6px 4px',fontSize:12}}/>
+      <span style={{fontSize:9,color:C.dimGray}}>lb each</span>
+      {[1,2].map(k => (
+        <span key={k} onClick={() => onChange({ each, count: k })}
+          title={k === 1 ? 'one dumbbell' : 'one in each hand'}
+          style={{fontFamily:'monospace',fontSize:10,fontWeight:700,cursor:'pointer',
+            userSelect:'none',padding:'5px 7px',borderRadius:4,flexShrink:0,
+            color: n === k ? C.readout : C.dimGray,
+            border:'1px solid '+(n === k ? C.readout+'66' : 'rgba(255,255,255,0.12)')}}>
+          x{k}
+        </span>
+      ))}
+      {total !== null
+        ? <span style={{fontFamily:'monospace',fontSize:11,color:C.readout}}>= {total} lb</span>
+        : <span style={{fontSize:9,color:C.amber}}>no weight recorded</span>}
+      {picks.length
+        ? <span style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+            {picks.map(e => (
+              <span key={e.lb} onClick={() => onChange({ each: e.lb, count: n })}
+                title={'you own ' + e.qty + ' x ' + e.lb + ' lb'}
+                style={{fontFamily:'monospace',fontSize:9,cursor:'pointer',
+                  padding:'3px 5px',borderRadius:3,color:C.dimGray,
+                  border:'1px solid rgba(255,255,255,0.10)'}}>
+                {e.lb}
+              </span>
+            ))}
+          </span>
+        : null}
+    </div>
+  )
+}
+
+/* ── THE DUMBBELL TAG ──────────────────────────────────────────────────
+   Rendered wherever an exercise is NAMED, and ALWAYS, whatever the
+   inventory holds. Greg's ruling, 2026-11-17: hiding dumbbell lifts on an
+   empty inventory would hide the feature from its owner the day before he
+   fills the rack in. */
+function DumbbellTag({ id }) {
+  if (!RBTS_REPORTS.isDumbbellLift(id)) return null
+  return (
+    <span title="Performed with dumbbells"
+      style={{fontFamily:'monospace',fontSize:8,fontWeight:700,letterSpacing:0.5,
+        padding:'2px 4px',borderRadius:3,marginLeft:5,whiteSpace:'nowrap',
+        color:C.amber,border:'1px solid '+C.amber+'55'}}>
+      DUMBBELL
+    </span>
+  )
+}
+
+/* ── WHAT LOADED THIS PHASE: bands, iron, or both ──────────────────────
+   ONE component for all FOUR editor sites, mirroring the HTML app's
+   SetLoadInputs. A dumbbell lift leads with the iron and offers + BAND
+   (Greg's rig: a band under the foot, over the handle); every other lift
+   leads with the bands and offers + DUMBBELL.
+
+   A CONTROL IS SHOWN WHEN THE DATA IS THERE, not only when it was
+   revealed, so the reveal can only ADD a control and never hide logged
+   work -- which matters most in the HISTORY editor, where the phase
+   arrives from the log. */
+function SetLoadInputs({ exId, phase, doubled, onBands, onDumbbell }) {
+  const ph = phase || {}
+  const isDb = RBTS_REPORTS.isDumbbellLift(exId)
+  const [bandOpen, setBandOpen] = useState(false)
+  const [dbOpen, setDbOpen] = useState(false)
+  const hasBands = (ph.bands || []).length > 0
+  const hasIron = typeof ph.dbLb === 'number' && isFinite(ph.dbLb) && ph.dbLb > 0
+  const showBands = hasBands || bandOpen || !isDb
+  const showIron = hasIron || dbOpen || isDb
+  const row = (
+    <DumbbellRow each={ph.dbLb}
+      count={typeof ph.dbCount === 'number' ? ph.dbCount
+             : RBTS_REPORTS.dumbbellCountDefault(exId) || 1}
+      onChange={onDumbbell}/>
+  )
+  const picker = (
+    <BandPicker selected={ph.bands || []} doubled={!!doubled} onChange={onBands}/>
+  )
+  const pill = (label, onClick) => (
+    <span onClick={onClick}
+      style={{fontFamily:'monospace',fontSize:9,letterSpacing:0.5,cursor:'pointer',
+        userSelect:'none',padding:'3px 6px',borderRadius:3,alignSelf:'flex-start',
+        color:C.dimGray,border:'1px dashed rgba(255,255,255,0.18)'}}>
+      {label}
+    </span>
+  )
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:3}}>
+      {isDb ? row : null}
+      {showBands ? picker : null}
+      {(isDb && !showBands) ? pill('+ BAND', () => setBandOpen(true)) : null}
+      {!isDb ? (showIron ? row : pill('+ DUMBBELL', () => setDbOpen(true))) : null}
+    </div>
+  )
+}
+
 function BandPicker({ selected, onChange, doubled }) {
   const [open, setOpen]       = useState(false)
   const [search, setSearch]   = useState('')
@@ -1724,6 +1870,19 @@ function BandPicker({ selected, onChange, doubled }) {
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
 function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange }) {
+  /* IRON IS ANCHORED TO NOTHING. ATTACH AT / HIGHEST POINT, the BAND RUN,
+     the stamped OPENING, the BAND PATH and PRESS SETUP all describe HOW A
+     BAND IS RIGGED, and a dumbbell is not rigged -- it is picked up. Those
+     five rows are hidden for a dumbbell lift with no band in play, the way
+     the thirteen press exercises already get no ATTACH AT row.
+
+     THE TEST IS ON THE BANDS, NOT ON THE EXERCISE: add a band over the
+     handle and every one of those questions applies again.
+
+     THE GEAR LIST ITSELF STAYS. A dumbbell bench press really uses a BENCH,
+     and `bench` is already a gear type here; hiding the list would make real
+     equipment unrecordable to save a row nobody must fill in. */
+  const ironOnly = RBTS_REPORTS.isDumbbellLift(exId) && !((bands || []).length)
   const [open, setOpen]       = useState(false)
   const [tFilter, setTFilter] = useState('All')
   const pickerRef             = useRef(null)
@@ -1912,6 +2071,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           hip height, so hiding them would leave the picker empty and the
           exercise unloggable. */}
       {(() => {
+        if (ironOnly) return null
         const gearOf = (id) => byId[id]
         /* ONE reader, shared with effectiveLoad's knownAttach gate since
            2026-09-17 -- see the same comment in fitness_app.html. The old
@@ -2117,6 +2277,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           FOOTPLATE, and BENCH is only ever chosen. Same rule every seeding
           effect on this screen follows. */}
       {(() => {
+        if (ironOnly) return null
         const opts = RBTS_REPORTS.pressSetupOptions(exId)
         if (opts.length < 2) return null
         const cur = pressSetup
@@ -2167,6 +2328,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           write to blur. Deferring to blur would mean a value typed and then
           saved without leaving the field never reaches the entry. */}
       {pressSetup === 'bench_angled' && (() => {
+        if (ironOnly) return null
         const opts = RBTS_REPORTS.benchTravelOptions(BODY_MEASURE)
         const cur = pressTravel
         return (
@@ -2234,6 +2396,7 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           nothing chosen the engine degrades to RATED and names the item, so
           an unanswered picker is loud rather than silent. */}
       {(() => {
+        if (ironOnly) return null
         const gearOf = id => byId[id]
         if (!RBTS_REPORTS.gearHasAdjustable(sel, gearOf)) return null
         const setOpening = onOpeningChange || (()=>{})
@@ -2419,6 +2582,7 @@ function PhaseTime({ phase, set, onChange, showGap, exId }) {
   const [gBuf, setGBuf] = useState(null)
 
   useEffect(() => {
+        if (ironOnly) return null
     if (!run) return
     const iv = setInterval(() => setElapsed(s => s + 1), 1000)
     return () => clearInterval(iv)
@@ -2556,6 +2720,14 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
        doubled band that arrives marked SINGLED stamps a fraction of the real
        load, silently. */
     if (last && last.doubled) n.doubled = true
+    /* THE IRON RIDES WITH THE STACK, like the fold above: a new set starts
+       with the dumbbell in your hand, because that is EQUIPMENT SELECTION
+       and typing reps is logging -- the OPPOSITE of the cadence fields
+       below, deliberately. Read through setDumbbell, never off last.dbLb: a
+       previous DROP set carries its iron on the PHASES, so a direct read
+       returns undefined and the new set would silently start empty. */
+    const ldb = last ? RBTS_REPORTS.setDumbbell(last) : null
+    if (ldb) { n.dbLb = ldb.each; n.dbCount = ldb.count }
     /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
          "the cadence is on the set so a new set would start it's own
          cadence". A set with no cadenceSec of its own is not a set with no
@@ -2724,7 +2896,9 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
           </button>
         )}
       </div>
-      <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4}}>{name}</div>
+      <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4}}>
+        {name}<DumbbellTag id={id}/>
+      </div>
       {scheduledId && (
         <div style={{fontFamily:'monospace',fontSize:9,color:C.amber,letterSpacing:'0.08em',
           display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -2939,7 +3113,12 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                       <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}}
                         title="Resistance phase / drop">▼{gi+1}</span>
                       <div style={{flex:1,minWidth:150}}>
-                        <BandPicker selected={g.bands||[]} doubled={!!s.doubled} onChange={v=>updateSeg(i,gi,'bands',v)}/>
+                        <SetLoadInputs exId={id} phase={g} doubled={!!s.doubled}
+                          onBands={v=>updateSeg(i,gi,'bands',v)}
+                          onDumbbell={v=>{
+                            updateSeg(i,gi,'dbLb',v.each)
+                            updateSeg(i,gi,'dbCount',v.each === undefined ? undefined : v.count)
+                          }}/>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                         <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
@@ -2977,7 +3156,12 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                 <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:6}}>
                  <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:160}}>
-                    <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(i,'bands',v)}/>
+                    <SetLoadInputs exId={id} phase={s} doubled={!!s.doubled}
+                      onBands={v=>updateSet(i,'bands',v)}
+                      onDumbbell={v=>{
+                        updateSet(i,'dbLb',v.each)
+                        updateSet(i,'dbCount',v.each === undefined ? undefined : v.count)
+                      }}/>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                     <button style={{...btn(false),padding:'6px 11px',fontSize:14}}
@@ -3401,7 +3585,7 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
                       background:already?`${C.accent}18`:'transparent',
                       border:`1px solid ${already?C.accent+'44':'transparent'}`}}>
                     <span style={pill(grp.color)}>{grp.label}</span>
-                    <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>#{id} {EXERCISE_NAMES[id]||id}</span>
+                    <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>#{id} {EXERCISE_NAMES[id]||id}<DumbbellTag id={id}/></span>
                     {already
                       ? <span style={{color:C.green,fontSize:10}}>✓ added</span>
                       : <span style={{color:C.dimGray,fontSize:10}}>tap to add</span>}
@@ -5612,7 +5796,7 @@ function LibraryTab({ customEx, onAddEx, onEditEx, onDeleteEx }) {
                 )}
               </span>
             </div>
-            <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4,flex:1}}>{ex.name}</div>
+            <div style={{fontFamily:'monospace',fontSize:12,color:C.text,lineHeight:1.4,flex:1}}>{ex.name}<DumbbellTag id={ex.id}/></div>
             <WatchDemoButton id={ex.id}/>
           </div>
         ))}
@@ -6583,6 +6767,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     const ns = { reps: lr, bands: lb.slice() }
     // The fold belongs to the stack being copied — see LoggedExCard.addSet.
     if (last && last.doubled) ns.doubled = true
+    /* The iron rides with the stack here too -- see the note in
+       LoggedExCard.addSet for why it reads through setDumbbell. */
+    const ldb2 = last ? RBTS_REPORTS.setDumbbell(last) : null
+    if (ldb2) { ns.dbLb = ldb2.each; ns.dbCount = ldb2.count }
     /* A SEED SITE CARRIES NOTHING. Greg's ruling, 2026-11-08:
          "the cadence is on the set so a new set would start it's own
          cadence". A set with no cadenceSec of its own is not a set with no
@@ -6829,7 +7017,7 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
         <div key={id} style={{background:C.bgInput,borderRadius:5,padding:'8px 10px'}}>
           <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
             <span style={{fontFamily:'monospace',fontSize:11,color:C.text,flex:1}}>
-              <span style={{color:C.dimGray}}>#{id} </span>{EXERCISE_NAMES[id]||id}
+              <span style={{color:C.dimGray}}>#{id} </span>{EXERCISE_NAMES[id]||id}<DumbbellTag id={id}/>
             </span>
             <button onClick={()=>removeEx(id)} title="Remove this exercise from the session"
               style={{...btn(false,C.red),fontSize:10,padding:'3px 8px'}}>REMOVE EX</button>
@@ -6913,7 +7101,12 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                        <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                         <span style={{fontFamily:'monospace',fontSize:10,color:C.amber,minWidth:30,paddingTop:9,flexShrink:0}} title="Resistance phase / drop">▼{gi+1}</span>
                         <div style={{flex:1,minWidth:150}}>
-                          <BandPicker selected={g.bands||[]} doubled={!!s.doubled} onChange={v=>updateSeg(id,i,gi,'bands',v)}/>
+                          <SetLoadInputs exId={id} phase={g} doubled={!!s.doubled}
+                            onBands={v=>updateSeg(id,i,gi,'bands',v)}
+                            onDumbbell={v=>{
+                              updateSeg(id,i,gi,'dbLb',v.each)
+                              updateSeg(id,i,gi,'dbCount',v.each === undefined ? undefined : v.count)
+                            }}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                           <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSeg(id,i,gi,'reps',Math.max(0,(g.reps||0)-1))}>−</button>
@@ -6945,7 +7138,12 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                   <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:6}}>
                    <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                     <div style={{flex:1,minWidth:160}}>
-                      <BandPicker selected={s.bands||[]} doubled={!!s.doubled} onChange={v=>updateSet(id,i,'bands',v)}/>
+                      <SetLoadInputs exId={id} phase={s} doubled={!!s.doubled}
+                        onBands={v=>updateSet(id,i,'bands',v)}
+                        onDumbbell={v=>{
+                          updateSet(id,i,'dbLb',v.each)
+                          updateSet(id,i,'dbCount',v.each === undefined ? undefined : v.count)
+                        }}/>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
                       <button style={{...btn(false),padding:'6px 11px',fontSize:14}} onClick={()=>updateSet(id,i,'reps',Math.max(0,(s.reps||0)-1))}>−</button>
