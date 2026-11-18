@@ -169,6 +169,33 @@ export const EXERCISE_NAMES = {
   241:"Kneeling Up and Overs",   242:"Short-Arc Lateral Raise",
   243:"Cross Body Lateral Raise",244:"Alternating Bent-Over Rear Delt Pull",
   245:"Banded High Pull",        246:"Hip Huggers",
+  /* ---- DUMBBELL LIFTS, 249-279 (2026-11-17) --------------------------
+     Added for Greg, Mike and Daniel. Names are GREG'S OWN, VERBATIM,
+     plurals included: he searches the Library for the words he wrote
+     down. That is the 2026-09-03 ruling on the ten shoulder
+     alternatives, and a draft of this change normalised "Flies" and
+     "Kickbacks" to singular before it was caught.
+     Every one of these needs an EX_GROUP_OVERRIDE and an
+     EX_CLASS_OVERRIDE entry: past 234 the id-range table returns
+     MOBILITY, so an addition without both is filed as mobility work and
+     is never offered as a substitute. NO VIDEOS yet -- Greg adds them. */
+  249:"Dumbbell Bench Press",          250:"Dumbbell Incline Bench Press",
+  251:"Dumbbell Bench Flies",          252:"Dumbbell Incline Bench Flies",
+  253:"Dumbbell Overhead Shoulder Press", 254:"Dumbbell Arnold Shoulder Press",
+  255:"Dumbbell Lateral Raise",        256:"Dumbbell Seated Lateral Raise",
+  257:"Dumbbell Triceps Overhead Extension",
+  258:"Dumbbell Triceps Kickbacks",    259:"Dumbbell Triceps Skull Crusher",
+  260:"Dumbbell Bent-Over Row",        261:"Dumbbell One-Arm Row",
+  262:"Dumbbell Rear Delt Reverse Flies",
+  263:"Dumbbell Bicep Curl",           264:"Dumbbell Bicep Drag Curl",
+  265:"Dumbbell Bicep Hammer Curl",    266:"Dumbbell Bicep Zottman Curl",
+  267:"Dumbbell Bicep Preacher Curl",  268:"Dumbbell Goblet Squat",
+  269:"Dumbbell Sumo Squat",           270:"Dumbbell Romanian Deadlift (RDL)",
+  271:"Dumbbell Forward Lunge",        272:"Dumbbell Step Back Lunge",
+  273:"Dumbbell Split Squat",          274:"Dumbbell Calf Raise",
+  275:"Dumbbell One-Leg Calf Raise",   276:"Dumbbell Farmer's Carry",
+  277:"Russian Twist with Dumbbell",   278:"Dumbbell Leg Raise",
+  279:"Dumbbell Crunch",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2011,7 +2038,28 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   38: GROUP_META.BACK,         // Standing Back Extension (was Band Good
                                // Morning / HAMSTRINGS until 2026-11-03)
   172: GROUP_META.TIBIALIS,    // Tibialis Raise
-  176: GROUP_META.TIBIALIS };  // Seated Tibialis Raise
+  176: GROUP_META.TIBIALIS,  // Seated Tibialis Raise
+  // Dumbbell lifts 249-279 (2026-11-17). REQUIRED: past 234 the range table
+  // returns MOBILITY. 276 Farmer's Carry is FOREARMS to match 166 Band
+  // Farmer's Carry Hold -- if the two carries sat in different sections,
+  // swapping one for the other would move a set from one weekly total to
+  // another, and the weekly totals are what the volume landmarks judge.
+  249: GROUP_META.CHEST, 250: GROUP_META.CHEST,
+  251: GROUP_META.CHEST, 252: GROUP_META.CHEST,
+  253: GROUP_META.SHOULDERS, 254: GROUP_META.SHOULDERS,
+  255: GROUP_META.SHOULDERS, 256: GROUP_META.SHOULDERS,
+  257: GROUP_META.TRICEPS, 258: GROUP_META.TRICEPS, 259: GROUP_META.TRICEPS,
+  260: GROUP_META.BACK, 261: GROUP_META.BACK,
+  262: GROUP_META.SHOULDERS,
+  263: GROUP_META.BICEPS, 264: GROUP_META.BICEPS, 265: GROUP_META.BICEPS,
+  266: GROUP_META.BICEPS, 267: GROUP_META.BICEPS,
+  268: GROUP_META.QUADS, 269: GROUP_META.GLUTES,
+  270: GROUP_META.HAMSTRINGS,
+  271: GROUP_META.QUADS, 272: GROUP_META.QUADS, 273: GROUP_META.QUADS,
+  274: GROUP_META.CALVES, 275: GROUP_META.CALVES,
+  276: GROUP_META.FOREARMS,
+  277: GROUP_META.CORE, 278: GROUP_META.CORE, 279: GROUP_META.CORE,
+};
 const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   218: "comp", 219: "iso", 220: "comp", 221: "comp", 222: "comp",
   223: "iso", 224: "iso", 225: "comp",
@@ -2036,7 +2084,23 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
      a reason. Greg confirmed all three are isolation on 2026-11-02.
      An EXPLICIT entry, even though iso is also what exClass returns by
      default: past 234 a missing entry means MOBILITY. */
-  247: "iso",  248: "iso" };
+  247: "iso",  248: "iso",
+  /* Dumbbell lifts 249-279 (2026-11-17). 276 Farmer's Carry is "other":
+     that class covers mobility, stretch, CARRY and static hold, which is
+     exactly what a loaded carry is. The iso/comp split is what makes
+     substituteCandidates' first band useful -- an iso offered for an iso
+     is the swap the lifter is reaching for -- so these are curated, not
+     defaulted. */
+  249: "comp", 250: "comp", 251: "iso",  252: "iso",
+  253: "comp", 254: "comp", 255: "iso",  256: "iso",
+  257: "iso",  258: "iso",  259: "iso",
+  260: "comp", 261: "comp", 262: "iso",
+  263: "iso",  264: "iso",  265: "iso",  266: "iso",  267: "iso",
+  268: "comp", 269: "comp", 270: "comp",
+  271: "comp", 272: "comp", 273: "comp",
+  274: "iso",  275: "iso",
+  276: "other",
+  277: "iso",  278: "iso",  279: "iso" };
 
 export const exGroup = (id) => {
   id = Number(id);
