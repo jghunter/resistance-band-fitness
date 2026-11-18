@@ -5490,6 +5490,17 @@
       count: finitePosNum(p0.dbCount) ? Math.round(p0.dbCount) : 1
     };
   }
+  /* ONE WORDING for "what iron was on this set", used by both apps' HISTORY
+     lines and by the printed report. Two spellings of one phrase is the
+     defect this project keeps paying for. NULL means there was no dumbbell,
+     so a caller prints nothing rather than "0 x 0 lb".
+     Takes a SET or a PHASE: setDumbbell reads phase 0 of a set, and a phase
+     passed directly has no segments of its own, so the same call serves the
+     set line and the per-phase lines below it. */
+  function dumbbellSetPhrase(s) {
+    var d = setDumbbell(s);
+    return d ? (d.count + " x " + d.each + " lb") : null;
+  }
   function setIntens(s) {
     if (s && s.intensifier) return s.intensifier;
     return (s && s.drop) ? "drop_set" : "straight";
@@ -7743,6 +7754,12 @@
     if (!isSeg) {
       var bl = bandStackLabel(setBands(s), ctx.bandOf);
       var rs = sumRes(setBands(s), ctx.bandOf);
+      /* THE IRON COMES FIRST on a set that carries it, because it is the
+         figure that is EXACT -- the band stack beside it is a model. On a
+         band-only set the phrase is null and nothing is printed, so every
+         line already in the file reads exactly as it did. */
+      var dbp = dumbbellSetPhrase(s);
+      if (dbp) head += "   " + dbp;
       if (bl) head += "   " + bl;
       if (fold) head += "   " + fold;
       if (rs) head += "   (" + rs + ")";
@@ -7755,7 +7772,12 @@
       segs.forEach(function (g, gi) {
         var gb = bandStackLabel(g.bands || [], ctx.bandOf);
         var gr = sumRes(g.bands || [], ctx.bandOf);
+        /* A DUMBBELL DROP SET's phases differ by WEIGHT, so each phase
+           prints its own -- two 40s then two 30s. Without this the drop
+           reads as two identical phases. */
+        var gdb = dumbbellSetPhrase(g);
         out.push("    phase " + (gi + 1) + ": " + (g.reps || 0) + u +
+          (gdb ? "   " + gdb : "") +
           (gb ? "   " + gb : "") + (gr ? "   (" + gr + ")" : ""));
       });
     }
@@ -11920,6 +11942,7 @@
     bandMid: bandMid,
     setSegments: setSegments,
     setDumbbell: setDumbbell,
+    dumbbellSetPhrase: dumbbellSetPhrase,
     EX_DUMBBELL: EX_DUMBBELL,
     isDumbbellLift: isDumbbellLift,
     dumbbellNextStep: dumbbellNextStep,
