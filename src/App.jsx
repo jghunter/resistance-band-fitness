@@ -1566,18 +1566,73 @@ function DumbbellRow({ each, count, owned, onChange }) {
   const total = (typeof each === 'number' && isFinite(each) && each > 0)
     ? Math.round(each * n * 10) / 10 : null
   const picks = list.filter(e => (e.qty || 0) >= n)
+  /* THE BOX IS type="text" WITH A RAW-TEXT BUFFER, and BOTH halves are
+     load-bearing. This is the v3 shape of the 2026-10-31 bench-run fix,
+     reached there only after two wrong ones, and this row shipped on
+     2026-11-17 in the v2 shape -- three weeks after that lesson was written
+     down. MEASURED on the served origin, 2026-11-19:
+
+       typed `5`    -> .value `5`    -> row `= 5 lb`
+       typed `52`   -> .value `52`   -> row `= 52 lb`
+       typed `52.`  -> .value `""`   -> row `no weight recorded`   <-- the 52 is GONE
+       typed `52.5` -> .value `52.5` -> row `= 52.5 lb`
+
+     A `type="number"` input reports `.value === ''` for a half-typed `52.`,
+     so a parse-and-store box reads it as CLEARED. Someone who STOPS at `52.`
+     sees `52.` in the box with nothing stored, which is the silent wrong load
+     this project refuses. And rebuilding the displayed value from the PARSED
+     number is the OTHER wrong shape: React writes `52` over the DOM's `52.`
+     on the keystroke that typed the point, so `52.5` stores 525.
+
+     So: TEXT, so `.value` is exactly what was typed; a BUFFER, so what is
+     DISPLAYED while typing is the raw string rather than a re-parse.
+     `.trim()` on the blank test is load-bearing once the field is text: the
+     guard above lets surrounding SPACE through so a pasted ` 52.5 ` is not
+     silently refused, and a field of nothing but spaces must then read as
+     CLEARED rather than as `Number('  ') === 0`, which is 0.
+
+     THE +/- BUTTONS REPLACE THE NATIVE SPINNER, which a text input does not
+     have. Greg named those arrows in his 2026-11-19 report, so the
+     affordance stays; 2.5 lb is the smallest real dumbbell increment and
+     reaches every multiple of 5 in two taps.
+
+     THE BUFFER IS DROPPED whenever this row moves the weight by any route
+     other than typing -- a chip tap, a +/- tap -- because a stale buffer
+     would keep showing the last thing typed over a weight that has since
+     changed underneath it. */
+  const [buf, setBuf] = useState(null)
+  const shown = (buf !== null) ? buf : (typeof each === 'number') ? String(each) : ''
+  const typed = (raw) => {
+    /* A letter never reaches the box at all, rather than being parsed away. */
+    if (!/^\s*\d*\.?\d*\s*$/.test(raw)) return
+    setBuf(raw)
+    if (raw.trim() === '') { onChange({ each: undefined, count: n }); return }
+    const num = parseFloat(raw)
+    /* A bare "." is MID-TYPING: keep whatever is stored and show the dot. */
+    if (!isFinite(num)) return
+    onChange({ each: Math.min(999, Math.max(0, num)), count: n })
+  }
+  const bump = (d) => {
+    const base = (typeof each === 'number' && isFinite(each)) ? each : 0
+    setBuf(null)
+    onChange({ each: Math.round(Math.min(999, Math.max(0, base + d)) * 10) / 10, count: n })
+  }
+  const pick = (lb) => { setBuf(null); onChange({ each: lb, count: n }) }
   return (
     <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',margin:'3px 0'}}>
       <span style={{fontFamily:'monospace',fontSize:9,letterSpacing:0.5,
         color:C.amber,minWidth:58,flexShrink:0}}>DUMBBELL</span>
-      <input type="number" inputMode="decimal" step="0.5" min="0" max="999"
-        value={(typeof each === 'number') ? each : ''} placeholder="lb"
+      <button title="2.5 lb lighter"
+        style={{...btn(false),padding:'6px 9px',fontSize:13,flexShrink:0}}
+        onClick={()=>bump(-2.5)}>−</button>
+      <input type="text" inputMode="decimal"
+        value={shown} placeholder="lb"
         title="The weight of ONE dumbbell"
-        onChange={e => {
-          const v = e.target.value
-          onChange({ each: v === '' ? undefined : Math.max(0, parseFloat(v) || 0), count: n })
-        }}
+        onChange={e => typed(e.target.value)}
         style={{...inputStyle,width:52,textAlign:'right',padding:'6px 4px',fontSize:12}}/>
+      <button title="2.5 lb heavier"
+        style={{...btn(false),padding:'6px 9px',fontSize:13,flexShrink:0}}
+        onClick={()=>bump(2.5)}>+</button>
       <span style={{fontSize:9,color:C.dimGray}}>lb each</span>
       {[1,2].map(k => (
         <span key={k} onClick={() => onChange({ each, count: k })}
@@ -1594,12 +1649,21 @@ function DumbbellRow({ each, count, owned, onChange }) {
         : <span style={{fontSize:9,color:C.amber}}>no weight recorded</span>}
       {picks.length
         ? <span style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+            {/* THE PICKED CHIP LOOKS PICKED, and it does NOT take the
+                browser's text selection. Greg, 2026-11-19: "I can double
+                click on the numbered boxes ... and they will highlight but
+                they do not stay selected." The highlight he saw was the
+                browser selecting the digits -- these chips had no
+                `userSelect:'none'` where their x1/x2 neighbours did, and no
+                picked state at all. Both borrowed from those neighbours. */}
             {picks.map(e => (
-              <span key={e.lb} onClick={() => onChange({ each: e.lb, count: n })}
+              <span key={e.lb} onClick={() => pick(e.lb)}
                 title={'you own ' + e.qty + ' x ' + e.lb + ' lb'}
                 style={{fontFamily:'monospace',fontSize:9,cursor:'pointer',
-                  padding:'3px 5px',borderRadius:3,color:C.dimGray,
-                  border:'1px solid rgba(255,255,255,0.10)'}}>
+                  userSelect:'none',fontWeight:(e.lb === each)?700:400,
+                  padding:'3px 5px',borderRadius:3,
+                  color:(e.lb === each) ? C.readout : C.dimGray,
+                  border:'1px solid '+((e.lb === each) ? C.readout+'66' : 'rgba(255,255,255,0.10)')}}>
                 {e.lb}
               </span>
             ))}
@@ -2747,6 +2811,28 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
   function updateSet(i, field, val) {
     onSetsChange(sets.map((s,idx) => idx===i ? {...s,[field]:val} : s))
   }
+  /* TWO FIELDS, ONE WRITE -- and the reason it has to be one write.
+     `updateSet` and `updateSeg` each rebuild the whole array from the `sets`
+     PROP and hand the result to `onSetsChange`, which takes an ARRAY and not
+     a function. Two calls inside one handler therefore BOTH start from the
+     same frozen render value, so the second silently discards the first.
+
+     Every other control on this card writes exactly one field. The DUMBBELL
+     row writes `dbLb` and `dbCount` together, which is why only it was
+     broken: the weight was dropped on every keystroke, every spinner click
+     and every owned-weight tap, AND on clear, so the box could neither fill
+     in nor empty (Greg, 2026-11-19).
+
+     THE HISTORY EDITOR WAS NEVER AFFECTED -- its `mapSet` takes a FUNCTION,
+     so two calls there compose. That is exactly why this shipped: the rule
+     cannot be left to the updater's shape. Any future control that writes
+     two fields comes through here.
+
+     `test_dumbbell_editor_write.cjs` pins the behaviour AND the one-call
+     shape at all four editor sites, in both apps. */
+  function updateSetFields(i, patch) {
+    onSetsChange(sets.map((s,idx) => idx===i ? {...s,...patch} : s))
+  }
   // ── Phase 2: intensifier + segmented-set editing ──
   const usesSeg = (s) => { const k=setIntensifier(s); return !!(INTENS[k] && INTENS[k].usesSegments) }
   /* The synthesized phase carries the PHASE-level fields -- a simple set IS
@@ -2829,6 +2915,14 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
       if (idx!==i) return ss
       const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
       segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
+    }))
+  }
+  /* The same two-fields-one-write rule, for a PHASE. See updateSetFields. */
+  function updateSegFields(i, segIdx, patch) {
+    onSetsChange(sets.map((ss,idx) => {
+      if (idx!==i) return ss
+      const n={...ss}; const segs=(n.segments||segsOf(ss)).map(g=>({...g}))
+      segs[segIdx]={...segs[segIdx],...patch}; n.segments=segs; delete n.bands; delete n.reps; return n
     }))
   }
   function addSeg(i) {
@@ -3116,8 +3210,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                         <SetLoadInputs exId={id} phase={g} doubled={!!s.doubled}
                           onBands={v=>updateSeg(i,gi,'bands',v)}
                           onDumbbell={v=>{
-                            updateSeg(i,gi,'dbLb',v.each)
-                            updateSeg(i,gi,'dbCount',v.each === undefined ? undefined : v.count)
+                            updateSegFields(i,gi,{dbLb:v.each,
+                              dbCount:v.each === undefined ? undefined : v.count})
                           }}/>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
@@ -3159,8 +3253,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
                     <SetLoadInputs exId={id} phase={s} doubled={!!s.doubled}
                       onBands={v=>updateSet(i,'bands',v)}
                       onDumbbell={v=>{
-                        updateSet(i,'dbLb',v.each)
-                        updateSet(i,'dbCount',v.each === undefined ? undefined : v.count)
+                        updateSetFields(i,{dbLb:v.each,
+                          dbCount:v.each === undefined ? undefined : v.count})
                       }}/>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
@@ -6765,6 +6859,19 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
     if (val === undefined) delete c[field]; else c[field] = val
     return c
   })
+  /* TWO FIELDS, ONE WRITE. `mapSet` takes a FUNCTION here, so two calls
+     already compose and the DUMBBELL row worked in this editor while it was
+     broken on the TodayTab card. That is the argument for the rule rather
+     than against it: leaving it to the updater's shape is exactly what let
+     the defect ship. All four editor sites make one write now. See
+     TodayTab's updateSetFields for the full account.
+     The delete-on-undefined rule above applies PER FIELD -- clearing the
+     weight box passes undefined for both dbLb and dbCount, and an assigned
+     undefined would ride into the Firestore write, which rejects it. */
+  const updateSetFields = (id, i, patch) => mapSet(id, i, c => {
+    Object.keys(patch).forEach(k => { if (patch[k] === undefined) delete c[k]; else c[k] = patch[k] })
+    return c
+  })
   const addSet = (id) => setEx(prev => {
     const n = { ...prev }; const arr = (n[id] || []).slice(); const last = arr[arr.length - 1]
     const lb = last ? (Array.isArray(last.segments) ? (((last.segments[0]||{}).bands)||[]) : (last.bands||[])) : []
@@ -6916,6 +7023,10 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
   }
   const updateSeg = (id, i, segIdx, field, val) => mapSet(id, i, n => {
     const segs=(n.segments||segsOf(n)).map(g=>({...g})); segs[segIdx]={...segs[segIdx],[field]:val}; n.segments=segs; delete n.bands; delete n.reps; return n
+  })
+  /* The same two-fields-one-write rule, for a PHASE. See updateSetFields. */
+  const updateSegFields = (id, i, segIdx, patch) => mapSet(id, i, n => {
+    const segs=(n.segments||segsOf(n)).map(g=>({...g})); segs[segIdx]={...segs[segIdx],...patch}; n.segments=segs; delete n.bands; delete n.reps; return n
   })
   const addSeg = (id, i) => mapSet(id, i, n => {
     const segs=(n.segments||segsOf(n)).map(g=>({...g})); const last=segs[segs.length-1]||{bands:[],reps:0}
@@ -7109,8 +7220,8 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                           <SetLoadInputs exId={id} phase={g} doubled={!!s.doubled}
                             onBands={v=>updateSeg(id,i,gi,'bands',v)}
                             onDumbbell={v=>{
-                              updateSeg(id,i,gi,'dbLb',v.each)
-                              updateSeg(id,i,gi,'dbCount',v.each === undefined ? undefined : v.count)
+                              updateSegFields(id,i,gi,{dbLb:v.each,
+                                dbCount:v.each === undefined ? undefined : v.count})
                             }}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
@@ -7146,8 +7257,8 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
                       <SetLoadInputs exId={id} phase={s} doubled={!!s.doubled}
                         onBands={v=>updateSet(id,i,'bands',v)}
                         onDumbbell={v=>{
-                          updateSet(id,i,'dbLb',v.each)
-                          updateSet(id,i,'dbCount',v.each === undefined ? undefined : v.count)
+                          updateSetFields(id,i,{dbLb:v.each,
+                            dbCount:v.each === undefined ? undefined : v.count})
                         }}/>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>

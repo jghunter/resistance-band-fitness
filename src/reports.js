@@ -203,7 +203,15 @@
     257: 1,                                  // one bell in two hands, overhead
     258: 1, 259: 2,                          // kickback (per side), skull crusher
     260: 2, 261: 1, 262: 2,                  // row, one-arm row, rear delt flies
-    263: 2, 264: 2, 265: 2, 266: 2, 267: 1,  // curls; preacher curl is one arm
+    /* curls. 266 the Zottman and 267 the preacher curl are ONE ARM, so they
+       seed ONE bell -- 266 moved from 2 to 1 on 2026-11-19 when Greg ruled it
+       unilateral (see EX_UNILATERAL). THE COUNT HAD TO MOVE WITH IT: every
+       other one-arm ARM lift here seeds 1 (258, 261, 267), and an L/R card
+       seeding 2 would say each hand holds two bells and DOUBLE the load. The
+       leg lifts 271-273 are the opposite case and stay at 2 -- one leg works
+       while BOTH hands carry iron, which is why count and sidedness are
+       separate axes rather than one derived from the other. */
+    263: 2, 264: 2, 265: 2, 266: 1, 267: 1,
     268: 1, 269: 1,                          // goblet and sumo squat: one bell held
     270: 2,                                  // RDL
     271: 2, 272: 2, 273: 2,                  // lunges and split squat: BOTH hands, ONE leg
@@ -4653,6 +4661,40 @@
    267,                    // preacher curl -- precedent: 133 concentration curl
    271, 272, 273,          // lunges and split squat -- precedent: 102-108
    275,                    // one-leg calf raise -- precedent: 169
+   /* 266 Dumbbell Bicep Zottman Curl, ADDED 2026-11-19, and the criterion is
+      GREG'S OWN and is NOT "is it a dumbbell exercise". He reported 266
+      starting bilateral while 258 Kickbacks started L/R, and when asked:
+
+        "263 bicep curl the preacher curl and a zottman curl can all be done
+         with a bar or a dumbbell but 266 is specifically a dumbbell and not
+         a bar. if it's a dumbbell default should be unilateral"
+
+      So the test is CAN A BAR DO THIS MOVEMENT. A bicep curl can, so 263
+      stays out and his 2026-11-17 ruling on it is UNCHANGED, not overturned
+      -- he names 263 himself as one of the bar-able ones. A Zottman cannot:
+      the rep supinates up and pronates down, and a straight bar rotates both
+      forearms as one unit, which makes it a reverse curl on the way down
+      rather than a Zottman. A movement only a dumbbell can perform defaults
+      to one arm at a time.
+
+      THIS IS NOT A LICENCE TO SWEEP THE OTHER 30. Applied mechanically the
+      criterion reaches lifts it should probably not: 254 Arnold Press and
+      262 Rear Delt Reverse Flies are dumbbell-only and are normally both
+      arms at once, and 268 Goblet Squat is ONE dumbbell in TWO hands, which
+      the criterion cannot describe at all. He also lists 267 Preacher Curl
+      among the bar-able movements while 267 IS in this table on the 133
+      concentration-curl precedent -- so the criterion and the current
+      membership already disagree on one entry. That review is recorded as an
+      open item and needs his per-exercise ruling, not inference.
+
+      THE COUNT MOVED WITH IT, and it had to: 266 seeded 2 in EX_DUMBBELL,
+      and an L/R card seeding 2 would say each hand holds two bells and
+      DOUBLE the load. It is 1 now, matching every other one-arm ARM lift
+      here (258, 261, 267). The leg lifts 271-273 keep 2 because one leg
+      works while BOTH hands carry iron -- which is exactly why count and
+      sidedness are separate axes and neither may be derived from the
+      other. */
+   266,                    // zottman curl -- a bar cannot rotate one forearm
    /* FOUR FROM THE PROMOTED 226-234 BLOCK, added 2026-09-15 on Greg's report
       from doing them: 227 Cross Block "works one side and then the other",
       and 229, 231 and 232 "are all generally one side at a time".
