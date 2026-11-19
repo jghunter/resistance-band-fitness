@@ -11058,6 +11058,24 @@
     { k:"attachSpanIn", l:"Attach span",  hint:"between the two band points",types:["bar"] },
     { k:"seriesIn",     l:"Series length",hint:"band bearing point to your grip", types:["handle","anchor","other"] },
     { k:"benchPadHeightIn", l:"Bench pad height", hint:"floor to the top of the pad", types:["bench"] },
+    /* HOW MANY POSITIONS THE BACK PAD HAS. Added 2026-11-19 with the BENCH
+       RUNG feature.
+
+       A PROPERTY OF THE HARDWARE, which is why it sits here and not on the
+       profile beside the taped band runs. Greg's Yoleo has eight; a bench Mike
+       or Daniel buys has however many it has. Greg, 2026-11-19: "i may get a
+       different bench in the future (or Mike or Daniel may) and it's rungs and
+       measurements will differ."
+
+       IT IS NOT A LOAD INPUT. Nothing in effectiveLoad reads it. It bounds the
+       BENCH RUNG row and guards the stored rung, and that is all.
+
+       THE TAPED BAND RUNS STAY ON THE PROFILE (benchTravelOptionsIn) and must
+       not be moved here: each one is a bench PLUS a footplate band path PLUS a
+       bar PLUS a body, and only the profile holds all four. Moving them onto
+       the item would repeat the 2026-09-25 misfiling, where two ROPE readings
+       sat on two BARS because the hardware looked like the obvious home. */
+    { k:"benchRungs", l:"Number of settings", hint:"how many positions the back pad has", types:["bench"] },
   ];
   /* Bumped 2026-08-10. A stored `dims` copy carrying an older rev is discarded
      in favour of a fresh table lookup, so this string is the ONLY way a table
