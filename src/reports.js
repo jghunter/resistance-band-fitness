@@ -198,20 +198,26 @@
      each hand (count 2) while working one leg (L/R rows), so a reader that
      derives one from the other halves the load on every lunge. */
   var EX_DUMBBELL = {
+    /* THE 2026-11-19 PASS MOVED SEVEN OF THESE FROM 2 TO 1 -- 255, 256, 260,
+       262, 263, 264, 265 -- because Greg ruled each of them L/R that day and
+       ONE ARM HOLDS ONE BELL. The count is not derived from the sidedness and
+       must never be (see the lunges below), but on an ARM lift the two move
+       together, and an L/R card seeding 2 would say each hand holds two bells
+       and DOUBLE the load. Every sided arm lift here seeds 1. */
     249: 2, 250: 2, 251: 2, 252: 2,          // chest: press, incline press, flies
-    253: 2, 254: 2, 255: 2, 256: 2,          // shoulders: OHP, Arnold, lateral raises
+    253: 2, 254: 2,                          // shoulders: OHP, Arnold press
+    255: 1, 256: 1,                          // lateral raises -- L/R, one bell
     257: 1,                                  // one bell in two hands, overhead
     258: 1, 259: 2,                          // kickback (per side), skull crusher
-    260: 2, 261: 1, 262: 2,                  // row, one-arm row, rear delt flies
-    /* curls. 266 the Zottman and 267 the preacher curl are ONE ARM, so they
-       seed ONE bell -- 266 moved from 2 to 1 on 2026-11-19 when Greg ruled it
-       unilateral (see EX_UNILATERAL). THE COUNT HAD TO MOVE WITH IT: every
-       other one-arm ARM lift here seeds 1 (258, 261, 267), and an L/R card
-       seeding 2 would say each hand holds two bells and DOUBLE the load. The
-       leg lifts 271-273 are the opposite case and stay at 2 -- one leg works
-       while BOTH hands carry iron, which is why count and sidedness are
-       separate axes rather than one derived from the other. */
-    263: 2, 264: 2, 265: 2, 266: 1, 267: 1,
+    260: 1, 261: 1,                          // both rows are L/R, one bell each
+    262: 1,                                  // rear delt flies -- L/R, one bell
+    /* curls. ALL FIVE ARE L/R SINCE 2026-11-19 and so all five seed ONE bell.
+       Greg: "All of these curls 263 Bicep curl, 264 drag curl, 267 preacher
+       curl if with a bar then it's together if dumbbells L/R for the 265
+       hammer curl and 266 zottman curl always L/R." Every id here IS the
+       dumbbell version, so the bar half of that sentence selects a different
+       exercise, not a different shape of this one. */
+    263: 1, 264: 1, 265: 1, 266: 1, 267: 1,
     268: 1, 269: 1,                          // goblet and sumo squat: one bell held
     270: 2,                                  // RDL
     271: 2, 272: 2, 273: 2,                  // lunges and split squat: BOTH hands, ONE leg
@@ -4650,51 +4656,82 @@
       that derives the count from the sidedness halves the load on every
       lunge.
 
-      257 (overhead extension) and 263 (bicep curl) are DELIBERATELY ABSENT.
-      Greg, 2026-11-17: "it can be either one -- I've done both exercises
-      both ways and should still be able to do it either way." The side chip
-      renders on every set row, so he taps L/R on the day he does the
-      alternating version; this table only decides the shape the card starts
-      in. Do not add them. */
+      257 (overhead extension) is DELIBERATELY ABSENT and Greg has now said
+      so TWICE -- 2026-11-17 "it can be either one", and 2026-11-19 "257
+      overhead extension always together", which is the stronger statement.
+      Do not add it.
+
+      263 (bicep curl) WAS ABSENT ON THE SAME 2026-11-17 WORDING AND IS NOW
+      IN -- see the 2026-11-19 block below. The earlier ruling was not
+      misread; he changed it when asked what ONE REP is rather than whether
+      he could do it either way. Recorded because a comment that reads
+      "deliberately absent, do not add" is exactly what a later session
+      trusts, and this one was overturned by the person who wrote it. */
    258,                    // triceps kickback -- precedent: 147 band kickback
    261,                    // one-arm row -- precedent: 24 band single-arm row
    267,                    // preacher curl -- precedent: 133 concentration curl
    271, 272, 273,          // lunges and split squat -- precedent: 102-108
    275,                    // one-leg calf raise -- precedent: 169
-   /* 266 Dumbbell Bicep Zottman Curl, ADDED 2026-11-19, and the criterion is
-      GREG'S OWN and is NOT "is it a dumbbell exercise". He reported 266
-      starting bilateral while 258 Kickbacks started L/R, and when asked:
+   /* THE 2026-11-19 PASS. Greg ruled on all 31 dumbbell lifts in one go,
+      after reporting that 266 started bilateral while 258 started L/R. He
+      first offered a criterion -- "if it's a dumbbell default should be
+      unilateral", with the test being whether a BAR can perform the movement
+      -- and that criterion turned out to be the EVIDENCE rather than the
+      rule. Applied mechanically it made the Arnold press and both fly
+      movements one-armed, which he does not do, and it took 267 Preacher Curl
+      OUT, which he does one arm at a time. So the rule is the old one from
+      2026-09-01: ASK WHAT ONE REP IS. His answers, verbatim where they decide
+      a row:
 
-        "263 bicep curl the preacher curl and a zottman curl can all be done
-         with a bar or a dumbbell but 266 is specifically a dumbbell and not
-         a bar. if it's a dumbbell default should be unilateral"
+        251/252 flies  "95% of the time i do them both arms at the same time,
+                        could do them separately but i'm ok with locking them
+                        together for the sake of keeping both sides balanced"
+        254 Arnold     "i've always done this one with both arms
+                        simultaneously same reasoning (balance)"
+        255/256/262    "half the time i do them separately for the sake of
+                        focus and due to shoulder problems" -- a true 50/50,
+                        so he was asked which way the card should OPEN and
+                        chose L/R, so each shoulder carries its own history
+                        and ANALYZE can show left against right. That matters
+                        with a partial right cuff tear; it is the only one of
+                        the 31 decided by what the DATA is worth rather than
+                        by what one rep is.
+        257 extension  "always together"
+        258 kickbacks  "always separate L/R"
+        259 skull      "with a bar it's always together with dumbbells ...
+                        normally together but i have done them separately
+                        when one side is more painful" -- NORMALLY decides it
+        260/261 rows   "bent over row if with a bar together if dumbbells L/R"
+                        / "one-arm row always L/R"
+        263/264/267    "if with a bar then it's together if dumbbells L/R"
+        265/266        "always L/R"
+        271/272 lunges "it's always L/R"
 
-      So the test is CAN A BAR DO THIS MOVEMENT. A bicep curl can, so 263
-      stays out and his 2026-11-17 ruling on it is UNCHANGED, not overturned
-      -- he names 263 himself as one of the bar-able ones. A Zottman cannot:
-      the rep supinates up and pronates down, and a straight bar rotates both
-      forearms as one unit, which makes it a reverse curl on the way down
-      rather than a Zottman. A movement only a dumbbell can perform defaults
-      to one arm at a time.
+      THE BAR HALF OF THOSE SENTENCES SELECTS A DIFFERENT EXERCISE, NOT A
+      DIFFERENT SHAPE OF THIS ONE. Every id here is explicitly the DUMBBELL
+      version, and the barbell or band version is a separate catalog id. So
+      these stay STRUCTURAL and must NOT become gear-conditional: a "bar" in
+      this app's GEAR is a resistance-band bar, and routing these through
+      EX_UNILATERAL_BY_GEAR would let a band bar left in an inventory flip a
+      dumbbell curl's shape. `test_dumbbell_catalog.cjs` pins that.
 
-      THIS IS NOT A LICENCE TO SWEEP THE OTHER 30. Applied mechanically the
-      criterion reaches lifts it should probably not: 254 Arnold Press and
-      262 Rear Delt Reverse Flies are dumbbell-only and are normally both
-      arms at once, and 268 Goblet Squat is ONE dumbbell in TWO hands, which
-      the criterion cannot describe at all. He also lists 267 Preacher Curl
-      among the bar-able movements while 267 IS in this table on the 133
-      concentration-curl precedent -- so the criterion and the current
-      membership already disagree on one entry. That review is recorded as an
-      open item and needs his per-exercise ruling, not inference.
+      THE LEGS ARE NOT DECIDED BY THE IMPLEMENT AT ALL. Greg: "For the legs
+      it's a question of split leg or legs together for example a romanian
+      deadlift can be done with a bar, one dumbbell or two dumbbells with both
+      legs together or on one leg." A barbell lunge is still one leg at a
+      time. So the leg rows were already right and none moved: the stance
+      decides, and the catalog already separates the stances by name (273
+      Split Squat, 275 One-Leg Calf Raise).
 
-      THE COUNT MOVED WITH IT, and it had to: 266 seeded 2 in EX_DUMBBELL,
-      and an L/R card seeding 2 would say each hand holds two bells and
-      DOUBLE the load. It is 1 now, matching every other one-arm ARM lift
-      here (258, 261, 267). The leg lifts 271-273 keep 2 because one leg
-      works while BOTH hands carry iron -- which is exactly why count and
-      sidedness are separate axes and neither may be derived from the
-      other. */
-   266,                    // zottman curl -- a bar cannot rotate one forearm
+      COUNT MOVED ON THE SEVEN NEW ARM LIFTS and nowhere else -- 255, 256,
+      260, 262, 263, 264, 265 all went 2 -> 1, because one arm holds one bell.
+      271-273 keep 2: one leg works while BOTH hands carry iron. Count and
+      sidedness remain independent axes, and a reader that derives one from
+      the other halves the load on every lunge. */
+   255, 256,               // lateral raise, seated lateral raise -- his call, L/R
+   260,                    // bent-over row, dumbbell version -- precedent: 261
+   262,                    // rear delt reverse flies -- his call, L/R
+   263, 264, 265, 266,     // curl, drag, hammer, zottman -- all L/R with dumbbells
    /* FOUR FROM THE PROMOTED 226-234 BLOCK, added 2026-09-15 on Greg's report
       from doing them: 227 Cross Block "works one side and then the other",
       and 229, 231 and 232 "are all generally one side at a time".
