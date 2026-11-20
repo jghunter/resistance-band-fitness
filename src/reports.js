@@ -7376,6 +7376,7 @@
        truth on their own. */
     if (r.bands) out.push({ k: "Bands", v: r.bands + (r.res ? "   (" + r.res + ")" : ""), cls: "" });
     if (r.gear) out.push({ k: "Gear", v: r.gear, cls: "" });
+    if (r.benchRung) out.push({ k: "Bench", v: r.benchRung, cls: "" });
     (r.flags || []).forEach(function (f) {
       out.push({ k: "", v: ">> " + f, cls: "flag" });
     });
@@ -7453,6 +7454,7 @@
         (sec.rows || []).forEach(function (r) {
           L.push("### " + r.name + "  `#" + r.id + "`" + (r.group ? "  " + r.group : ""));
           if (r.gear) L.push("- **Gear:** " + r.gear);
+          if (r.benchRung) L.push("- **Bench:** " + r.benchRung);
           L.push("```");
           (r.lines || []).forEach(function (t) { L.push(t); });
           L.push("```");
@@ -7556,6 +7558,7 @@
           H.push("<h3>" + esc(r.name) + "  #" + esc(r.id) +
                  (r.group ? "  " + esc(r.group) : "") + "</h3>");
           if (r.gear) H.push('<div class="ln"><b>Gear:</b> ' + esc(r.gear) + "</div>");
+          if (r.benchRung) H.push('<div class="ln"><b>Bench:</b> ' + esc(r.benchRung) + "</div>");
           H.push("<pre>" + (r.lines || []).map(esc).join("\n") + "</pre>");
           H.push("</div>");
         });
@@ -7695,6 +7698,28 @@
       })
     };
   }
+  /* "BENCH RUNG 3", or "BENCH RUNG 1 (FLAT)". NULL when no rung was recorded,
+     so the row is ABSENT from the printed document rather than printing a rung
+     nobody chose. Added 2026-11-19.
+
+     `finitePos`, never isFinite: a 0 is never a rung (they are 1-based) and an
+     imported "3" is a string, and neither must print as "BENCH RUNG 0" or
+     "BENCH RUNG 3" off a value the app would refuse to store.
+
+     DELIBERATELY NOT IN `pullList`, and the reason is worth keeping because the
+     spec got it wrong first. `pullList` is a MAXIMUM ACROSS EXERCISES -- right
+     for the iron, since two lifts each wanting a pair of 40s means carrying ONE
+     pair, and meaningless for a rung, since two exercises can sit at two
+     different rungs and there is no maximum rung to set the bench to once. A
+     rung is adjusted per exercise, so it belongs on the per-exercise row where
+     the gear label already sits. `test_reports.cjs` asserts pullList has no
+     rung axis, so nobody adds one later. */
+  function benchRungLabel(n) {
+    if (!finitePos(n)) return null;
+    var r = Math.round(n);
+    return "BENCH RUNG " + r + (r === 1 ? " (FLAT)" : "");
+  }
+
   function gearLabel(gearIds, gearOf) {
     var counts = {}, order = [];
     (gearIds || []).forEach(function (id) {
@@ -7852,6 +7877,20 @@
         bands: (sameStack && bandIds.length) ? bandStackLabel(bandIds, ctx.bandOf) : null,
         res: sameStack ? sumRes(bandIds, ctx.bandOf) : null,
         gear: gearIds.length ? gearLabel(gearIds, ctx.gearOf) : null,
+        /* THE RUNG FROM LAST SESSION, because this sheet is written BEFORE the
+           session exists and that is the only rung it can honestly name. It is
+           a reminder of how to set the bench, never a prescription -- the
+           wording says LAST SESSION so nobody reads it as advice.
+
+           A bench lift whose previous session recorded NO rung gets its own
+           phrase rather than being silently absent from a list of what to set
+           up: two rows, not one value holding two meanings. */
+        benchRung: (function () {
+          if (!gearIds.length || !ctx.gearOf) return null;
+          if (!pressBenchOf(gearIds, ctx.gearOf)) return null;
+          var lab = benchRungLabel(lu && lu.benchRung ? lu.benchRung[id] : null);
+          return lab ? lab + " (LAST SESSION)" : "BENCH RUNG NOT RECORDED LAST TIME";
+        })(),
         deloadWarn: !!(lu && lu.isDeload),
         unit: repUnit(id),
         flags: flags,
@@ -8178,6 +8217,10 @@
           group: (ctx.groupOf(exId) || {}).label || null,
           cls: ctx.classOf ? ctx.classOf(exId) : null,
           gear: gids.length ? gearLabel(gids, ctx.gearOf) : null,
+          /* What the bench was ACTUALLY set to, straight off the entry. No
+             "last session" hedge here -- this document reports a workout that
+             happened. */
+          benchRung: benchRungLabel((e.benchRung || {})[exId]),
           lines: lines
         };
       });
@@ -12375,6 +12418,7 @@
     pressExercise: pressExercise,
     pressSetupOptions: pressSetupOptions,
     benchTravelOptions: benchTravelOptions,
+    benchRungLabel: benchRungLabel,
     benchRungList: benchRungList,
     benchRungValid: benchRungValid,
     attachRowApplies: attachRowApplies,
