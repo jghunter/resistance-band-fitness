@@ -1933,7 +1933,35 @@ function BandPicker({ selected, onChange, doubled }) {
 // (handle/anchor) grey out once full. Inventory comes in as a prop (App's
 // Firestore-synced gear state), unlike the HTML which reads localStorage.
 // ─────────────────────────────────────────────────────────────────────────────
-function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange }) {
+/* WHAT A RUNG IMPLIES FOR THE PRESS SETUP, in ONE place -- mirrors
+   fitness_app.html's benchRungPressFields exactly. Three editors mount the
+   BENCH RUNG row, and three copies of one rule is the trap both apps keep
+   falling into.
+
+   STORAGE IS INDEPENDENT; THE TAP IS NOT. benchRung and pressSetup are two
+   separate maps and neither is derived from the other: a bench press can be
+   done with the band pinned on the plate while the bench is still at a rung.
+   What a TAP does is set them together where the press-setup row is actually
+   on screen, because leaving the user to say the same thing twice is how the
+   two come to disagree.
+
+   THE GATE IS pressSetupOptions(exId).length > 1, which is PRECISELY what
+   draws that row -- not "is this a press". Four of the thirteen presses (6, 7,
+   8 and 18) offer BAND AROUND THE BODY only and draw no row at all; those
+   resolve their setup inside effectiveLoad and must never have one written
+   back as though the user had chosen it.
+
+   RUNG 1 IS FLAT and sets no travel: the `bench` setup reads the taped
+   setting-1 run itself, and writing an explicit figure would give one
+   measurement two homes. */
+function benchRungPressFields(exId, n, inches) {
+  if (RBTS_REPORTS.pressSetupOptions(exId).length < 2) return null
+  if (n == null || inches == null) return null
+  return { setup: n === 1 ? 'bench' : 'bench_angled',
+           travel: n === 1 ? undefined : inches }
+}
+
+function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachHeightIn, onAttachChange, exId, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, benchRung, onBenchRungChange }) {
   /* IRON IS ANCHORED TO NOTHING. ATTACH AT / HIGHEST POINT, the BAND RUN,
      the stamped OPENING, the BAND PATH and PRESS SETUP all describe HOW A
      BAND IS RIGGED, and a dumbbell is not rigged -- it is picked up. Those
@@ -2330,6 +2358,66 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           </div>
         )
       })()}
+      {/* ── BENCH RUNG ────────────────────────────────────
+          WHICH POSITION THE BENCH'S ANGLE ADJUSTMENT WAS SET TO, per exercise.
+
+          IT RENDERS THROUGH `ironOnly`, AND THAT SINGLE EXEMPTION IS THE WHOLE
+          REASON THIS ROW EXISTS rather than folding into an existing one.
+          `ironOnly` correctly hides the four BAND-GEOMETRY rows from a
+          dumbbell lift carrying no band -- those describe how a band is rigged,
+          and a dumbbell is not rigged. A bench rung is not band geometry. Greg,
+          2026-11-19: "with dumbbell the measurement of that angle is not
+          important like it is with bands" -- on iron it is a TRAINING RECORD,
+          and the dumbbell presses are exactly the lifts that had nowhere to put
+          it.
+
+          ON A BAND PRESS each button also shows its taped run and tapping it
+          sets the band run too. ON A DUMBBELL PRESS the number shows ALONE: the
+          inches are meaningless there, and printing them beside iron would
+          invite a reader to think the angle was priced. */}
+      {(() => {
+        const bench = RBTS_REPORTS.pressBenchOf(selected, gearOf)
+        if (!bench) return null
+        const L = RBTS_REPORTS.benchRungList(bench, BODY_MEASURE)
+        const cur = benchRung
+        const onRung = onBenchRungChange || (()=>{})
+        /* THE REFUSAL NAMES THE MISSING INPUT rather than rendering an empty
+           row -- a bench with no count and no taped runs cannot say how many
+           rungs it has, and offering nothing silently would look like a bug. */
+        if (!L.rungs.length) {
+          return (
+            <div style={{marginTop:6}}>
+              <div style={lbl}>BENCH RUNG</div>
+              <div style={{fontFamily:'monospace',fontSize:9,color:C.amber}}>{L.reason}</div>
+            </div>
+          )
+        }
+        return (
+          <div style={{marginTop:6}}>
+            <div style={lbl}>BENCH RUNG</div>
+            <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
+              Which position the back pad is set to. 1 is flat; the angle rises from there.
+            </div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {L.rungs.map(r => (
+                <button key={r.n}
+                  title={r.inches != null
+                    ? ('taped band run ' + r.inches + 'in at this rung')
+                    : 'no band run taped at this rung'}
+                  onClick={() => onRung(r.n, r.inches, L.rungs)}
+                  style={{...btn(cur === r.n),fontSize:9,padding:'4px 8px'}}>
+                  {String(r.n) + (r.n === 1 ? ' FLAT' : '')
+                    + ((!ironOnly && r.inches != null) ? ' \u00b7 ' + r.inches : '')}
+                </button>
+              ))}
+              {cur != null && (
+                <button onClick={() => onRung(undefined, null, L.rungs)}
+                  style={{...btn(false),fontSize:9,padding:'4px 8px'}}>CLEAR</button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
       {/* ── PRESS SETUP ────────────────────────────────────────────────────
           A chest press is priced by where the band is pinned and how far the
           hands travel, not by a floor height. Three setups; each exercise
@@ -2393,7 +2481,9 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
           saved without leaving the field never reaches the entry. */}
       {pressSetup === 'bench_angled' && (() => {
         if (ironOnly) return null
-        const opts = RBTS_REPORTS.benchTravelOptions(BODY_MEASURE)
+        /* benchTravelOptions is DELIBERATELY NOT READ HERE any more -- the
+           BENCH RUNG row owns the taped runs. A second reader of one fact
+           disagreeing in silence is this project's oldest failure mode. */
         const cur = pressTravel
         return (
           <div style={{marginTop:6}}>
@@ -2401,20 +2491,12 @@ function GearPicker({ inv, selected, onChange, bands, doubled, oneSided, attachH
             <div style={{fontFamily:'monospace',fontSize:9,color:C.dimGray,marginBottom:4}}>
               Footplate top surface to where the band ends, straight line, at full arm extension. Measure at the TOP of the rep.
             </div>
-            {opts.length > 0 && (
-              <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}>
-                {opts.map(o => (
-                  <button key={o.n}
-                    onClick={() => {
-                      setTravelText(null)
-                      ;(onPressTravelChange||(()=>{}))(o.inches)
-                    }}
-                    style={{...btn(cur === o.inches),fontSize:9,padding:'4px 8px'}}>
-                    {o.n + ': ' + o.inches}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* THE SETTING BUTTONS THAT USED TO SIT HERE ARE GONE, moved into
+                the BENCH RUNG row above (2026-11-19). They did the same job --
+                tap a setting, fill the inches -- while recording NOTHING about
+                which setting it was, and two controls for one fact is how the
+                two come to disagree. The typed box below stays as the override:
+                typing in it CLEARS the rung, which is Greg's ruling. */}
             <span style={{display:'flex',alignItems:'center',gap:3,fontFamily:'monospace',fontSize:9}}>
               {/* type="text", NOT type="number". This box already had the
                     text buffer, which is why it survived a "55"; a number
@@ -2751,7 +2833,7 @@ function PhaseTime({ phase, set, onChange, showGap, exId }) {
   )
 }
 
-function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
+function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFlag, progSides, gearInv, gear, onGearChange, attachHeightIn, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, benchRung, onBenchRungChange, loadStamp, entryDate, scheduledId, substituteCtx, onSubstitute }) {
   scheduledId = scheduledId || null
   substituteCtx = substituteCtx || null
   onSubstitute = onSubstitute || null
@@ -3144,7 +3226,8 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
             opening={opening} onOpeningChange={onOpeningChange||(()=>{})}
             bandPath={bandPath} onBandPathChange={onBandPathChange||(()=>{})}
             pressSetup={pressSetup} onPressSetupChange={onPressSetupChange||(()=>{})}
-            pressTravel={pressTravel} onPressTravelChange={onPressTravelChange||(()=>{})}/>
+            pressTravel={pressTravel} onPressTravelChange={onPressTravelChange||(()=>{})}
+            benchRung={benchRung} onBenchRungChange={onBenchRungChange||(()=>{})}/>
         </div>
         {sets.map((s,i) => {
           const seg = usesSeg(s)
@@ -3377,7 +3460,7 @@ function LoggedExCard({ id, role, techKey, sets, onSetsChange, prevSets, progFla
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGED SESSION VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, subs, onSubsChange }) {
+function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, todayDate, log, focusLabel, gearInv, gear, onGearChange, attach, onAttachChange, opening, onOpeningChange, bandPath, onBandPathChange, pressSetup, onPressSetupChange, pressTravel, onPressTravelChange, benchRung, onBenchRungChange, subs, onSubsChange }) {
   /* Defaulted in the body, not the signature: several parity assertions match
      these signatures with [^}]*, which a `= {}` default silently breaks. */
   subs = subs || {}
@@ -3461,6 +3544,14 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     if (pressTravel && pressTravel[String(id)] != null && onPressTravelChange) {
       const t = {...pressTravel}; delete t[String(id)]; onPressTravelChange(t)
     }
+    /* And the bench rung. AN ORPHAN IS NOT INERT even though this one prices
+       NOTHING: a saved entry would name a rung for a lift the session no longer
+       contains, and the printed history would read it. On 2026-10-21 three maps
+       were each found orphaned here, each excused by the others' asymmetry; "it
+       does not price" is that excuse in a new coat. */
+    if (benchRung && benchRung[String(id)] != null && onBenchRungChange) {
+      const br = {...benchRung}; delete br[String(id)]; onBenchRungChange(br)
+    }
   }
   function updateExGear(id, ids) {
     if (onGearChange) onGearChange({...(gear||{}), [String(id)]: ids})
@@ -3508,6 +3599,22 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
     const next = {...(pressTravel||{})}
     if (typeof v !== 'number' || !isFinite(v) || v <= 0) delete next[String(id)]; else next[String(id)] = v
     onPressTravelChange(next)
+  }
+  /* A RUNG IS GUARDED BY A STRICT MATCH against the rungs this bench OFFERS,
+     never isFinite and never truthiness: rungs are 1-based so a 0 is never
+     valid, and isFinite('3') is true. The caller passes the very list it drew
+     the buttons from, so the picker and the store cannot disagree about what is
+     offerable -- the 2026-08-14 / 2026-09-07 picker-vs-engine defect class.
+
+     The press fields move with the rung, through the one shared rule. */
+  function updateBenchRung(id, v, rungs, inches) {
+    if (onBenchRungChange) {
+      const next = {...(benchRung||{})}
+      if (!RBTS_REPORTS.benchRungValid(v, rungs)) delete next[String(id)]; else next[String(id)] = v
+      onBenchRungChange(next)
+    }
+    const pf = benchRungPressFields(Number(id), v, inches)
+    if (pf) { updatePressSetup(id, pf.setup); updatePressTravel(id, pf.travel) }
   }
 
   function getPrevSets(exerciseId) {
@@ -3572,6 +3679,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
         onBandPathChange={k=>updateBandPath(effId,k)}
         pressSetup={(pressSetup||{})[String(effId)]}
         onPressSetupChange={k=>updatePressSetup(effId,k)}
+        benchRung={(benchRung||{})[String(effId)]}
+        onBenchRungChange={(v,inches,rungs)=>updateBenchRung(effId,v,rungs,inches)}
         pressTravel={(pressTravel||{})[String(effId)]}
         onPressTravelChange={v=>updatePressTravel(effId,v)}
         onOpeningChange={n=>updateOpening(effId,n)}
@@ -3621,6 +3730,8 @@ function LoggedSessionView({ prog, sKey, week, exercises, onExercisesChange, tod
           onBandPathChange={k=>updateBandPath(id,k)}
           pressSetup={(pressSetup||{})[String(id)]}
           onPressSetupChange={k=>updatePressSetup(id,k)}
+          benchRung={(benchRung||{})[String(id)]}
+          onBenchRungChange={(v,inches,rungs)=>updateBenchRung(id,v,rungs,inches)}
           pressTravel={(pressTravel||{})[String(id)]}
           onPressTravelChange={v=>updatePressTravel(id,v)}
           onOpeningChange={n=>updateOpening(id,n)}
@@ -5943,6 +6054,9 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
   const [bandPathLogs, setBandPathLogs] = useState({}) // per-exercise footplate band path {exId: k}
   const [pressSetupLogs, setPressSetupLogs] = useState({}) // per-exercise press setup {exId: k}
   const [pressTravelLogs, setPressTravelLogs] = useState({}) // per-exercise taped band run {exId: inches}
+  /* WHICH RUNG the bench's angle adjustment was at, per exercise. Same shape
+     and lifecycle as the taped band run above; a RECORD, not a price. */
+  const [benchRungLogs, setBenchRungLogs] = useState({})
   /* { scheduledExId: performedExId } -- which prescribed exercise was swapped
      for which, this session only. The ONE map keyed by the scheduled exercise;
      every other per-exercise map is keyed by the performed id. */
@@ -6038,6 +6152,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
          above. No seeding function: a band run is a measurement, never a
          default. */
       setPressTravelLogs(existing?.pressTravel ?? {})
+      setBenchRungLogs(existing?.benchRung ?? {})
       /* And the substitution, or reopening a saved session shows the SCHEDULED
          exercise sitting above sets that were logged against the substitute.
 
@@ -6117,6 +6232,16 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       const v = (pressTravelLogs||{})[id]
       if (typeof v === 'number' && isFinite(v) && v > 0) cleanPressTravel[id] = v
     })
+    /* A RUNG IS A POSITIVE INTEGER. The strict match against the OFFERED list
+       lives at the write site, where that list is in hand; the save cannot see
+       it, so this is the shape check it can make alone -- and deliberately NOT
+       a truthiness test, which would be right only by accident because rungs
+       are 1-based. */
+    const cleanBenchRung = {}
+    Object.keys(cleanEx).forEach(id => {
+      const v = (benchRungLogs||{})[id]
+      if (typeof v === 'number' && isFinite(v) && v > 0 && v === Math.round(v)) cleanBenchRung[id] = v
+    })
     /* The substitution map, scoped by the exercise it points AT rather than by
        its own key -- the PERFORMED exercise is the one that must have real
        sets. A self-referential entry is REVERT's resting state, not a
@@ -6136,6 +6261,7 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
       bandPath: cleanBandPath,
       pressSetup: cleanPressSetup,
       pressTravel: cleanPressTravel,
+      benchRung: cleanBenchRung,
       subs: cleanSubs,
       /* Trimmed, and ABSENT rather than an empty string when there is nothing
          to say -- matching fitness_app.html, so an entry saved in either app
@@ -6151,7 +6277,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
        different shapes). */
     const load = RBTS_REPORTS.stampLoad(cleanEx, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening, cleanBandPath, cleanPressSetup, cleanPressTravel)
+                           cleanOpening, cleanBandPath, cleanPressSetup, cleanPressTravel,
+                           cleanBenchRung)
     if (load) entry.load = load
     onSaveEntry(entry)
     setSaved(true)
@@ -6749,6 +6876,8 @@ function TodayTab({ user, log, onSaveEntry, settings, onChangeSettings, gearInv 
               onBandPathChange={b=>{setBandPathLogs(b); setSaved(false)}}
               pressSetup={pressSetupLogs}
               onPressSetupChange={p=>{setPressSetupLogs(p); setSaved(false)}}
+              benchRung={benchRungLogs}
+              onBenchRungChange={setBenchRungLogs}
               pressTravel={pressTravelLogs}
               onPressTravelChange={p=>{setPressTravelLogs(p); setSaved(false)}}
               subs={subsLogs}
@@ -6838,6 +6967,9 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
      setup is: re-opening a workout must not silently drop a run already
      priced into its stamp. */
   const [pt, setPt] = useState(() => JSON.parse(JSON.stringify(entry.pressTravel || {})))
+  /* Seeded from the entry for the same reason -- re-opening a workout must
+     not silently drop which rung the bench was at. */
+  const [br, setBr] = useState(() => JSON.parse(JSON.stringify(entry.benchRung || {})))
   /* THE SESSION NOTE, editable here since 2026-10-13. It always survived an
      edit -- the save below spreads `entry` -- but could never be changed, so a
      note written mid-workout was permanent. Named `nt` to match this file's
@@ -7091,6 +7223,16 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
       const v = pt[id]
       if (typeof v === 'number' && isFinite(v) && v > 0) cleanPressTravel[id] = v
     })
+    /* A RUNG IS A POSITIVE INTEGER. The strict match against the OFFERED list
+       lives at the write site, where that list is in hand; the save cannot see
+       it, so this is the shape check it can make alone -- and deliberately NOT
+       a truthiness test, which would be right only by accident because rungs
+       are 1-based. */
+    const cleanBenchRung = {}
+    Object.keys(ex).forEach(id => {
+      const v = (br||{})[id]
+      if (typeof v === 'number' && isFinite(v) && v > 0 && v === Math.round(v)) cleanBenchRung[id] = v
+    })
     /* Re-stamp load from the sets actually being saved. The freeze-at-save
        rule exists so a later band re-measurement can't rewrite what a past
        workout meant -- it does not apply here, because the user is
@@ -7100,11 +7242,13 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
        removed), drop `load` instead of leaving the old value behind. */
     const loadStamp = RBTS_REPORTS.stampLoad(ex, cleanGear,
                            makeReportCtx({ log, gear: gearInv, myBands: [] }), cleanAttach,
-                           cleanOpening, cleanBandPath, cleanPressSetup, cleanPressTravel)
+                           cleanOpening, cleanBandPath, cleanPressSetup, cleanPressTravel,
+                           cleanBenchRung)
     const updated = RBTS_REPORTS.applyLoadStamp(
       { ...entry, exercises: ex, gear: cleanGear, attach: cleanAttach,
         opening: cleanOpening, bandPath: cleanBandPath, pressSetup: cleanPressSetup,
         pressTravel: cleanPressTravel,
+        benchRung: cleanBenchRung,
         /* undefined, not '', so clearing the field really clears it --
            JSON.stringify drops an undefined value on save. */
         notes: nt.trim() || undefined,
@@ -7157,7 +7301,22 @@ function HistoryEntryEditor({ entry, onSave, onDelete, onDone, gearInv, log }) {
               pressTravel={pt[id]}
               onPressTravelChange={v=>setPt(prev=>{const x={...prev};
                 /* A NUMBER greater than zero, not isFinite -- see cleanPressTravel above. */
-                if (typeof v !== 'number' || !isFinite(v) || v <= 0) delete x[id]; else x[id]=v; return x})}/>
+                if (typeof v !== 'number' || !isFinite(v) || v <= 0) delete x[id]; else x[id]=v; return x})}
+              benchRung={br[id]}
+              onBenchRungChange={(v,inches,rungs)=>{
+                /* The press fields move with the rung here too; the RULE lives
+                   in benchRungPressFields, the writes are inline because this
+                   editor holds its maps directly. */
+                const pf = benchRungPressFields(Number(id), v, inches)
+                if (pf) {
+                  setPs(prev=>({...prev, [id]: pf.setup}))
+                  setPt(prev=>{const x={...prev};
+                    if (pf.travel == null) delete x[id]; else x[id]=pf.travel; return x})
+                }
+                setBr(prev=>{const x={...prev};
+                  /* The strict match against the rungs the picker OFFERED. */
+                  if (!RBTS_REPORTS.benchRungValid(v, rungs)) delete x[id]; else x[id]=v; return x})
+              }}/>
           </div>
           {(sets||[]).map((s,i) => {
             const seg=usesSeg(s); const segs=segsOf(s); const straight=isPlainSet(s)
