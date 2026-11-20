@@ -4462,7 +4462,7 @@
      result carries `attachHeightIn` -- different names, deliberately, so a
      stamped field is never confused for a live one. */
   function stampLoad(exercises, gearMap, ctx, attachMap, openingMap, bandPathMap,
-                     pressSetupMap, pressTravelMap) {
+                     pressSetupMap, pressTravelMap, benchRungMap) {
     /* THROWS on a bad ctx. It used to `return undefined`, which is the wrong
        failure mode for this function: every caller is a SAVE path, and
        applyLoadStamp treats undefined as "there was nothing to stamp". So a
@@ -4508,6 +4508,7 @@
       /* RAW, like openingN and bandPathK: pressTerms' finitePos is the one
          guard, and a value it refuses must degrade loudly there. */
       var pressTravelN = pressTravelMap ? pressTravelMap[exId] : undefined;
+      var benchRungN   = benchRungMap   ? benchRungMap[exId]   : undefined;
       var best = bestSetLoad(ctx, sets, gearIds, attachIn, exId, openingN, bandPathK,
                              pressSetupK, pressTravelN);
       if (!best) return;
@@ -4576,6 +4577,41 @@
                        bandPathK and pressSetupK use. */
                     pressTravelIn: (best.pressTravelIn && pressTravelN)
                                    ? best.pressTravelIn : undefined,
+                    /* WHICH BENCH RUNG produced this figure. Added 2026-11-19.
+                       Frozen only where the rung ACTUALLY priced something AND
+                       one was supplied -- the same two halves bandPathK,
+                       pressSetupK and pressTravelIn use. An unchosen default
+                       must never be written back as though the user had picked
+                       it.
+
+                       THE GATE IS THE SETUP KEY, NOT `best.pressTravelIn`, and
+                       that distinction was measured with a probe before this
+                       line was written. A FLAT bench press reads the taped
+                       setting-1 run INSIDE pressTerms and therefore sets NO
+                       pressTravelIn at all -- so a gate testing the inches
+                       would silently refuse to record rung 1, which is the one
+                       setup every bench press starts from.
+
+                       `body` AND `plate` FREEZE NOTHING, deliberately: the
+                       bench may still be under the lifter at a rung, but the
+                       band is wrapped round the torso or pinned on the plate,
+                       so the rung priced nothing and the stamp must not claim
+                       it did.
+
+                       A DUMBBELL PRESS FREEZES NOTHING EITHER. The iron weighs
+                       what it weighs at any angle, the press path is never
+                       entered, and the entry's own benchRung map is the record
+                       for that lift.
+
+                       WHY FREEZE IT AT ALL where it DID price: the stamp
+                       already keeps the inches, and this says which RUNG
+                       produced them -- so re-taping the runs later can never
+                       make a past entry misreport which rung it used. That is
+                       the whole reason a rung is safe to store where an array
+                       index was not. */
+                    benchRungN: (((best.pressSetupK === "bench" ||
+                                   best.pressSetupK === "bench_angled") &&
+                                  benchRungN) ? benchRungN : undefined),
                     belowRated: best.belowRated || undefined,
                     romBlind: best.romBlind || undefined };
     });
