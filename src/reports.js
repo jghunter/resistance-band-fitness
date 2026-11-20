@@ -2430,6 +2430,83 @@
     return out;
   }
 
+  /* THE RUNGS THIS BENCH OFFERS, and the ONE reader both apps and the guard
+     call. Added 2026-11-19. Greg: "when using the yoleo bench press i should be
+     able to specify which rung on the angle of the bench adjustment i'm using."
+
+     TWO RULES, ANSWERING TWO DIFFERENT DECISIONS, and neither replaces the
+     other:
+
+       the bench's own `benchRungs`  ->  a FUTURE bench, his or Mike's or
+                                         Daniel's, has its own number of rungs
+                                         and may have NO tape at all
+       the count of TAPED RUNS       ->  Greg's eight taped figures ARE his eight
+                                         rungs, one to one, so he gets the right
+                                         list today with nothing to do
+
+     THE HARDWARE IS THE AUTHORITY ON HOW MANY RUNGS EXIST. A declared count
+     SMALLER than the tape truncates it: the extra readings describe a bench
+     this is not. A count LARGER than the tape offers the extra rungs carrying
+     `inches: null` -- a rung you have not taped is still a rung you can sit at,
+     which is the whole dumbbell case.
+
+     WITH NEITHER IT REFUSES AND NAMES THE MISSING INPUT. An empty list returned
+     silently would leave a row that does nothing, and blaming the wrong input
+     is how someone re-measures a figure that was fine.
+
+     `finitePos` ON THE DECLARED COUNT, never isFinite: a count that came back
+     from an import as the STRING "8" must fall back to the tape rather than
+     drive the row. Pinned directly in test_bench_rung.cjs, because the obvious
+     mutation of this guard changes no other outcome.
+
+     ONE SHAPE, ALWAYS -- `rungs`, `source` and `reason` are present on every
+     return, so no caller tests for undefined. */
+  function benchRungList(benchItem, body) {
+    /* NO BENCH AT ALL REFUSES, even when taped runs exist. A bench that is
+       present but unmeasured falls back to the tape -- that is Greg's case and
+       assertion 2 pins it -- but handing back eight rungs for a bench that is
+       not in the rig would be a confident answer about nothing, and the taped
+       runs describe a bench rather than being evidence one is present. The
+       row never renders without one anyway (pressBenchOf gates it), so this
+       is the contract rather than a live path. An earlier draft fell through
+       to the tape here and the suite caught it. */
+    if (!benchItem) {
+      return { rungs: [], source: "none",
+               reason: "no bench is recorded for this exercise" };
+    }
+    var taped = benchTravelOptions(body);
+    var dims = resolveGearDims(benchItem);
+    var declared = dims ? dims.benchRungs : null;
+    var counted = finitePos(declared);
+    var n = counted ? Math.round(declared) : taped.length;
+    if (!n) {
+      return { rungs: [], source: "none",
+               reason: "set the number of settings on this bench in GEAR" };
+    }
+    var inchesByRung = {};
+    taped.forEach(function (o) { inchesByRung[o.n] = o.inches; });
+    var out = [];
+    for (var i = 1; i <= n; i++) {
+      out.push({ n: i,
+                 inches: finitePos(inchesByRung[i]) ? inchesByRung[i] : null });
+    }
+    return { rungs: out, source: counted ? "count" : "taped", reason: null };
+  }
+
+  /* THE GUARD, and it is ONE comparison on purpose -- the same shape
+     `gearOpeningSeriesIn` uses for a strap position. A strict `===` against the
+     rungs actually offered refuses, with no separate checks to keep in step:
+     the "3" an import hands back, a fractional 3.5, a 0 (rungs are 1-based, so
+     0 is never valid), a rung past the end of THIS bench, and null, undefined
+     and NaN. NOT isFinite -- isFinite("3") is true. */
+  function benchRungValid(n, rungs) {
+    if (!rungs) return false;
+    for (var i = 0; i < rungs.length; i++) {
+      if (rungs[i].n === n) return true;
+    }
+    return false;
+  }
+
   /* What spans the top. A bar WINS: the band ends on the bar's hook points,
      not in the palms, so the grip is irrelevant whenever one is in the rig
      (Greg, 2026-09-14). Only with no bar does the exercise's own hand span
@@ -12262,6 +12339,8 @@
     pressExercise: pressExercise,
     pressSetupOptions: pressSetupOptions,
     benchTravelOptions: benchTravelOptions,
+    benchRungList: benchRungList,
+    benchRungValid: benchRungValid,
     attachRowApplies: attachRowApplies,
     attachRowShown: attachRowShown,
     seedPressSetups: seedPressSetups,
