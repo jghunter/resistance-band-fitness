@@ -2419,7 +2419,21 @@
 
      The property is `inches`, not `in`. `in` is a reserved word, legal as an
      unquoted property name in ES5 and a needless hazard in a file that is
-     inlined into two other places. */
+     inlined into two other places.
+
+     ONE LIST PER PROFILE, SO IT DESCRIBES ONE BENCH -- a KNOWN LIMITATION, left
+     written down rather than solved (Greg's call, 2026-11-19: "leave the
+     limitation written down"). If a second bench is owned, tapping rung 3 on
+     the new one fills the FIRST bench's inches. The RUNG itself is still
+     recorded correctly; only the inches would be wrong, and only on a band
+     press, and only on the second bench.
+
+     Keying the runs per gear item is a profile-field migration for a bench
+     nobody owns yet. The rung COUNT is already per-item (`benchRungs` in
+     GEAR_DIMS), which is the half that bites on day one: a new bench with its
+     own rung count and no tape at all still records a rung. See
+     TODO_open_items.md and
+     docs/superpowers/specs/2026-11-19-bench-rung-design.md. */
   function benchTravelOptions(body) {
     var arr = body && body.benchTravelOptionsIn;
     if (!Array.isArray(arr)) return [];
