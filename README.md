@@ -1,16 +1,51 @@
-# React + Vite
+# Resistance Band Fitness — PWA
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The installable, signed-in version of the resistance band training system.
+Live at https://resistance-band-fitness.pages.dev
 
-Currently, two official plugins are available:
+It is one of two apps that share one engine. The other is the single-file
+`fitness_app.html` in the parent repository, which needs no build and no account.
+This one adds Google sign-in and Firestore sync so a person's log follows them
+across devices.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Layout
 
-## React Compiler
+| Path | What it is |
+|---|---|
+| `src/App.jsx` | The whole interface: TODAY, HISTORY, ANALYZE, LIBRARY, GEAR, BANDS and the program builder |
+| `src/data.js` | Exercises, videos, bands, programs |
+| `src/phase1.js` | Profiles, splits and the schema migration. A mirror of the parent's module; do not edit here |
+| `src/reports.js` | The load model and every report. Generated from the parent's `rbts_reports.js`; do not edit here |
+| `src/firebase.js`, `src/metaReconcile.js`, `src/backup.js` | Sign-in, sync, and export / import |
+| `public/` | Icons, band images, the Cloudflare `_redirects` file |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+`phase1.js` and `reports.js` are copies. Change the parent's files and re-run the
+parent's sync script; the parent's parity suites fail if the two apps drift.
 
-## Expanding the ESLint configuration
+## Commands
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```
+npm install        once
+npm run dev        local dev server
+npm run build      production build into dist/
+npm run preview    serve the built dist/
+npm run lint       eslint
+```
+
+Testing against the Firebase emulators, which is how the ownership rule is
+checked without a second Google account, is described in `EMULATOR_TESTING.md`.
+
+## Deploying
+
+Cloudflare Pages builds the live site from the `main` branch of this repository.
+Run `deploy.bat` from this folder. It refuses to push from any other branch,
+checks every step, and prints the live address when the push has succeeded.
+A push does not prove a deploy: compare the `assets/index-*.js` name the site
+serves with the one in `dist/index.html`.
+
+## Tests
+
+The test suites live in the parent repository and cover both apps, including
+this one's parse, scope and report parity. Run them from there. No suite renders
+a browser, so anything that depends on a click or a layout is checked by hand
+against the dated `BROWSER_CHECK_*.md` lists in the parent.

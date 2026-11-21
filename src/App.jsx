@@ -5508,7 +5508,7 @@ function ProgramBuilder({ onSaved, onCancel }) {
             onClick={()=>setExGrp(g)}>{g}</button>
         ))}
       </div>
-      <input style={inputStyle} placeholder={'Search exercises for '+dayKey+'…'} value={exSearch}
+      <input style={inputStyle} placeholder={'Search exercises for '+((SP[splitId] && SP[splitId].dayLabels && SP[splitId].dayLabels[dayKey]) || dayKey)+'…'} value={exSearch}
         onChange={e=>setExSearch(e.target.value)} />
       <div style={{maxHeight:200, overflowY:'auto', border:'1px solid '+C.bgInput, borderRadius:4}}>
         {exIds.length === 0 &&
