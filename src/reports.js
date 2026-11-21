@@ -223,7 +223,8 @@
     271: 2, 272: 2, 273: 2,                  // lunges and split squat: BOTH hands, ONE leg
     274: 2, 275: 1,                          // calf raise, one-leg calf raise
     276: 2,                                  // farmer's carry -- also on TIME_BASED
-    277: 1, 278: 1, 279: 1                   // russian twist, leg raise, crunch
+    277: 1, 278: 1, 279: 1,                  // russian twist, leg raise, crunch
+    280: 1                                   // alternating toe taps: one bell, both hands
   };
   function isDumbbellLift(id) {
     return Object.prototype.hasOwnProperty.call(EX_DUMBBELL, String(Number(id)));

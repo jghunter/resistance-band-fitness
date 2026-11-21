@@ -196,6 +196,10 @@ export const EXERCISE_NAMES = {
   275:"Dumbbell One-Leg Calf Raise",   276:"Dumbbell Farmer's Carry",
   277:"Russian Twist with Dumbbell",   278:"Dumbbell Leg Raise",
   279:"Dumbbell Crunch",
+  /* 280 added 2026-11-21, missed from the 2026-11-17 batch. CORE / iso,
+     ONE dumbbell held in both hands. Bilateral on the 70 Bicycle Crunch
+     precedent: one continuous alternating set, not one side at a time. */
+  280:"Dumbbell Alternating Toe Taps",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -598,6 +602,42 @@ export const VIDEOS = {
      file:// limitation cannot reach 248 at all. */
   247:{url:"https://www.youtube.com/watch?v=2Z67cx5WG4k", start:70, end:100},
   248:{url:"https://www.youtube.com/watch?v=BZKjlZQpx38"},
+  /* 249-279 the dumbbell lifts, Greg's clips (2026-11-21). All OBJECT
+     form with NO window, on the 221/248 precedent: the object form
+     EMBEDS where a bare string only opens a tab, and with no window
+     the file:// limitation cannot reach them. */
+  249:{url:"https://www.youtube.com/shorts/mTaiQemkEpU"},
+  250:{url:"https://www.youtube.com/shorts/138iI2KPWDc"},
+  251:{url:"https://www.youtube.com/shorts/atcyT99YDeI"},
+  252:{url:"https://www.youtube.com/shorts/CO9ArtEN3DM"},
+  253:{url:"https://www.youtube.com/shorts/k6tzKisR3NY"},
+  254:{url:"https://www.youtube.com/shorts/6K_N9AGhItQ"},
+  255:{url:"https://www.youtube.com/shorts/xyK8UiC-BUw"},
+  256:{url:"https://www.youtube.com/watch?v=P_k_h5AIJXw"},
+  257:{url:"https://www.youtube.com/shorts/ekEo-BSg0_U"},
+  258:{url:"https://www.youtube.com/shorts/ZGjHc9NnJ-4"},
+  259:{url:"https://www.youtube.com/shorts/0_2pracXnOs"},
+  260:{url:"https://www.youtube.com/shorts/IOOLhrkN_NI"},
+  261:{url:"https://www.youtube.com/shorts/dfqQTbZZd_g"},
+  262:{url:"https://www.youtube.com/shorts/LsT-bR_zxLo"},
+  263:{url:"https://www.youtube.com/shorts/oLyP6sORFOc"},
+  264:{url:"https://www.youtube.com/watch?v=KN4AlQpoyHw"},
+  265:{url:"https://www.youtube.com/watch?v=Hy5L3-QJETc"},
+  266:{url:"https://www.youtube.com/watch?v=D7bMA4WEKMI"},
+  267:{url:"https://www.youtube.com/shorts/7ixqAPO6JvU"},
+  268:{url:"https://www.youtube.com/shorts/lRYBbchqxtI"},
+  269:{url:"https://www.youtube.com/shorts/y6ysC58C8iY"},
+  270:{url:"https://www.youtube.com/shorts/oQwnGfZFfzw"},
+  271:{url:"https://www.youtube.com/watch?v=3TM-vVWuLYE"},
+  272:{url:"https://www.youtube.com/shorts/OHVHQmf1fqE"},
+  273:{url:"https://www.youtube.com/shorts/sw4MzpC8l58"},
+  274:{url:"https://www.youtube.com/shorts/wdOkFomQNp8"},
+  275:{url:"https://www.youtube.com/shorts/E1mG5L9rpFc"},
+  276:{url:"https://www.youtube.com/shorts/1uOs1hP3u4A"},
+  277:{url:"https://www.youtube.com/watch?v=TfTUk2AjV7g"},
+  278:{url:"https://www.youtube.com/shorts/B3WKx-zaWg8"},
+  279:{url:"https://www.youtube.com/shorts/G9XfQJPBJVI"},
+  280:{url:"https://www.youtube.com/shorts/7YGcFqFMSk4"},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2059,6 +2099,7 @@ const EX_GROUP_OVERRIDE = { 216: GROUP_META.CHEST, 217: GROUP_META.QUADS,
   274: GROUP_META.CALVES, 275: GROUP_META.CALVES,
   276: GROUP_META.FOREARMS,
   277: GROUP_META.CORE, 278: GROUP_META.CORE, 279: GROUP_META.CORE,
+  280: GROUP_META.CORE,
 };
 const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   218: "comp", 219: "iso", 220: "comp", 221: "comp", 222: "comp",
@@ -2100,7 +2141,8 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   271: "comp", 272: "comp", 273: "comp",
   274: "iso",  275: "iso",
   276: "other",
-  277: "iso",  278: "iso",  279: "iso" };
+  277: "iso",  278: "iso",  279: "iso",
+  280: "iso" };
 
 export const exGroup = (id) => {
   id = Number(id);
