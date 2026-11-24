@@ -8132,6 +8132,9 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                           )}
                           {intens!=='straight' && <span style={{color:C.amber}}> ⚡{intensLabel(intens)}</span>}
                           {!segs && nameBands(setBandsOf(s)) && <span style={{color:C.dimGray}}> {nameBands(setBandsOf(s))}</span>}
+                          {/* The iron, 2026-11-24. Matches fitness_app.html's history
+                              line; a drop set names its iron per phase below. */}
+                          {!segs && RBTS_REPORTS.dumbbellSetPhrase(s) && <span style={{color:C.readout}}> {RBTS_REPORTS.dumbbellSetPhrase(s)}</span>}
                           {/* The fold, 2026-09-21. Matches fitness_app.html's
                               history line. No !segs guard: foldLabel walks every
                               segment, so a drop set names its fold too. */}
@@ -8146,6 +8149,7 @@ function HistoryTab({ log, onMergeImport, onImportCustomEx, onSaveEntry, onDelet
                             <span style={{color:C.amber}}>{j===0?'└':'·'} </span>
                             <span style={{color:C.textSec}}>{g.reps||0}r</span>
                             {nameBands(g.bands) && <span> {nameBands(g.bands)}</span>}
+                            {RBTS_REPORTS.dumbbellSetPhrase(g) && <span style={{color:C.readout}}> {RBTS_REPORTS.dumbbellSetPhrase(g)}</span>}
                           </div>
                         ))}
                       </div>

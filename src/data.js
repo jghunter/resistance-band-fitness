@@ -2106,18 +2106,20 @@ const EX_CLASS_OVERRIDE = { 217: "comp",   // 216 (fly) defaults to iso
   223: "iso", 224: "iso", 225: "comp",
   // Promoted from customs 1000-1008, 2026-08-12. 229 Copenhagen Plank is the
   // only comp of the nine — it is Greg's own classification, carried across.
-  226: "iso", 227: "iso", 228: "iso", 229: "comp", 230: "iso",
+  226: "comp", 227: "iso", 228: "iso", 229: "comp", 230: "iso",
   231: "iso", 232: "iso", 233: "iso", 234: "iso",
-  /* 235 is single-joint like the face pull it derives from. 236 is a
-     multi-joint press, like 43. */
-  235: "iso", 236: "comp",
+  /* 235 is comp like the face pull it derives from (Greg, 2026-11-24: the
+     elbow bends and the shoulder moves). 236 is a multi-joint press, like 43.
+     226 is a squat -- hip, knee and ankle -- so comp, 2026-11-24. */
+  235: "comp", 236: "comp",
   /* Shoulder alternatives, 2026-09-03. The four comps are overhead presses or
-     a high pull -- multi-joint, matching 43/44/46/56. The six isos are raises
+     a high pull -- multi-joint, matching 43/44/46/56, plus 246 Hip Huggers since 2026-11-24 (an
+     upright-row shape, like 56; Greg). The five isos are raises
      and rear-delt work, matching 47/48/51. The split matters beyond bookkeeping:
      substituteCandidates' first band is same group AND same class, so an iso
      offered for an iso is the swap Greg is actually looking for. */
   237: "comp", 238: "comp", 239: "iso",  240: "iso", 241: "comp",
-  242: "iso",  243: "iso",  244: "iso",  245: "comp", 246: "iso",
+  242: "iso",  243: "iso",  244: "iso",  245: "comp", 246: "comp",
   /* 2026-11-03 promotions. THE CLASS WAS ASKED, NOT TAKEN FROM THE
      CUSTOM RECORDS -- all three read cls:"iso", which is the ADD form's
      DEFAULT rather than a ruling, and since 2026-10-18 (when Greg
@@ -2173,7 +2175,15 @@ export const ALL_GROUPS = ["All","CHEST","BACK","SHOULDERS","CORE","GLUTES","QUA
 // Panel recommendation 20 — 2026-07-30. ADDED 28/29 (pulldowns): multi-joint,
 // and they occupy PRIMARY COMPOUND slots in 9 programs. REMOVED 139/142 (21s,
 // supinated straight-bar curl): a curl is single-joint elbow flexion.
-const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,36,37,43,44,45,46,52,56,63,64,65,66,67,68,69,70,73,74,76,77,78,79,80,82,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,124,125,126,127,128,149,150,153,185,186,187,188,189,190,195,196,197,200,201,202]);
+/* Greg's ruling, 2026-11-24: compound = more than one joint moves,
+   isolation = one joint. TO ISO: 36 Y-T-W-L (shoulder only), 73/74 trunk
+   rotation (agrees with 277), 78/79/80/82 bridges and hip thrusts (hip
+   extension only, agrees with 81 Frog Pump), 124 Nordic (knee only),
+   126 Reverse Hyper (hip only). TO COMP: 33 Face Pull (elbow + shoulder),
+   75 Ab Rollout (shoulder + hip), 156 JM Press (elbow + shoulder).
+   The hip-hinge lifts (RDLs, Good Morning, Pull-Through) STAY comp by the
+   same ruling. */
+const EX_COMP_IDS = new Set([1,2,3,4,5,6,7,8,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,33,37,43,44,45,46,52,56,63,64,65,66,67,68,69,70,75,76,77,93,94,97,98,99,100,101,102,103,104,105,106,107,108,109,111,113,114,115,116,117,118,119,120,125,127,128,149,150,153,156,185,186,187,188,189,190,195,196,197,200,201,202]);
 const EX_OTHER_IDS = new Set([112,166,191,192,193,194,198,199,203,204,205,206,207,208,209,210,211,212,213,214,215]);
 export const exClass = (id) => { id = Number(id); return EX_CLASS_OVERRIDE[id] || (EX_OTHER_IDS.has(id) ? "other" : EX_COMP_IDS.has(id) ? "comp" : "iso"); };
 
