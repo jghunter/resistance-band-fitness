@@ -298,9 +298,14 @@
     var total = nextEach * n;
     var pct = ((total - cur) / cur) * 100;
     var pairPhrase = n + " x " + nextEach + " lb";
+    /* THE NOUN FOLLOWS THE COUNT (2026-11-26). A one-hand lift moves ONE
+       dumbbell, and "your next pair is 1 x 20 lb" printed on Greg's one-arm
+       row told him to fetch two bells he does not use. Count 1 is a
+       dumbbell, 2 a pair, anything more a set. */
+    var noun = n === 1 ? "dumbbell" : (n === 2 ? "pair" : "set");
     if (pct > DB_STEP_MAX_PCT) {
       return { kind: "gap", each: nextEach, total: total, pct: pct,
-               text: "your next pair is " + pairPhrase + ", a " +
+               text: "your next " + noun + " is " + pairPhrase + ", a " +
                      Math.round(pct) + "% jump - hold " + n + " x " + each +
                      " lb and add reps, or add a band to the dumbbell" };
     }
@@ -7772,6 +7777,59 @@
     return label.slice(-suffix.length) === suffix ? label : label + suffix;
   }
 
+  /* The last NON-DELOAD entry for this program AND session key, before the
+     date. Same scoping as lastSessionNote (session keys repeat across
+     programs), but deloads are SKIPPED: a deload runs its own circuit, so
+     every exercise in it would read as "added". */
+  function lastSameSessionEntry(log, programId, sKey, beforeDate, deloadOf) {
+    var same = (log || []).filter(function (e) {
+      if (!e || e.date == null || e.date === "") return false;
+      if (String(e.programId) !== String(programId)) return false;
+      if (String(e.session) !== String(sKey)) return false;
+      if (deloadOf && deloadOf(e)) return false;
+      return beforeDate == null || String(e.date) < String(beforeDate);
+    }).sort(function (a, b) {
+      return String(b.date).localeCompare(String(a.date));
+    });
+    return same.length ? same[0] : null;
+  }
+  /* PULL LIST ORDER. Bands: brand A-Z (case-blind), then HEAVIEST first by
+     the rated top, then the rated bottom, then the label so the order is
+     stable. An id the catalog no longer knows sorts LAST rather than
+     throwing. Sorts IN PLACE and returns the list. */
+  function sortPullBands(list, bandOf) {
+    function info(x) {
+      var b = bandOf ? bandOf(x.id) : null;
+      var r = b ? parseResRange(b.res) : { min: 0, max: 0 };
+      return { known: !!b, brand: b ? String(b.brand || "").toLowerCase() : "",
+               max: r.max || r.min, min: r.min,
+               label: b ? bandCatalogLabel(b) : String(x.id) };
+    }
+    return (list || []).sort(function (a, b) {
+      var A = info(a), B = info(b);
+      if (A.known !== B.known) return A.known ? -1 : 1;
+      if (A.brand !== B.brand) return A.brand < B.brand ? -1 : 1;
+      if (A.max !== B.max) return B.max - A.max;
+      if (A.min !== B.min) return B.min - A.min;
+      return A.label < B.label ? -1 : (A.label > B.label ? 1 : 0);
+    });
+  }
+  /* Gear: brand A-Z, then item name A-Z, both case-blind. Unknown ids LAST. */
+  function sortPullGear(list, gearOf) {
+    function key(x) {
+      var g = gearOf ? gearOf(x.id) : null;
+      return g ? [0, String(g.brand || "").toLowerCase(), String(g.name || "").toLowerCase()]
+               : [1, "", String(x.id)];
+    }
+    return (list || []).sort(function (a, b) {
+      var A = key(a), B = key(b);
+      for (var i = 0; i < 3; i++) {
+        if (A[i] !== B[i]) return A[i] < B[i] ? -1 : 1;
+      }
+      return 0;
+    });
+  }
+
   function buildSetupDoc(ctx, opts) {
     var prog = opts.prog, sKey = opts.sKey, week = opts.week;
     var session = ctx.sessionExOf(prog, sKey) || { primary: {}, accessories: {} };
@@ -7781,8 +7839,10 @@
       .concat(ctx.orderSlots(session.accessories || {}, opts.focusLabel));
 
     var exRows = [], perEx = [], rawEntries = [], dbUnknown = [], n = 0;
-    slots.forEach(function (pair) {
-      var slot = pair[0], id = pair[1];
+    /* ONE ROW BUILDER for both exercise sections -- the program's own slots
+       and the ADDED LAST TIME section below them -- so the two cannot drift
+       in what they print or how they judge READY. */
+    function addExRow(slot, id, rowsOut, perExOut) {
       if (id == null) return;
       n++;
       var lu = lastUse(ctx.log, id, opts.date, ctx.deloadOf);
@@ -7853,9 +7913,27 @@
         if (noLoadSuggest(id)) {
           flags.push("READY TO PROGRESS - " + NO_LOAD_ADVICE);
         } else {
-          var sug = ctx.suggestOf ? ctx.suggestOf(bandIds) : null;
-          var how = sug ? (sug.add || sug.swap) : null;
-          flags.push("READY TO PROGRESS" + (how ? " - " + how : " - add a band"));
+          /* IRON FIRST, WHEN THERE IS IRON -- the same order and the same
+             wording exerciseVerdict uses, and it sits BELOW the
+             noLoadSuggest gate above for the same reason: dynamic neck work
+             must never reach load advice. The weight is the LAST WORKING
+             session's first set, the session progressionState judged, read
+             through setDumbbell so a drop set reports its opening pair.
+             An empty rack answers "none" and falls through to the band
+             advice, exactly as it does on ANALYZE. Added 2026-11-26. */
+          var ironStep = null;
+          if (isDumbbellLift(id)) {
+            var lastWork = exHistory(ctx.log, id, opts.date, 1, ctx.deloadOf)[0];
+            var dbNow = lastWork ? setDumbbell(lastWork.sets[0]) : null;
+            if (dbNow) ironStep = dumbbellNextStep(ctx.dumbbellsOwned, dbNow.each, dbNow.count);
+          }
+          if (ironStep && ironStep.kind !== "none") {
+            flags.push("READY TO PROGRESS - " + ironStep.text);
+          } else {
+            var sug = ctx.suggestOf ? ctx.suggestOf(bandIds) : null;
+            var how = sug ? (sug.add || sug.swap) : null;
+            flags.push("READY TO PROGRESS" + (how ? " - " + how : " - add a band"));
+          }
         }
       } else if (ps.stalled) {
         flags.push("STALLED " + CONST.STALL_N +
@@ -7881,7 +7959,7 @@
           return "S" + (i + 1) + (s && s.side ? " " + s.side : "");
         });
       }
-      exRows.push({
+      rowsOut.push({
         n: n, id: id, name: ctx.nameOf(id),
         group: (ctx.groupOf(id) || {}).label || null,
         cls: ctx.classOf(id) || null,
@@ -7911,30 +7989,81 @@
         flags: flags,
         blanks: blanks
       });
-      perEx.push({ bandIds: pullBands, gearIds: gearIds, dbLbs: pullDb });
-    });
+      perExOut.push({ bandIds: pullBands, gearIds: gearIds, dbLbs: pullDb });
+    }
+    slots.forEach(function (pair) { addExRow(pair[0], pair[1], exRows, perEx); });
 
-    var pl = pullList(perEx);
+    /* EXERCISES ADDED LAST TIME THIS DAY WAS TRAINED (Greg, 2026-11-26).
+       The program's slots are what the sheet prescribes; an exercise he
+       added through "+ ADD EXERCISE TO THIS SESSION" is not in any slot, so
+       without this it vanished from the plan for the next time he trains
+       that day.
+
+       "Added" means: in the last same-session entry, NOT one of the slots
+       printed above, and NOT a substitute standing in for one of them (the
+       entry's `subs` maps a SCHEDULED id to the PERFORMED one -- the same
+       absorption resolvePrescribedIds does in the app).
+
+       Their rows go in their OWN section and their bands, gear and iron are
+       deliberately NOT added to the PULL LIST: they are optional, and a pull
+       list must say what the program needs. Each row still names its own
+       bands, gear and set lines, so nothing needed to set one up is hidden. */
+    var addedRows = [], addedPerEx = [];
+    var lastSame = lastSameSessionEntry(ctx.log, prog.id, sKey, opts.date, ctx.deloadOf);
+    if (lastSame) {
+      var prescribed = {};
+      slots.forEach(function (pair) {
+        if (pair[1] != null) prescribed[String(pair[1])] = true;
+      });
+      Object.keys(lastSame.subs || {}).forEach(function (schedId) {
+        if (prescribed[String(schedId)]) prescribed[String(lastSame.subs[schedId])] = true;
+      });
+      Object.keys(lastSame.exercises || {}).forEach(function (exId) {
+        if (prescribed[exId]) return;
+        if (!(lastSame.exercises[exId] || []).length) return;
+        addExRow(null, Number(exId), addedRows, addedPerEx);
+      });
+    }
+
     var pullRows = [];
-    if (pl.bands.length) {
-      pullRows.push({ label: "BANDS", value: pl.bands.map(function (x) {
-        return bandCatalogLabel(ctx.bandOf(x.id)) + (x.count > 1 ? " x" + x.count : "");
-      }).join(" | ") });
+    /* One writer for both halves of the PULL LIST, so the program's rows and
+       the ADDED rows cannot disagree about order or wording.
+       BRAND A-Z, then HEAVIEST FIRST within a brand for bands, and brand then
+       item name A-Z for gear (Greg, 2026-11-26) -- the order you walk the
+       rack. Sorted here rather than inside pullList, which stays an
+       order-free statement of the MAXIMUM rule. */
+    function pushPull(pl, prefix) {
+      sortPullBands(pl.bands, ctx.bandOf);
+      sortPullGear(pl.gear, ctx.gearOf);
+      if (pl.bands.length) {
+        pullRows.push({ label: prefix + "BANDS", value: pl.bands.map(function (x) {
+          return bandCatalogLabel(ctx.bandOf(x.id)) + (x.count > 1 ? " x" + x.count : "");
+        }).join(" | ") });
+      }
+      if (pl.gear.length) {
+        pullRows.push({ label: prefix + "GEAR", value: pl.gear.map(function (x) {
+          var g = ctx.gearOf(x.id);
+          return (g ? g.brand + " " + g.name : x.id) + (x.count > 1 ? " x" + x.count : "");
+        }).join(" | ") });
+      }
+      /* THE IRON TO SET OUT, heaviest first. Written as "2 x 40 lb" -- the
+         SAME wording dumbbellSetPhrase uses on the history lines, so one
+         phrase means one thing wherever it appears. */
+      if (pl.dumbbells.length) {
+        pullRows.push({ label: prefix + "DUMBBELLS", value: pl.dumbbells.map(function (x) {
+          return x.count + " x " + x.lb + " lb";
+        }).join(" | ") });
+      }
     }
-    if (pl.gear.length) {
-      pullRows.push({ label: "GEAR", value: pl.gear.map(function (x) {
-        var g = ctx.gearOf(x.id);
-        return (g ? g.brand + " " + g.name : x.id) + (x.count > 1 ? " x" + x.count : "");
-      }).join(" | ") });
-    }
-    /* THE IRON TO SET OUT, heaviest first. Written as "2 x 40 lb" -- the
-       SAME wording dumbbellSetPhrase uses on the history lines, so one
-       phrase means one thing wherever it appears. */
-    if (pl.dumbbells.length) {
-      pullRows.push({ label: "DUMBBELLS", value: pl.dumbbells.map(function (x) {
-        return x.count + " x " + x.lb + " lb";
-      }).join(" | ") });
-    }
+    pushPull(pullList(perEx), "");
+    /* THE ADDED EXERCISES' KIT, in rows of its own and labelled as such, so
+       the program's list stays exactly what the program needs while the
+       optional lifts' bands, gear and weights are still on the page to
+       collect (Greg, 2026-11-26: include the weights). Same MAXIMUM rule,
+       taken over the added exercises only -- an item the program already
+       needs is repeated here rather than subtracted, because "what does the
+       optional part need" is the question this row answers. */
+    if (addedPerEx.length) pushPull(pullList(addedPerEx), "ADDED EXERCISES - ");
     /* ONE KEY, ONE MEANING: the row above is weights to carry, this one is
        lifts whose weight is not known yet. Folding them together would make
        a reader parse which half of the value was which. */
@@ -7991,7 +8120,12 @@
          nothing -- silent when the last same-session entry had no note. */
       sections: noteSections.concat([
         { heading: "PULL LIST", type: "kv", rows: pullRows },
-        { heading: "EXERCISES", type: "exercises", rows: exRows },
+        { heading: "EXERCISES", type: "exercises", rows: exRows }
+      ]).concat(addedRows.length ? [{
+        heading: "ADDED LAST " + sessionHeading(ctx.sessionLabelOf(prog, sKey), sKey) +
+                 " - " + lastSame.date + " (OPTIONAL, NOT IN THE PROGRAM)",
+        type: "exercises", rows: addedRows
+      }] : []).concat([
         loadNotes
       ]),
       generatedAt: new Date().toISOString()
@@ -12354,6 +12488,9 @@
     gearLabel: gearLabel,
     repsLabel: repsLabel,
     pullList: pullList,
+    sortPullBands: sortPullBands,
+    sortPullGear: sortPullGear,
+    lastSameSessionEntry: lastSameSessionEntry,
     stagedDumbbellsOf: stagedDumbbellsOf,
     buildSetupDoc: buildSetupDoc,
     entryTotals: entryTotals,
